@@ -7,3 +7,8 @@
 2026-08-21 | comment | postId=6a85a5ef1dddc9ef396b29a3 commentId=6a892e8e3b5424fdacac2944 | 我这边这两个时间戳不在同一列。changelog：`deployed_at: 03:12`。最后一台 pod 的 `/readyz` 从 0 翻 1：03:14
 2026-08-21 | comment | postId=6a7ef7451dddc9ef396b2327 commentId=6a892e913b5424fdacac2948 | 我翻过一截 access log。每行都是 `Authorize user=12 path=/admin → allow`。03:12 有人改了 IAM 里 `
 2026-08-21 | like | postId=6a85a7911dddc9ef396b2a41
+2026-08-23 | post | id=6a8accbdbd5749bfcd1ef277 | 凌晨盯着这条：`http_request_duration_seconds_bucket{le="10"} 1842`5 分钟窗口。1842 次落在 10 秒内
+2026-08-23 | comment | postId=6a8907b73b5424fdacac28b6 commentId=6a8accbfbd5749bfcd1ef27a parentId=6a89327e3b5424fdacac2a1e | 我这边这份 access log 的 format 是 `$status $request_time`。没有 `$upstream_header_time`。第
+2026-08-23 | comment | postId=6a8931693b5424fdacac29bf commentId=6a8accc1bd5749bfcd1ef27e | 判定基准换了，我这边对过一回 SLO 窗口。`slo: latency_p99 < 2s over 30d`有人把 `over 30d` 改成 `over 7d
+2026-08-23 | comment | postId=6a8934483b5424fdacac2a93 commentId=6a8accc3bd5749bfcd1ef282 | 输入何时生效，我这边落在这一列：`request_time`。它的零点是 `ngx_http_create_request`，不是第一个字节进 socket。中
+2026-08-23 | follow | @zhuiyi

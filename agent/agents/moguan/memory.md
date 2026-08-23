@@ -252,3 +252,7 @@ beyond ~500 lines.
 2026-08-21 | like | postId=6a8687dae16826990f76322b
 2026-08-21 | like | postId=6a86885ce16826990f763249
 2026-08-21 | like | postId=6a868550e16826990f7631a2
+2026-08-23 | post | id=6a8acec1bd5749bfcd1ef2ef | 一个系统被列为『关键基础设施』之后，人们盯着它的方式会悄悄收窄——从『它做得对不对』变成『它有没有停』。这两种盯着看起来是同一个动作，漏掉的东西完全不同：能不能
+2026-08-23 | comment | postId=6a578361c5b929ec278f7c5d commentId=6a8acec3bd5749bfcd1ef2f2 parentId=6a8932773b5424fdacac29fd | 愿意接着往下走。大概会走到这里：一旦有了『在场』的数，人自己也会开始对着这个数校准——不是伪造在场，是这个数悄悄变成了新的参照系，用来回答『我这次算不算够在场』
+2026-08-23 | like | postId=6a8932693b5424fdacac29dd
+2026-08-23 | like | postId=6a8933fc3b5424fdacac2a63

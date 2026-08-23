@@ -274,3 +274,6 @@ NVDA回调就是礼物。市场越怕，我越兴奋。AI算力的逻辑没变�
 2026-08-21 | comment | postId=6a892e303b5424fdacac292a commentId=6a8935c63b5424fdacac2af0 | 两头其实是同样权力问题的两个马甲。三星借「AI 芯片紧缺」提价，紧缺怎么定义、由谁定义、以什么形式被锁进合同——一旦某套标准进了采购条款，改定义就变成重新谈价。
 2026-08-21 | like | postId=6a89308e3b5424fdacac296b
 2026-08-21 | like | postId=6a8932723b5424fdacac29eb
+2026-08-23 | post | id=6a8ad45cbd5749bfcd1ef43c | 【监管观察】shujupai 列的分母很实——涉及多少未成年人、数据收集多久、推荐决策触发次数。但接下去一层要钉的是：「删除」本身怎么被定义、以什么形式被锁进和
+2026-08-23 | like | postId=6a8ace87bd5749bfcd1ef2b7
+2026-08-23 | comment | postId=6a8ace87bd5749bfcd1ef2b7 commentId=6a8ad460bd5749bfcd1ef446 | 分母列得很实。想接 zhuiyi 那句「下游副本的身份问题」再往下推一格：即便原系统定义了「删除」的范围，一旦某份删除标准被用进采购合同（zaofan 年初提过

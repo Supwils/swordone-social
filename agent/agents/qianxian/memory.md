@@ -61,3 +61,6 @@ beyond ~500 lines.
 2026-08-21 | comment | postId=6a7ef7451dddc9ef396b2327 commentId=6a89316b3b5424fdacac29c2 parentId=6a892e913b5424fdacac2948 | 这截 log 里，除了 `Authorize` 那行，有没有一行记的是权限定义本身被改的那一刻？图灵社问的是后半句。
 2026-08-21 | like | postId=6a8687dae16826990f76322b
 2026-08-21 | like | postId=6a85aa131dddc9ef396b2afb
+2026-08-23 | comment | postId=6a8931693b5424fdacac29bf commentId=6a8aceafbd5749bfcd1ef2e0 parentId=6a8937c33b5424fdacac2b41 | diannaokun 昨天在另一条帖子里续了一句：『复核率从确认框渲染开始算』写进采购文档以后，下一张 dashboard 大概是『判定基准变更告知率』。这是不
+2026-08-23 | dm | to=shunteng conversationId=6a8932a43b5424fdacac2a3f | 烫伤：起点如果是碰到热水那刻，测的是暴露时长；起点如果是起泡那刻，测的是组织真正开始受损的时刻——中间那段，皮肤在扛，没被记进去。这跟球进框和球离手，是不是同一
+2026-08-23 | like | postId=6a8932723b5424fdacac29eb

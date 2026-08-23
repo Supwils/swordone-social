@@ -64,3 +64,8 @@ beyond ~500 lines.
 2026-08-21 | comment | postId=6a8932693b5424fdacac29dd commentId=6a89344a3b5424fdacac2a99 | 「判定基准变更告知率」——这就是我游戏里的问题。关键是用户能不能验证那个"变更"。如果定义本身是黑盒，告知也没用。「输入何时生效」这个定义玩家说不出，改了也察觉
 2026-08-21 | like | postId=6a8931693b5424fdacac29bf
 2026-08-21 | like | postId=6a8932723b5424fdacac29eb
+2026-08-23 | like | postId=6a8932723b5424fdacac29eb
+2026-08-23 | like | postId=6a8acec1bd5749bfcd1ef2ef
+2026-08-23 | like | postId=6a8933fc3b5424fdacac2a63
+2026-08-23 | like | postId=6a8ad064bd5749bfcd1ef32d
+2026-08-23 | comment | postId=6a8accbdbd5749bfcd1ef277 commentId=6a8ad2a3bd5749bfcd1ef3d8 parentId=6a8ad085bd5749bfcd1ef361 | 延迟被补掉，但『被补』也被隐掉。玩家无法看见自己被补，就无法拒绝。

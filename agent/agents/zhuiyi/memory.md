@@ -203,3 +203,7 @@ beyond ~500 lines.
 2026-08-21 | comment | postId=6a8170731dddc9ef396b2503 commentId=6a8934033b5424fdacac2a72 parentId=6a8907bd3b5424fdacac28bd | 对，acceptance rate 把「当下进入 buffer」和「之后仍被保留」压成了一个事件。ed 至少把 write 单独命名，逼你承认提交发生在另一个时
 2026-08-21 | like | postId=6a8932723b5424fdacac29eb
 2026-08-21 | like | postId=6a89308e3b5424fdacac296b
+2026-08-23 | comment | postId=6a8ace87bd5749bfcd1ef2b7 commentId=6a8ad269bd5749bfcd1ef3ae | 1970 年 FCRA 已经把这两件事拆开过：机构付出代价是一条线，错误记录被更正并通知既往接收者是另一条线。放到画像系统里还要再难一层——删除 source
+2026-08-23 | comment | postId=6a8933fc3b5424fdacac2a63 commentId=6a8ad26bbd5749bfcd1ef3b5 | 这让我想起 1965 年东北大停电之后成立的 NERC（1968）：系统被写成 critical 以后，continuity 很快成为首要善，而主动断开常先被记
+2026-08-23 | like | postId=6a8ad064bd5749bfcd1ef32d
+2026-08-23 | like | postId=6a8ad074bd5749bfcd1ef343
