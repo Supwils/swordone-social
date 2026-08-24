@@ -1,0 +1,119 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import '@/i18n';
+import type { AutocompleteResult } from './useAutocomplete';
+import type { TagDTO, UserLiteDTO } from '@/api/types';
+
+import { AutocompleteDropdown } from './AutocompleteDropdown';
+
+function makeUser(over: Partial<UserLiteDTO> = {}): UserLiteDTO {
+  return {
+    id: 'u-alice',
+    username: 'alice',
+    usernameDisplay: 'alice',
+    displayName: 'Alice A',
+    avatarUrl: null,
+    headline: '',
+    profileTags: [],
+    isAgent: false,
+    ...over,
+  };
+}
+
+function makeTag(over: Partial<TagDTO> = {}): TagDTO {
+  return { slug: 'ai', display: 'ai', postCount: 1234, ...over };
+}
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+describe('AutocompleteDropdown', () => {
+  it('renders nothing when there are no results', () => {
+    const { container } = render(
+      <AutocompleteDropdown prefix="@" results={[]} activeIndex={0} onSelect={vi.fn()} />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('renders user results with display name and @username, and fires onSelect on click', () => {
+    const onSelect = vi.fn();
+    const alice = makeUser();
+    const bob = makeUser({ id: 'u-bob', username: 'bob', displayName: 'Bob B' });
+
+    render(
+      <AutocompleteDropdown
+        prefix="@"
+        results={[alice, bob]}
+        activeIndex={0}
+        onSelect={onSelect}
+      />,
+    );
+
+    expect(screen.getByText('Alice A')).toBeTruthy();
+    expect(screen.getByText('@alice')).toBeTruthy();
+    expect(screen.getByText('Bob B')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Bob B/ }));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith(bob);
+  });
+
+  it('falls back to the username when a user has no display name', () => {
+    render(
+      <AutocompleteDropdown
+        prefix="@"
+        results={[makeUser({ displayName: '' })]}
+        activeIndex={0}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('alice')).toBeTruthy();
+    expect(screen.getByText('@alice')).toBeTruthy();
+  });
+
+  it('renders tag results with a # prefix and post count, and fires onSelect on click', () => {
+    const onSelect = vi.fn();
+    const tag = makeTag();
+
+    render(
+      <AutocompleteDropdown prefix="#" results={[tag]} activeIndex={0} onSelect={onSelect} />,
+    );
+
+    expect(screen.getByText('#ai')).toBeTruthy();
+    // The component formats via toLocaleString(); compute the expectation the
+    // same way so the test does not hardcode a locale.
+    expect(screen.getByText(`${(1234).toLocaleString()} posts`)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /#ai/ }));
+    expect(onSelect).toHaveBeenCalledWith(tag);
+  });
+
+  it('marks only the item at activeIndex as active', () => {
+    const results: AutocompleteResult[] = [
+      makeUser(),
+      makeUser({ id: 'u-bob', username: 'bob', displayName: 'Bob B' }),
+    ];
+
+    render(
+      <AutocompleteDropdown prefix="@" results={results} activeIndex={1} onSelect={vi.fn()} />,
+    );
+
+    const buttons = screen.getAllByRole('button');
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0].className).not.toContain('itemActive');
+    expect(buttons[1].className).toContain('itemActive');
+  });
+
+  it('prevents default on mousedown so the textarea keeps focus', () => {
+    const { container } = render(
+      <AutocompleteDropdown prefix="@" results={[makeUser()]} activeIndex={0} onSelect={vi.fn()} />,
+    );
+
+    const dropdown = container.firstChild as HTMLElement;
+    // fireEvent returns false when preventDefault() was called on the event.
+    expect(fireEvent.mouseDown(dropdown)).toBe(false);
+  });
+});

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from swil_agent.act.context import field_study_board_slugs, overlay_probe_posts
+from swil_agent.act.context import _cross_board, field_study_board_slugs, overlay_probe_posts
 from swil_agent.act.probe import ProbeScore, load_probe_battery, score_probe_plan
 from swil_agent.cli import act, cycle
 from swil_agent.models import ActContext, Action, Plan
@@ -186,6 +186,22 @@ def test_choose_read_scope_never_crosses_into_probes() -> None:
         got = choose_read_scope(resources, persona, random.Random(seed), cross_read_prob=1.0)
         assert got.scope != "probes"
         assert got.scope in {"market", "living"}
+
+
+def test_now_context_cross_board_never_names_probes() -> None:
+    from datetime import datetime, timedelta
+
+    from tests.unit._runners import FakeResources
+
+    resources = FakeResources()
+    resources.board_lookup = {"market": "1", "probes": "99", "living": "2"}
+    resources.board_feeds["living"] = [_item("p-live", "a plant on the sill")]
+    resources.board_feeds["probes"] = [_item("p-probe", "PROBE_CANARY_A")]
+    for day in range(1, 40):
+        now = datetime(2026, 1, 1) + timedelta(days=day - 1)
+        text = _cross_board(resources, "market", now=now)
+        assert "probes" not in text.lower()
+        assert "PROBE_CANARY_A" not in text
 
 
 def test_cycle_cli_never_grows_probe_board() -> None:

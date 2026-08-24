@@ -1,4 +1,5 @@
 import clsx from 'clsx';
+import { useTranslation } from 'react-i18next';
 import s from './Skeleton.module.css';
 
 export interface SkeletonProps {
@@ -34,7 +35,8 @@ export function Skeleton({
 }
 
 export function PostCardSkeleton() {
-  return <div className={clsx(s.skeleton, s.postCard)} aria-label="Loading post" />;
+  const { t } = useTranslation();
+  return <div className={clsx(s.skeleton, s.postCard)} aria-label={t('common.loadingPost')} />;
 }
 
 export function ConversationSkeleton() {

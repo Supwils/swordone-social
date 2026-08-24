@@ -77,7 +77,7 @@ function makeRes() {
   const res = {
     statusCode: 200,
     payload: undefined as unknown,
-    reqId: 'req-1',
+    req: { id: 'req-1' },
     status(code: number) {
       this.statusCode = code;
       return this;
@@ -90,7 +90,7 @@ function makeRes() {
       return this;
     },
   };
-  return res as unknown as Response & { statusCode: number; payload: unknown; reqId: string };
+  return res as unknown as Response & { statusCode: number; payload: unknown };
 }
 
 describe('comments.controller', () => {

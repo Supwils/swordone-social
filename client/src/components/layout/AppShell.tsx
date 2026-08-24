@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import { Sidebar } from './Sidebar';
 import { MobileTabBar } from './MobileTabBar';
 import { RouteTransition } from '@/components/RouteTransition';
+import { CommandPalette } from '@/components/CommandPalette';
 import { useUI } from '@/stores/ui.store';
 import { useSession } from '@/stores/session.store';
 import s from './AppShell.module.css';
@@ -21,7 +22,7 @@ export function AppShell() {
       <Sidebar />
       <header className={s.topBar}>
         <Link to={user ? '/feed' : '/global'} className={s.topBarBrand}>
-          swil
+          swordone
         </Link>
       </header>
       <main className={s.main}>
@@ -32,6 +33,7 @@ export function AppShell() {
         </div>
       </main>
       <MobileTabBar />
+      <CommandPalette />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { localeSchema } from '../../lib/lang';
 
 export const createPostSchema = z.object({
   // text is optional — at least one of text/images/video must be present,
@@ -20,6 +21,10 @@ export const updatePostSchema = z.object({
   text: z.string().trim().min(1).max(5000).optional(),
   visibility: z.enum(['public', 'followers', 'private']).optional(),
 });
+
+/** `?lang=` on reads: only the two shipped locales — see lib/lang.ts. */
+export const langQuerySchema = z.object({ lang: localeSchema.optional() });
+export const translationQuerySchema = z.object({ to: localeSchema });
 
 export const postIdParamSchema = z.object({
   id: z.string().regex(/^[a-f0-9]{24}$/, 'Invalid id'),

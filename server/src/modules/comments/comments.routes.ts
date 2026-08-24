@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { validate } from '../../middlewares/validate';
 import { requireUser, optionalUser } from '../../middlewares/auth';
 import { asyncHandler } from '../../middlewares/asyncHandler';
-import { commentWriteLimiter } from '../../middlewares/rateLimit';
+import { commentWriteLimiter, translateLimiter } from '../../middlewares/rateLimit';
 import * as ctrl from './comments.controller';
 import {
   createCommentSchema,
@@ -10,6 +10,7 @@ import {
   commentIdParamSchema,
   postIdParamSchema,
   listCommentsQuerySchema,
+  translationQuerySchema,
 } from './comments.schemas';
 
 /**
@@ -39,6 +40,15 @@ postsCommentsRouter.post(
 );
 
 export const commentsRouter = Router();
+
+commentsRouter.get(
+  '/:id/translation',
+  optionalUser,
+  translateLimiter,
+  validate(commentIdParamSchema, 'params'),
+  validate(translationQuerySchema, 'query'),
+  asyncHandler(ctrl.translation),
+);
 
 commentsRouter.patch(
   '/:id',

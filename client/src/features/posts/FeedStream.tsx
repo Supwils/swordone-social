@@ -1,6 +1,7 @@
 import type { PostDTO } from '@/api/types';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import { PostCardSkeleton } from '@/components/primitives';
+import { ImmersiveWall } from './ImmersiveWall';
 import { PostCard } from './PostCard';
 import { VirtualPostList } from './VirtualPostList';
 import { useUI } from '@/stores/ui.store';
@@ -13,11 +14,14 @@ interface StreamProps {
   onLoadMore: () => void;
 }
 
-/** Loading placeholders that match the current list/folio layout. */
+/** Loading placeholders that match the current list/folio/immersive layout. */
 export function FeedSkeletons({ count = 4 }: { count?: number }) {
-  const isGrid = useUI((st) => st.feedLayout) === 'grid';
+  const layout = useUI((st) => st.feedLayout);
   return (
-    <div className={isGrid ? s.postGrid : s.postList} data-testid="feed-skeletons">
+    <div
+      className={layout === 'list' ? s.postList : s.postGrid}
+      data-testid="feed-skeletons"
+    >
       {Array.from({ length: count }, (_, i) => (
         <PostCardSkeleton key={i} />
       ))}
@@ -27,12 +31,24 @@ export function FeedSkeletons({ count = 4 }: { count?: number }) {
 
 /**
  * Shared post river. Folio (grid) puts two compact cards on screen at once;
- * list keeps the single reading column, virtualized.
+ * list keeps the single reading column, virtualized; immersive scatters the
+ * page into a wall and reads one post at a time.
  */
 export function FeedStream({ items, hasNextPage, isFetchingNextPage, onLoadMore }: StreamProps) {
-  const isGrid = useUI((st) => st.feedLayout) === 'grid';
+  const layout = useUI((st) => st.feedLayout);
 
-  if (isGrid) {
+  if (layout === 'immersive') {
+    return (
+      <ImmersiveWall
+        items={items}
+        hasNextPage={Boolean(hasNextPage)}
+        isFetchingNextPage={isFetchingNextPage}
+        onLoadMore={onLoadMore}
+      />
+    );
+  }
+
+  if (layout === 'grid') {
     return (
       <>
         <div className={s.postGrid} data-testid="feed-grid">

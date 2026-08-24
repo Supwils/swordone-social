@@ -9,12 +9,17 @@ import { decodeCursor, decodeScoreCursor, parseLimit } from '../../lib/paginatio
 import type { FeedSort } from './feed.service';
 import { toPostDTO, type PostDTOContext, type PostRow } from '../../lib/dto';
 import { translatePosts } from '../../lib/translate';
+import { autoTranslateOn, resolveLang } from '../../lib/lang';
 import * as feed from './feed.service';
 
 const pagingQuery = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
-  lang: z.string().max(8).optional(),
+  // Only the languages the app ships locales for. `needsTranslation` treats
+  // anything else as translatable, so a loose string let an anonymous caller
+  // drive a paid Translate call per uncached post AND persist the result as a
+  // new key in every row's `translations` jsonb.
+  lang: z.enum(['en', 'zh']).optional(),
   sort: z.enum(['recommended', 'latest']).optional(),
 });
 
@@ -55,8 +60,9 @@ feedRouter.get(
       sort === 'latest' ? decodeCursor(req.query.cursor) : decodeScoreCursor(req.query.cursor);
     const limit = parseLimit(req.query.limit, 20);
     const page = await feed.global(req.user ?? null, cursor, limit, sort);
-    const lang = req.user?.preferences?.language ?? (req.query.lang as string | undefined) ?? 'en';
-    await translatePosts(page.items, page.ctxById, lang);
+    await translatePosts(page.items, page.ctxById, resolveLang(req), {
+      content: autoTranslateOn(req),
+    });
     return ok(res, { items: pageToDtos(page.items, page.ctxById), nextCursor: page.nextCursor });
   }),
 );
@@ -67,11 +73,15 @@ feedRouter.get(
   validate(z.object({ slug: z.string().min(1).max(64) }), 'params'),
   validate(pagingQuery, 'query'),
   asyncHandler(async (req: Request, res: Response) => {
-    const cursor = decodeScoreCursor(req.query.cursor);
+    // Mirrors `/board/:slug` below: the cursor DECODER has to follow the sort.
+    const sort: FeedSort = req.query.sort === 'latest' ? 'latest' : 'recommended';
+    const cursor =
+      sort === 'latest' ? decodeCursor(req.query.cursor) : decodeScoreCursor(req.query.cursor);
     const limit = parseLimit(req.query.limit, 20);
-    const page = await feed.byTag(req.params.slug, req.user ?? null, cursor, limit);
-    const lang = req.user?.preferences?.language ?? (req.query.lang as string | undefined) ?? 'en';
-    await translatePosts(page.items, page.ctxById, lang);
+    const page = await feed.byTag(req.params.slug, req.user ?? null, cursor, limit, sort);
+    await translatePosts(page.items, page.ctxById, resolveLang(req), {
+      content: autoTranslateOn(req),
+    });
     return ok(res, { items: pageToDtos(page.items, page.ctxById), nextCursor: page.nextCursor });
   }),
 );
@@ -89,8 +99,9 @@ feedRouter.get(
       sort === 'latest' ? decodeCursor(req.query.cursor) : decodeScoreCursor(req.query.cursor);
     const limit = parseLimit(req.query.limit, 20);
     const page = await feed.byBoard(req.params.slug, req.user ?? null, cursor, limit, sort);
-    const lang = req.user?.preferences?.language ?? (req.query.lang as string | undefined) ?? 'en';
-    await translatePosts(page.items, page.ctxById, lang);
+    await translatePosts(page.items, page.ctxById, resolveLang(req), {
+      content: autoTranslateOn(req),
+    });
     return ok(res, { items: pageToDtos(page.items, page.ctxById), nextCursor: page.nextCursor });
   }),
 );
@@ -127,8 +138,9 @@ userPostsRouter.get(
     const cursor = decodeCursor(req.query.cursor);
     const limit = parseLimit(req.query.limit, 20);
     const page = await feed.byAuthor(req.params.username, req.user ?? null, cursor, limit);
-    const lang = req.user?.preferences?.language ?? (req.query.lang as string | undefined) ?? 'en';
-    await translatePosts(page.items, page.ctxById, lang);
+    await translatePosts(page.items, page.ctxById, resolveLang(req), {
+      content: autoTranslateOn(req),
+    });
     return ok(res, { items: pageToDtos(page.items, page.ctxById), nextCursor: page.nextCursor });
   }),
 );

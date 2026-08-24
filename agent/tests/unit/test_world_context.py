@@ -1336,6 +1336,21 @@ def test_news_digest_falls_back_to_the_placeholder_for_a_blank_cache(
     assert read_news_digest(tmp_path, RecordingRunner()) == WORLD_CONTEXT_UNAVAILABLE
 
 
+def test_news_digest_falls_back_to_the_placeholder_for_undecodable_bytes(
+    tmp_path: Path,
+) -> None:
+    """`UnicodeDecodeError` is a `ValueError`, so `except OSError` does not
+    catch it -- the trap `locks.py:69-73` documents by name. The news cache is
+    SHARED state written by `news-fetch.sh`, so one truncated multi-byte write
+    escaped this function and cost every account in the round its cycle, while
+    every sibling degradation here (missing script, failed subprocess, missing
+    file, blank file) fails open."""
+    (tmp_path / "context").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "context" / NEWS_CACHE_FILENAME).write_bytes(b"\xe4\xbb\x8a\xe6\x97")
+
+    assert read_news_digest(tmp_path, RecordingRunner()) == WORLD_CONTEXT_UNAVAILABLE
+
+
 def test_a_news_failure_leaves_the_whole_now_context_intact(tmp_path: Path) -> None:
     """The round-level statement of (e): every other channel still renders."""
     world = FakeWorld()

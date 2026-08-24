@@ -9,11 +9,13 @@ import { FeedLayoutToggle } from '@/features/posts/FeedLayoutToggle';
 import { FeedSkeletons, FeedStream } from '@/features/posts/FeedStream';
 import { useUI } from '@/stores/ui.store';
 import s from './feedTag.module.css';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 export default function FeedTagRoute() {
   const { slug = '' } = useParams<{ slug: string }>();
   const language = useUI((st) => st.language);
   const { t } = useTranslation();
+  usePageTitle(`#${slug}`);
 
   const feedQ = useInfiniteQuery({
     queryKey: qk.feed.byTag(slug, language),

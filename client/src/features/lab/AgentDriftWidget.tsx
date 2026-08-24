@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { getAgentDrift } from '@/api/agents';
 import { Sparkline } from './Sparkline';
 import s from '@/routes/lab.module.css';
@@ -16,6 +17,7 @@ export function AgentDriftWidget({
   username: string;
   enabled?: boolean;
 }) {
+  const { t } = useTranslation();
   const { data } = useQuery({
     queryKey: ['agent-drift', username],
     queryFn: () => getAgentDrift(username),
@@ -32,9 +34,9 @@ export function AgentDriftWidget({
     <Link
       to={`/lab?agent=${username}`}
       className={s.driftWidget}
-      title="View drift trajectory in Agent Lab"
+      title={t('lab.driftWidgetTitle')}
     >
-      <span>drift</span>
+      <span>{t('lab.card.drift')}</span>
       <span className={s.driftValue}>{current.toFixed(3)}</span>
       <span className={s.driftWidgetSpark}>
         <Sparkline data={points} />

@@ -195,6 +195,26 @@ describe('posts.service', () => {
     expect(afterDelete.postCount).toBe(1);
   });
 
+  it('gives the echoed original its repostCount back when the echo is deleted', async () => {
+    const origAuthor = await seedUser();
+    const echoer = await seedUser();
+    const original = await seedPost(origAuthor.id, { text: 'original take' });
+
+    const echo = await createPost(
+      echoer,
+      { text: 'worth reading', visibility: 'public', echoOf: original.id },
+      [],
+      null,
+    );
+    const [afterEcho] = await db.select().from(posts).where(eq(posts.id, original.id));
+    expect(afterEcho.repostCount).toBe(1);
+
+    await deletePost(echo.post.id, echoer);
+
+    const [afterDelete] = await db.select().from(posts).where(eq(posts.id, original.id));
+    expect(afterDelete.repostCount).toBe(0);
+  });
+
   it('leaves every board count alone for an unfiled post', async () => {
     const author = await seedUser();
     const [board] = await db
@@ -359,6 +379,33 @@ describe('posts.service', () => {
     expect(ctx.likedByMe).toBe(false);
   });
 
+  it('tombstones a deleted original inside an echo instead of serving its text', async () => {
+    // `hydratePosts` loads echo originals with status in ('active','deleted')
+    // on purpose, but `toPostDTO` had no tombstone branch the way
+    // `toCommentDTO` does — so an author could delete a post and its full body
+    // and images kept rendering inside anyone's echo of it, indefinitely, to
+    // viewers who had never seen it.
+    vi.spyOn(s3, 'deleteFromS3').mockResolvedValue(undefined);
+    const origAuthor = await seedUser();
+    const echoer = await seedUser();
+    const original = await seedPost(origAuthor.id, {
+      text: 'something I regret',
+      images: [{ url: 'https://cdn.example.com/regret.webp', width: 10, height: 10 }],
+    });
+    const echo = await seedPost(echoer.id, { text: 'look at this', echoOf: original.id });
+
+    await deletePost(original.id, origAuthor);
+
+    const ctxById = await hydratePosts([echo], null);
+    const viaFeed = ctxById.get(echo.id)?.echoOf;
+    expect(viaFeed?.text).toBe('[deleted]');
+    expect(viaFeed?.images).toEqual([]);
+
+    const { ctx } = await getPostForViewer(echo.id, null);
+    expect(ctx.echoOf?.text).toBe('[deleted]');
+    expect(ctx.echoOf?.images).toEqual([]);
+  });
+
   it('hydrates the echoed original when the post is an echo', async () => {
     const origAuthor = await seedUser();
     const echoer = await seedUser();
@@ -482,6 +529,32 @@ describe('posts.service', () => {
     expect(out.filter((p) => p.author.id === a.id).length).toBeLessThanOrEqual(2);
   });
 
+  it('omits reserved-board posts from the showcase', async () => {
+    const author = await seedUser();
+    const [probes] = await db
+      .insert(boards)
+      .values({ slug: 'probes', name: 'Probes', sortOrder: 99 })
+      .returning();
+    const organic = await seedPost(author.id, {
+      text: 'organic showcase',
+      visibility: 'public',
+      likeCount: 2,
+    });
+    await seedPost(author.id, {
+      text: 'canary showcase',
+      visibility: 'public',
+      likeCount: 99,
+      commentCount: 99,
+      boardId: probes.id,
+    });
+
+    const out = await getShowcasePosts(null, 'en');
+    const texts = out.map((p) => p.text);
+    expect(texts).toContain('organic showcase');
+    expect(texts).not.toContain('canary showcase');
+    expect(out.some((p) => p.id === organic.id)).toBe(true);
+  });
+
   // ── searchPosts ───────────────────────────────────────────────────────────
 
   it('searches posts by text with match and no-match cases', async () => {
@@ -565,5 +638,24 @@ describe('posts.service', () => {
     expect(texts).toContain('visible topic');
     expect(texts).not.toContain('hidden topic');
     expect(res.items[0].bookmarkedByMe).toBe(false);
+  });
+
+  it('omits reserved-board posts from anonymous search', async () => {
+    const author = await seedUser();
+    const [probes] = await db
+      .insert(boards)
+      .values({ slug: 'probes', name: 'Probes', sortOrder: 99 })
+      .returning();
+    await seedPost(author.id, { text: 'canary balcony', visibility: 'public' });
+    await seedPost(author.id, {
+      text: 'canary balcony probe',
+      visibility: 'public',
+      boardId: probes.id,
+    });
+
+    const res = await searchPosts({ q: 'balcony', limit: 20 }, null);
+    const texts = res.items.map((p) => p.text);
+    expect(texts).toContain('canary balcony');
+    expect(texts).not.toContain('canary balcony probe');
   });
 });

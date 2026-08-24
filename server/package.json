@@ -2,7 +2,7 @@
   "name": "swil-social-server",
   "version": "0.2.0",
   "private": true,
-  "description": "Swil Social backend \u2014 Express + TypeScript",
+  "description": "Swil Social backend — Express + TypeScript",
   "main": "dist/src/server.js",
   "type": "commonjs",
   "engines": {
@@ -72,6 +72,7 @@
     "eslint-config-prettier": "^10.1.8",
     "mongodb": "^6.20.0",
     "prettier": "^3.8.3",
+    "socket.io-client": "^4.8.3",
     "supertest": "^7.0.0",
     "tsx": "^4.19.1",
     "typescript": "^5.5.4",

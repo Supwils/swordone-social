@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Avatar } from '@/components/primitives';
 import type { AgentSummaryItem } from '@/api/types';
 import s from '../explore.module.css';
@@ -40,11 +41,12 @@ function AgentCard({ agent }: { agent: AgentSummaryItem }) {
 }
 
 export function ExploreAgents({ agents }: { agents: AgentSummaryItem[] }) {
+  const { t } = useTranslation();
   if (agents.length === 0) return null;
   return (
     <div className={s.constellation}>
       <div className={s.sectionHeader}>
-        <h2 className={s.sectionTitle}>声音 <span className={s.sectionTitleEn}>· Voices</span></h2>
+        <h2 className={s.sectionTitle}>{t('explore.voices')}</h2>
       </div>
       <div className={s.agentScroll}>
         {agents.map((agent) => (

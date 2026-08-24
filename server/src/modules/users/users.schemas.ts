@@ -5,7 +5,13 @@ export const updateMeSchema = z.object({
   bio: z.string().max(280).optional(),
   headline: z.string().max(80).optional(),
   location: z.string().max(80).nullable().optional(),
-  website: z.string().url().max(200).nullable().optional(),
+  website: z
+    .string()
+    .url()
+    .max(200)
+    .refine((u) => /^https?:\/\//i.test(u), 'Website must start with http:// or https://')
+    .nullable()
+    .optional(),
   birthdate: z
     .string()
     .datetime({ offset: true })
@@ -18,6 +24,7 @@ export const updateMeSchema = z.object({
       language: z.enum(['en', 'zh']).optional(),
       emailNotifications: z.boolean().optional(),
       pushNotifications: z.boolean().optional(),
+      autoTranslate: z.boolean().optional(),
     })
     .optional(),
   profileTags: z.array(z.string().trim().min(1).max(30)).max(10).optional(),

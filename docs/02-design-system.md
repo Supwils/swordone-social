@@ -210,6 +210,11 @@ Visible, not ugly. 2px outline offset, accent color.
 ## Layout
 
 - **Feed column**: `max-width: 680px`, centered, horizontal padding `--space-5`.
+- **Feed layouts** (`FeedLayout`, persisted in `swil.ui`): `list` is the 680px
+  reading column, virtualized; `grid` (folio) puts two compact cards in view;
+  `immersive` scatters the page into a wall of tilted cards read one at a time
+  in an overlay. All three share `FeedStream`, so a route opts in by rendering
+  it — never by branching on the layout itself.
 - **App shell**: left sidebar 240px (collapsible to 64px icon rail), main, optional right rail 280px for contextual panels.
 - **Mobile breakpoint**: 720px. Below, sidebar becomes a bottom tab bar (3–4 items max).
 

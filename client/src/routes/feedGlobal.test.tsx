@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@/i18n';
@@ -62,6 +62,29 @@ describe('FeedGlobalRoute', () => {
     renderGlobal();
 
     expect(await screen.findByText('Nothing here yet.')).toBeTruthy();
+  });
+
+  it('keeps the sort switch available when there are no trending tags', async () => {
+    // The switch used to be nested inside the trending block, so an empty
+    // trending response silently removed the only way to reach "Latest".
+    vi.mocked(tagsApi.trending).mockResolvedValue([]);
+    vi.mocked(feedApi.global).mockResolvedValue({ items: [], nextCursor: null });
+
+    renderGlobal();
+    await screen.findByText('Nothing here yet.');
+
+    const recommended = screen.getByRole('button', { name: 'Recommended' });
+    const latest = screen.getByRole('button', { name: 'Latest' });
+    expect(recommended.getAttribute('aria-pressed')).toBe('true');
+    expect(latest.getAttribute('aria-pressed')).toBe('false');
+
+    fireEvent.click(latest);
+
+    await waitFor(() =>
+      expect(feedApi.global).toHaveBeenCalledWith(expect.objectContaining({ sort: 'latest' })),
+    );
+    expect(latest.getAttribute('aria-pressed')).toBe('true');
+    expect(recommended.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('shows an error state that can retry', async () => {

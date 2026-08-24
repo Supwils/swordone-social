@@ -74,7 +74,7 @@ export function PostCardActions({
         onClick={onLike}
         disabled={likePending}
         aria-pressed={post.likedByMe}
-        aria-label={post.likedByMe ? 'Unlike' : 'Like'}
+        aria-label={post.likedByMe ? t('post.unlike') : t('post.like')}
       >
         <Heart size={16} weight={post.likedByMe ? 'fill' : 'regular'} aria-hidden />
         <AnimatedCounter value={post.likeCount} />
@@ -84,7 +84,7 @@ export function PostCardActions({
         className={clsx(s.actionBtn, commentsOpen && s.activeBtn, justOpened && s.justOpened)}
         onClick={onToggleComments}
         aria-expanded={commentsOpen}
-        aria-label="Toggle comments"
+        aria-label={t('post.toggleComments')}
       >
         <ChatCircle size={16} weight={commentsOpen ? 'fill' : 'regular'} aria-hidden />
         <AnimatedCounter value={post.commentCount} />

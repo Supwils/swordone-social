@@ -29,6 +29,7 @@ import {
   UITag,
 } from '@/components/primitives';
 import { useSession } from '@/stores/session.store';
+import { useUI } from '@/stores/ui.store';
 import { formatRelative, formatAbsolute } from '@/lib/formatDate';
 import { MarkdownBody } from './MarkdownBody';
 import { InlineComments } from './InlineComments';
@@ -61,9 +62,16 @@ function EchoFrame({ post }: { post: PostDTO }) {
 export const PostCard = memo(function PostCard({
   post,
   compact = false,
+  disableNavigate = false,
 }: {
   post: PostDTO;
   compact?: boolean;
+  /**
+   * The card is already the focused subject (immersive reader), so a body
+   * click must not route away and drop the surface it is being read in.
+   * On /p/:id the same effect falls out of the pathname check below.
+   */
+  disableNavigate?: boolean;
 }) {
   const { t } = useTranslation();
   const nav = useNavigate();
@@ -78,6 +86,9 @@ export const PostCard = memo(function PostCard({
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
+  // X-style on-demand translation, kept per card; the auto path arrives as post.originalText.
+  const [manual, setManual] = useState<{ text: string; from: 'en' | 'zh' } | null>(null);
+  const language = useUI((st) => st.language);
   const [draftText, setDraftText] = useState(post.text);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
@@ -96,11 +107,18 @@ export const PostCard = memo(function PostCard({
       };
     };
     qc.setQueriesData({ queryKey: ['feed'] }, applyToInfinite);
+    // Every other infinite list this card is rendered from. /bookmarks and
+    // Explore search were missing, and since PostCard is memo'd on `post`,
+    // an unpatched cache means the action simply never renders there.
+    qc.setQueriesData({ queryKey: qk.bookmarks.list }, applyToInfinite);
+    qc.setQueriesData({ queryKey: ['posts', 'search'] }, applyToInfinite);
     qc.setQueryData<{ pages: Paginated<PostDTO>[]; pageParams: unknown[] }>(
       ['users', post.author.username, 'posts'],
       applyToInfinite,
     );
-    qc.setQueryData<PostDTO>(['posts', post.id], (old) => (old ? { ...old, ...patch } : old));
+    qc.setQueriesData<PostDTO>({ queryKey: ['posts', post.id, 'detail'] }, (old) =>
+      old ? { ...old, ...patch } : old,
+    );
   };
 
   const bookmark = useMutation({
@@ -162,7 +180,10 @@ export const PostCard = memo(function PostCard({
         ['users', post.author.username, 'posts'],
         applyToInfinite,
       );
-      qc.setQueryData(['posts', post.id], updated);
+      qc.setQueryData(qk.posts.byId(post.id, language), updated);
+      // The edit cleared this post's server-side translation cache, so every
+      // other language's copy is now the old body translated.
+      qc.invalidateQueries({ queryKey: ['posts', post.id, 'detail'] });
       setEditing(false);
       toast.success(t('post.updated'));
     },
@@ -202,8 +223,25 @@ export const PostCard = memo(function PostCard({
     editMutation.mutate();
   };
 
+  const translateMutation = useMutation({
+    mutationFn: () => postsApi.translate(post.id, language),
+    onSuccess: (out) => {
+      if (out.translated) {
+        setManual({ text: out.text, from: out.from });
+        setShowOriginal(false);
+      }
+    },
+    onError: () => toast.error(t('common.translateFailed')),
+  });
+
+  // Either path yields the same pair: what is shown, and what it was translated from.
+  const originalText = post.originalText ?? (manual ? post.text : undefined);
+  const originalLang = post.originalLang ?? manual?.from;
+  const translatedText = post.originalText ? post.text : manual?.text;
+  const canTranslate =
+    !originalText && Boolean(post.lang) && post.lang !== language && post.text.trim().length > 0;
   // When a translation is active and user wants the original, show it directly
-  const activeText = showOriginal && post.originalText ? post.originalText : post.text;
+  const activeText = showOriginal && originalText ? originalText : (translatedText ?? post.text);
   // Same string twice: the hook's fallback is for "too short to be a
   // fragment artifact", not "the other language". Passing post.text as
   // fallback made "show original" keep the translation on short posts.
@@ -306,12 +344,12 @@ export const PostCard = memo(function PostCard({
               {t('post.collapse')}
             </button>
           )}
-          {post.originalText && (
+          {originalText ? (
             <div className={s.translatedBar}>
               <span className={s.translatedLabel}>
-                {post.originalLang
+                {originalLang
                   ? t('common.translatedFrom', {
-                      lang: t(`common.lang${post.originalLang === 'zh' ? 'Zh' : 'En'}`),
+                      lang: t(`common.lang${originalLang === 'zh' ? 'Zh' : 'En'}`),
                     })
                   : t('common.translated')}
               </span>
@@ -322,13 +360,26 @@ export const PostCard = memo(function PostCard({
               >
                 {showOriginal
                   ? t('common.showTranslation')
-                  : post.originalLang
+                  : originalLang
                     ? t('common.showOriginalLang', {
-                        lang: t(`common.lang${post.originalLang === 'zh' ? 'Zh' : 'En'}`),
+                        lang: t(`common.lang${originalLang === 'zh' ? 'Zh' : 'En'}`),
                       })
                     : t('common.showOriginal')}
               </button>
             </div>
+          ) : (
+            canTranslate && (
+              <div className={s.translatedBar}>
+                <button
+                  type="button"
+                  className={s.translatedToggle}
+                  disabled={translateMutation.isPending}
+                  onClick={() => translateMutation.mutate()}
+                >
+                  {translateMutation.isPending ? t('common.translating') : t('common.translate')}
+                </button>
+              </div>
+            )
           )}
         </>
       )}
@@ -380,13 +431,13 @@ export const PostCard = memo(function PostCard({
   );
 
   const goToPost = () => {
-    if (editing) return;
+    if (editing || disableNavigate) return;
     if (loc.pathname === `/p/${post.id}`) return;
     void nav(`/p/${post.id}`);
   };
 
   const openPost = (e: MouseEvent<HTMLElement>) => {
-    if (editing) return;
+    if (editing || disableNavigate) return;
     if (loc.pathname === `/p/${post.id}`) return;
     const target = e.target;
     if (
@@ -417,8 +468,8 @@ export const PostCard = memo(function PostCard({
       className={clsx(s.card, compact && s.cardCompact)}
       onClick={openPost}
       onKeyDown={onCardKeyDown}
-      tabIndex={0}
-      role="link"
+      tabIndex={disableNavigate ? undefined : 0}
+      role={disableNavigate ? undefined : 'link'}
     >
       {compact ? (
         // GRID MODE: avatar + header row, then full-width content below

@@ -53,6 +53,23 @@ export const passwordChangeLimiter = rateLimit({
   handler: () => onLimit(),
 });
 
+/**
+ * Minting an API key is a credential-issuing write, so it gets the same
+ * per-user hourly bucket as changing a password rather than the social-action
+ * one: the key that comes out survives logout AND a password change, so an
+ * unmetered mint is the one write here where a borrowed session outlives the
+ * session itself. Declared separately from `passwordChangeLimiter` only so
+ * the two buckets can move independently.
+ */
+export const apiKeyLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? ''),
+  handler: () => onLimit(),
+});
+
 // Per-user write limits — keyed by user id, active in both dev and prod.
 // Agents get tighter buckets to prevent runaway loops.
 function perUserLimit(humanLimit: number, agentLimit: number) {
@@ -78,6 +95,18 @@ export const labReadLimiter = perUserLimit(180, 180);
 export const searchLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: () => isDev,
+  keyGenerator: (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? ''),
+  handler: () => onLimit(),
+});
+
+// On-demand translation hits a paid upstream; cached bodies are cheap but a
+// scripted reader walking the feed must not be able to fan out fresh calls.
+export const translateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   skip: () => isDev,

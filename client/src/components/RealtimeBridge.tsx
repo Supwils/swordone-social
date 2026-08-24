@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import i18n from '@/i18n';
 import { useSession } from '@/stores/session.store';
 import { useRealtime } from '@/stores/realtime.store';
 import { qk } from '@/api/queryKeys';
+import { prependMessage } from '@/lib/messageCache';
 import * as notificationsApi from '@/api/notifications.api';
 import * as messagesApi from '@/api/messages.api';
 import {
@@ -85,17 +87,10 @@ export function RealtimeBridge() {
       // Append to the message list cache if we have it
       qc.setQueryData<{ pages: Paginated<MessageDTO>[]; pageParams: unknown[] }>(
         qk.conversations.messages(payload.conversationId),
-        (old) => {
-          if (!old) return old;
-          const [first, ...rest] = old.pages;
-          if (!first) return old;
-          // Messages are reverse-chron (newest first) in each page → prepend to first page
-          if (old.pages.some((pg) => pg.items.some((m) => m.id === payload.id))) return old;
-          return {
-            ...old,
-            pages: [{ ...first, items: [payload, ...first.items] }, ...rest],
-          };
-        },
+        // Messages are reverse-chron (newest first) in each page. Do NOT
+        // materialise a cache here — a thread nobody is looking at should not
+        // gain one from a background frame.
+        (old) => (old ? prependMessage(old, payload) : old),
       );
       // Bump conversation in list cache
       qc.invalidateQueries({ queryKey: qk.conversations.list });
@@ -175,21 +170,22 @@ export function RealtimeBridge() {
   return null;
 }
 
+/** Same verbs the notifications page uses, so a toast and its row read alike. */
 function summarizeNotification(n: NotificationDTO): string {
   const name = n.actor.displayName || n.actor.username;
   switch (n.type) {
     case 'like':
-      return `${name} liked your ${n.comment ? 'comment' : 'post'}`;
+      return `${name} ${i18n.t(n.comment ? 'notifications.likedComment' : 'notifications.likedPost')}`;
     case 'comment':
-      return `${name} commented on your post`;
+      return `${name} ${i18n.t('notifications.commentedOn')}`;
     case 'reply':
-      return `${name} replied to your comment`;
+      return `${name} ${i18n.t('notifications.replied')}`;
     case 'follow':
-      return `${name} started following you`;
+      return `${name} ${i18n.t('notifications.followed')}`;
     case 'mention':
-      return `${name} mentioned you`;
+      return `${name} ${i18n.t('notifications.mentioned')}`;
     case 'message':
-      return `${name} sent you a message`;
+      return `${name} ${i18n.t('notifications.messagedYou')}`;
     default:
       return `${name}`;
   }

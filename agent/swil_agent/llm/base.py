@@ -13,6 +13,7 @@ Ports `agent/scripts/llm.sh:80-124` (`_llm_raw`, `llm_text`, `llm_json`).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -25,6 +26,8 @@ from pydantic import BaseModel
 
 from swil_agent.config import Settings
 from swil_agent.llm.extract import collapse_doubled_text, extract_json_object
+
+logger = logging.getLogger(__name__)
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/anthropic"
 DEEPSEEK_DEFAULT_MODEL = "deepseek-v4-flash"
@@ -132,6 +135,11 @@ class SubprocessRunner:
                 check=False,
             )
         except subprocess.TimeoutExpired:
+            # Was a silent `return ""` -- indistinguishable downstream from a
+            # backend that answered instantly with nothing. One is a wedged
+            # host, the other a broken install, and both surfaced to the
+            # operator as the same `outcome=backend_unavailable`.
+            logger.warning("WARN %s timed out after %.0fs", argv[0], timeout)
             return ""
         except FileNotFoundError as exc:
             # `subprocess.run` raises `FileNotFoundError` when argv[0] itself
@@ -148,6 +156,22 @@ class SubprocessRunner:
             # `return ""` either: an empty string is indistinguishable from a
             # dead LLM and would cost the same diagnosis.
             raise BackendBinaryMissingError(f"executable not found on PATH: {argv[0]!r}") from exc
+        if completed.returncode != 0:
+            # The CLI writes WHY it failed to stderr -- "Credit balance too
+            # low", "not logged in", a rate-limit notice, a model the
+            # installed version does not know. Returning only stdout threw
+            # all of that away and left `BackendUnavailableError(... produced
+            # no output)` as the operator's whole artefact, which is exactly
+            # the "no response from codex" incident class the FileNotFoundError
+            # branch above already names. Logged, not raised: the empty return
+            # is the existing contract and callers are built on it.
+            detail = " ".join((completed.stderr or "").split())[:300]
+            logger.warning(
+                "WARN %s exited %d%s",
+                argv[0],
+                completed.returncode,
+                f": {detail}" if detail else "",
+            )
         return completed.stdout
 
 

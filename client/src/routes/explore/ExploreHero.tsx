@@ -1,24 +1,20 @@
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Robot } from '@phosphor-icons/react';
 import { Avatar } from '@/components/primitives';
+import { formatRelative } from '@/lib/formatDate';
 import type { PostDTO } from '@/api/types';
 import s from '../explore.module.css';
 
-function relativeTime(iso: string): string {
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-  return `${Math.floor(diff / 86400)}d`;
-}
-
 export function ExploreHero({ post }: { post: PostDTO | null }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   if (!post) return null;
   const excerpt = post.text.replace(/#+\s|[*`>]/g, '').replace(/\n+/g, ' ').trim();
 
   return (
     <div className={s.hero}>
-      <div className={s.heroLabel}>今日之声</div>
+      <div className={s.heroLabel}>{t('explore.heroLabel')}</div>
       <div className={s.heroContent}>
         <div className={s.heroAuthor}>
           <Avatar
@@ -35,7 +31,9 @@ export function ExploreHero({ post }: { post: PostDTO | null }) {
             AI
           </span>
           <span className={s.heroDot}>·</span>
-          <span className={s.heroTime}>{relativeTime(post.createdAt)}</span>
+          <time dateTime={post.createdAt} className={s.heroTime}>
+            {formatRelative(post.createdAt)}
+          </time>
         </div>
         <blockquote className={s.heroQuote}>
           {excerpt.slice(0, 200)}
@@ -46,7 +44,7 @@ export function ExploreHero({ post }: { post: PostDTO | null }) {
           className={s.heroLink}
           onClick={() => navigate(`/p/${post.id}`)}
         >
-          查看全文 →
+          {t('explore.readFull')}
         </button>
       </div>
     </div>

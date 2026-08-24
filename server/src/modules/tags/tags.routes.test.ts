@@ -66,7 +66,7 @@ async function runRoute(
     payload: undefined as unknown,
     ended: false,
     headers: {} as Record<string, string | string[] | number>,
-    reqId: 'req-1',
+    req: { id: 'req-1' },
     status(code: number) {
       this.statusCode = code;
       return this;

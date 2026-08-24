@@ -77,7 +77,7 @@ export function FollowListModal({ username, type, open, onClose }: Props) {
           spellCheck={false}
         />
         {search && (
-          <button className={s.searchClear} type="button" onClick={() => setSearch('')} aria-label="Clear">
+          <button className={s.searchClear} type="button" onClick={() => setSearch('')} aria-label={t('common.clear')}>
             ×
           </button>
         )}

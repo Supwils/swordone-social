@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import clsx from 'clsx';
+import { useTranslation } from 'react-i18next';
 import type { PostDTO } from '@/api/types';
 import s from './PostCard.module.css';
 
@@ -42,6 +43,7 @@ function PostImage({ image }: { image: PostImageT }) {
 }
 
 export function PostCardImages({ images, compact, expanded, onOpen }: Props) {
+  const { t } = useTranslation();
   if (images.length === 0) return null;
 
   const galleryClass = (s as Record<string, string>)[`images${images.length}`] ?? s.images1;
@@ -54,7 +56,7 @@ export function PostCardImages({ images, compact, expanded, onOpen }: Props) {
           type="button"
           className={s.imgWrap}
           onClick={() => onOpen(0)}
-          aria-label={`View image 1 of ${images.length}`}
+          aria-label={t('post.viewImage', { index: 1, total: images.length })}
         >
           <PostImage image={cover} />
         </button>
@@ -81,7 +83,7 @@ export function PostCardImages({ images, compact, expanded, onOpen }: Props) {
             className={s.imgWrap}
             style={reserveRatio}
             onClick={() => onOpen(idx)}
-            aria-label={`View image ${idx + 1} of ${images.length}`}
+            aria-label={t('post.viewImage', { index: idx + 1, total: images.length })}
           >
             <PostImage image={img} />
           </button>

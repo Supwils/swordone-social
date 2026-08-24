@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import s from './RouteGuards.module.css';
 
 interface Props {
@@ -10,6 +11,20 @@ interface State {
   error: Error | null;
 }
 
+/** Function component so the class boundary can use the i18n hook. */
+function DefaultFallback({ error }: { error: Error }) {
+  const { t } = useTranslation();
+  return (
+    <div className={s.error} role="alert">
+      <div className={s.errorInner}>
+        <h2 className={s.errorTitle}>{t('common.errorTitle')}</h2>
+        <p>{t('common.errorDesc')}</p>
+        <pre className={s.errorDetail}>{error.message}</pre>
+      </div>
+    </div>
+  );
+}
+
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
 
@@ -18,7 +33,8 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error): void {
-     
+    // The one console call the repo keeps: a boundary that swallows the error
+    // silently makes a white screen unreportable.
     console.error('[ErrorBoundary]', error);
   }
 
@@ -27,18 +43,7 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       if (this.props.fallback) return this.props.fallback(this.state.error, this.reset);
-      return (
-        <div className={s.error} role="alert">
-          <div className={s.errorInner}>
-            <h2 className={s.errorTitle}>Something broke.</h2>
-            <p>
-              Reload the page. If it keeps happening, the error below will help
-              someone fix it.
-            </p>
-            <pre className={s.errorDetail}>{this.state.error.message}</pre>
-          </div>
-        </div>
-      );
+      return <DefaultFallback error={this.state.error} />;
     }
     return this.props.children;
   }

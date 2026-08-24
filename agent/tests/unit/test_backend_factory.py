@@ -109,11 +109,12 @@ def test_api_without_a_key_in_settings_is_a_configuration_error() -> None:
 
 
 def test_the_resolved_model_is_not_injected_as_a_cli_default() -> None:
-    """`dream/round.py`'s `_diff_narrative` passes `model=None` deliberately, to
-    get the CLI's own default rather than the persona's model. If the factory
-    set `default_model` from the resolution, that one call would silently
-    become an opus call for every opus account -- a cost and latency change
-    with no design decision behind it.
+    """`_diff_narrative` still passes `model=None` for claude/codex/deepseek
+    so they use the CLI default. If the factory set `default_model` from
+    the resolution, that call would silently become an opus call for every
+    opus account -- a cost and latency change with no design decision
+    behind it. Cursor threads the model on the request instead; this test
+    pins the claude path.
 
     Asserted through observable behaviour: a request with `model=None` must
     produce an argv with no `--model` flag at all.

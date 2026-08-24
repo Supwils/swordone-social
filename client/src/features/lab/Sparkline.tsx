@@ -1,4 +1,5 @@
 import { LineChart, Line, ResponsiveContainer, YAxis } from 'recharts';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Tiny line chart for inline use (agent cards, drift widget).
@@ -14,10 +15,11 @@ export function Sparkline({
   color?: string;
   strokeWidth?: number;
 }) {
+  const { t } = useTranslation();
   if (data.length < 2) {
     return (
       <div style={{ width: '100%', height: '100%', opacity: 0.4, fontSize: 11 }}>
-        — not enough snapshots yet —
+        {t('lab.sparklineEmpty')}
       </div>
     );
   }

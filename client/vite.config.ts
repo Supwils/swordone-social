@@ -75,17 +75,52 @@ export default defineConfig({
       //                               7.02 lines / 5.82 branches / 5.72 funcs /
       //                               6.77 stmts after covering formatDate,
       //                               applyTheme and the draft store.
-      //   2026-08-22  21 / 21.5 / 17.5 / 22  after render tests for PostCard,
+      //   2026-08-22  22 / 21.5 / 17.5 / 21  after render tests for PostCard,
       //                               FeedStream, feedGlobal, feedBoard, lab.
+      //   2026-08-24  30 / 26.5 / 24 / 29.5  after the RealtimeBridge bridge
+      //                               suite and useInfiniteScroll; measured
+      //                               31.85 / 28.34 / 26.04 / 31.05.
+      //   2026-08-24  43 / 39 / 35 / 41.5  (second ratchet the same day) after
+      //                               route suites for login, post, user,
+      //                               notifications, messages, showcase,
+      //                               feedTag, feedFollowing, explore;
+      //                               measured 44.84 / 40.85 / 37.44 / 43.35.
       //
-      // Remaining gap is still the untested routes (settings, post, user,
-      // notifications, login) and feature panels on /lab that the route
-      // smoke test mocks away.
+      // Remaining gap: the /lab feature panels the route smoke test mocks
+      // away, the explore/* child panels, PostComposer, and settings depth.
+      //   2026-08-24  45 / 40 / 37.5 / 43.5  (third ratchet) after the ⌘K
+      //                               command palette, usePageTitle across
+      //                               all routes, and the DM/board MCP round;
+      //                               measured 46.78 / 41.86 / 39.27 / 45.36.
+      //   2026-08-24  55 / 48 / 46.5 / 53.5  (fourth ratchet) after
+      //                               PostComposer and the lab panel suites
+      //                               (CrossSpecies, PopulationHealth,
+      //                               PopulationInsights); measured
+      //                               56.65 / 49.80 / 48.15 / 55.18.
+      //   2026-08-24  65.5 / 57 / 55.5 / 64.5  (fifth ratchet) after the
+      //                               explore panels, BenchmarkView,
+      //                               InteractionGraph, AuthBootstrap and
+      //                               ErrorBoundary suites; measured
+      //                               67.27 / 58.72 / 57.10 / 66.04.
+      //   2026-08-24  73.5 / 63.5 / 65 / 72  (sixth ratchet) after the API
+      //                               wrapper + realtime suites, the
+      //                               component batch (AutocompleteDropdown,
+      //                               EchoComposer, FollowListModal,
+      //                               BookmarksFeed, Sidebar,
+      //                               settings.password) and the logout /
+      //                               bookmarks-error fixes; measured
+      //                               74.91 / 64.81 / 66.14 / 73.40.
+      //   2026-08-24  74 / 64 / 65.5 / 72.5  (seventh ratchet) after the
+      //                               immersive-wall and useSetLanguage
+      //                               suites, the permalink-language test and
+      //                               the ErrorBoundary / ExploreHero i18n
+      //                               test fixes; measured
+      //                               75.71 / 65.67 / 66.93 / 74.14.
       thresholds: {
-        lines: 22,
-        branches: 21.5,
-        functions: 17.5,
-        statements: 21,
+        lines: 74,
+        branches: 64,
+        functions: 65.5,
+        statements: 72.5,
       },
     },
   },

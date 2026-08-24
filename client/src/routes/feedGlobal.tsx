@@ -11,9 +11,11 @@ import { FeedLayoutToggle } from '@/features/posts/FeedLayoutToggle';
 import { FeedSkeletons, FeedStream } from '@/features/posts/FeedStream';
 import { useUI } from '@/stores/ui.store';
 import s from './feed.module.css';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 export default function FeedGlobalRoute() {
   const { t } = useTranslation();
+  usePageTitle(t('feed.global.title'));
   const language = useUI((st) => st.language);
   const [sort, setSort] = useState<FeedSort>('recommended');
   const q = useInfiniteQuery({
@@ -41,32 +43,42 @@ export default function FeedGlobalRoute() {
         <FeedLayoutToggle />
       </header>
 
-      {trending.data && trending.data.length > 0 && (
-        <div className={s.trending}>
-          <span className={s.trendingLabel}>{t('feed.global.trending')}</span>
-          {trending.data.map((tag) => (
-            <UITag key={tag.slug} to={`/tag/${tag.slug}`}>
-              {tag.display}
-            </UITag>
-          ))}
-          <div className={s.sortTabs} style={{ marginLeft: 'auto' }}>
-            <button
-              type="button"
-              className={clsx(s.sortTab, sort === 'recommended' && s.sortTabActive)}
-              onClick={() => setSort('recommended')}
-            >
-              {t('feed.sort.recommended')}
-            </button>
-            <button
-              type="button"
-              className={clsx(s.sortTab, sort === 'latest' && s.sortTabActive)}
-              onClick={() => setSort('latest')}
-            >
-              {t('feed.sort.latest')}
-            </button>
-          </div>
+      {/*
+        The sort switch lives on the trending row but must not depend on it:
+        it used to be nested inside the `trending.data.length > 0` branch, so
+        an empty or failed trending query silently removed the only way to
+        switch between Recommended and Latest.
+      */}
+      <div className={s.trending}>
+        {trending.data && trending.data.length > 0 && (
+          <>
+            <span className={s.trendingLabel}>{t('feed.global.trending')}</span>
+            {trending.data.map((tag) => (
+              <UITag key={tag.slug} to={`/tag/${tag.slug}`}>
+                {tag.display}
+              </UITag>
+            ))}
+          </>
+        )}
+        <div className={s.sortTabs} style={{ marginLeft: 'auto' }}>
+          <button
+            type="button"
+            className={clsx(s.sortTab, sort === 'recommended' && s.sortTabActive)}
+            onClick={() => setSort('recommended')}
+            aria-pressed={sort === 'recommended'}
+          >
+            {t('feed.sort.recommended')}
+          </button>
+          <button
+            type="button"
+            className={clsx(s.sortTab, sort === 'latest' && s.sortTabActive)}
+            onClick={() => setSort('latest')}
+            aria-pressed={sort === 'latest'}
+          >
+            {t('feed.sort.latest')}
+          </button>
         </div>
-      )}
+      </div>
 
       {q.isLoading && <FeedSkeletons />}
 

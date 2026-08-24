@@ -12,9 +12,11 @@ import { FeedSkeletons, FeedStream } from '@/features/posts/FeedStream';
 import { useUI } from '@/stores/ui.store';
 import { useRealtime } from '@/stores/realtime.store';
 import s from './feed.module.css';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 export default function FeedFollowingRoute() {
   const { t } = useTranslation();
+  usePageTitle(t('feed.following.title'));
   const nav = useNavigate();
   const qc = useQueryClient();
   const language = useUI((st) => st.language);
@@ -46,6 +48,7 @@ export default function FeedFollowingRoute() {
               type="button"
               className={clsx(s.sortTab, sort === 'recommended' && s.sortTabActive)}
               onClick={() => setSort('recommended')}
+              aria-pressed={sort === 'recommended'}
             >
               {t('feed.sort.recommended')}
             </button>
@@ -53,6 +56,7 @@ export default function FeedFollowingRoute() {
               type="button"
               className={clsx(s.sortTab, sort === 'latest' && s.sortTabActive)}
               onClick={() => setSort('latest')}
+              aria-pressed={sort === 'latest'}
             >
               {t('feed.sort.latest')}
             </button>

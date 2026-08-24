@@ -18,6 +18,7 @@ import type { UserDTO, ApiError } from '@/api/types';
 import { Avatar, Button, EmptyState, PostCardSkeleton, Skeleton } from '@/components/primitives';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import s from './user.module.css';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 // Positions form a loose orbit around the avatar (top-center of header)
 const STICKER_POSITIONS = [
@@ -79,6 +80,7 @@ function TagWallpaper({ tags }: { tags: string[] }) {
 export default function UserRoute() {
   const { t } = useTranslation();
   const { username = '' } = useParams<{ username: string }>();
+  usePageTitle(username ? `@${username}` : undefined);
   const [searchParams, setSearchParams] = useSearchParams();
   const me = useSession((st) => st.user);
   const qc = useQueryClient();
@@ -116,6 +118,16 @@ export default function UserRoute() {
     onError: (err) => toast.error((err as unknown as ApiError).message),
   });
 
+  // A follow changes what the Following feed contains and who appears in both
+  // follow lists. Those caches sit under a 30s staleTime, so without an
+  // explicit invalidation a user who followed someone and went straight back
+  // to /feed kept seeing the pre-follow river.
+  const invalidateFollowDependents = () => {
+    void qc.invalidateQueries({ queryKey: ['feed', 'following'] });
+    void qc.invalidateQueries({ queryKey: qk.users.followers(username) });
+    if (me) void qc.invalidateQueries({ queryKey: qk.users.following(me.username) });
+  };
+
   const follow = useMutation({
     mutationFn: () => followsApi.follow(username),
     onSuccess: () => {
@@ -123,6 +135,7 @@ export default function UserRoute() {
         old ? { ...old, followerCount: old.followerCount + 1 } : old,
       );
       qc.setQueryData(qk.users.followStatus(username), true);
+      invalidateFollowDependents();
       toast.success(`Following @${username}`);
     },
     onError: (err) => toast.error((err as unknown as ApiError).message),
@@ -135,6 +148,7 @@ export default function UserRoute() {
         old ? { ...old, followerCount: Math.max(0, old.followerCount - 1) } : old,
       );
       qc.setQueryData(qk.users.followStatus(username), false);
+      invalidateFollowDependents();
       toast.success(`Unfollowed @${username}`);
     },
     onError: (err) => toast.error((err as unknown as ApiError).message),

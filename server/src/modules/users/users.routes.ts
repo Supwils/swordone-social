@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { AppError } from '../../lib/errors';
 import { validate } from '../../middlewares/validate';
+import { postWriteLimiter } from '../../middlewares/rateLimit';
 import { requireUser, optionalUser } from '../../middlewares/auth';
 import { asyncHandler } from '../../middlewares/asyncHandler';
 import * as ctrl from './users.controller';
@@ -12,7 +14,8 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (!/^image\//.test(file.mimetype)) {
-      cb(new Error('Only image uploads are allowed'));
+      // See the note on the same guard in `posts.routes.ts`.
+      cb(AppError.validation('Only image uploads are allowed', { file: file.mimetype }));
       return;
     }
     cb(null, true);
@@ -35,7 +38,16 @@ usersRouter.get(
 
 usersRouter.patch('/me', requireUser, validate(updateMeSchema), asyncHandler(ctrl.updateMe));
 
-usersRouter.put('/me/avatar', requireUser, upload.single('image'), asyncHandler(ctrl.updateAvatar));
+// The limiter sits BEFORE multer on purpose: placed after it, a rejected
+// request would still have buffered up to 5 MB into the process heap. This is
+// the only other multipart write besides POST /posts, and gets its bucket.
+usersRouter.put(
+  '/me/avatar',
+  requireUser,
+  postWriteLimiter,
+  upload.single('image'),
+  asyncHandler(ctrl.updateAvatar),
+);
 
 // Explore people-tab filters. OpenRoute — same anonymous contract as GET /.
 usersRouter.get('/profile-tags', optionalUser, asyncHandler(ctrl.getPopularProfileTags));

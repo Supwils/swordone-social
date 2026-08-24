@@ -58,6 +58,9 @@ describe('FeedBoardRoute', () => {
 
     await waitFor(() => expect(feedApi.byBoard).toHaveBeenCalled());
     expect(vi.mocked(feedApi.byBoard).mock.calls[0][0]).toBe('market');
+    // The count carries its unit, as the tag header does — a bare "42" under
+    // the board name read as nothing in particular.
+    expect(await screen.findByText('42 posts')).toBeTruthy();
   });
 
   it('renders the board name and its posts', async () => {

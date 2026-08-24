@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useInfiniteScroll } from '@/lib/useInfiniteScroll';
 import s from './InfiniteScrollSentinel.module.css';
 
@@ -16,6 +17,7 @@ interface Props {
  * shows that label as a quiet end-of-list marker.
  */
 export function InfiniteScrollSentinel({ hasNextPage, isFetching, onLoadMore, endLabel }: Props) {
+  const { t } = useTranslation();
   const ref = useInfiniteScroll({ hasNextPage, isFetching, onLoadMore });
 
   if (!hasNextPage) {
@@ -25,7 +27,7 @@ export function InfiniteScrollSentinel({ hasNextPage, isFetching, onLoadMore, en
   return (
     <div ref={ref} className={s.sentinel} aria-live="polite" aria-busy={isFetching}>
       {isFetching && (
-        <div className={s.dots} role="status" aria-label="Loading">
+        <div className={s.dots} role="status" aria-label={t('common.loading')}>
           <span className={s.dot} />
           <span className={s.dot} />
           <span className={s.dot} />

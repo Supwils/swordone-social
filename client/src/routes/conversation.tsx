@@ -14,16 +14,19 @@ import { ArrowLeft } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import * as messagesApi from '@/api/messages.api';
 import { qk } from '@/api/queryKeys';
+import { prependMessage } from '@/lib/messageCache';
 import { useSession } from '@/stores/session.store';
 import { Avatar, Spinner } from '@/components/primitives';
-import { emit, emitTyping, emitTypingEnd, on } from '@/api/realtime';
+import { emit, emitTyping, emitTypingEnd, on, onConnect } from '@/api/realtime';
 import { useRealtime } from '@/stores/realtime.store';
 import { formatRelative } from '@/lib/formatDate';
 import type { ApiError, MessageDTO, Paginated } from '@/api/types';
 import s from './messages.module.css';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 export default function ConversationRoute() {
   const { t } = useTranslation();
+  usePageTitle(t('messages.title'));
   const { id = '' } = useParams<{ id: string }>();
   const me = useSession((st) => st.user);
   const nav = useNavigate();
@@ -39,8 +42,16 @@ export default function ConversationRoute() {
   // Join/leave conversation room, clear typing timer on unmount
   useEffect(() => {
     if (!id) return;
-    emit('conversation:join', { conversationId: id });
+    const join = () => emit('conversation:join', { conversationId: id });
+    join();
+    // Re-join on every reconnect. A reconnect is a NEW server-side socket,
+    // auto-joined only to `user:<id>`, and `message` / `message:read` /
+    // `typing` are all conversation-room-scoped — so without this an open
+    // thread silently stops updating after a sleep, a wifi blip or an API
+    // redeploy, and only navigating away and back brings it back.
+    const offConnect = onConnect(join);
     return () => {
+      offConnect();
       emit('conversation:leave', { conversationId: id });
       if (typingTimerRef.current) {
         clearTimeout(typingTimerRef.current);
@@ -115,15 +126,15 @@ export default function ConversationRoute() {
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
       }
-      // Prepend to cache
+      // Prepend to cache. `prependMessage` dedupes: the socket frame for our
+      // own message normally lands before this 201 does.
       qc.setQueryData(
         qk.conversations.messages(id),
         (old: InfiniteData<Paginated<MessageDTO>> | undefined) => {
           if (!old) {
             return { pages: [{ items: [msg], nextCursor: null }], pageParams: [null] };
           }
-          const [first, ...rest] = old.pages;
-          return { ...old, pages: [{ ...first, items: [msg, ...first.items] }, ...rest] };
+          return prependMessage(old, msg);
         },
       );
     },

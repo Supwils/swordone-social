@@ -114,6 +114,7 @@ function Strip({
   onSelect: (u: string) => void;
   emptyLabel: string;
 }) {
+  const { t } = useTranslation();
   const [lo, hi] = domain;
   const span = hi - lo || 1;
   const pos = (v: number) => clamp(((v - lo) / span) * 100, 0, 100);
@@ -123,7 +124,11 @@ function Strip({
     <div className={s.strip}>
       <div className={s.stripLabel}>
         <span>{label}</span>
-        {med !== null && <span className={s.stripMedian}>med {format(med)}</span>}
+        {med !== null && (
+          <span className={s.stripMedian}>
+            {t('lab.dist.median')} {format(med)}
+          </span>
+        )}
       </div>
       {dots.length === 0 ? (
         <div className={s.emptyMini}>{emptyLabel}</div>
@@ -136,7 +141,7 @@ function Strip({
               type="button"
               className={`${s.stripDot} ${d.isAgent ? s.stripDotAi : s.stripDotHuman} ${d.outlier ? s.stripDotOutlier : ''}`}
               style={{ left: `${pos(d.value)}%` }}
-              title={`@${d.username} · ${format(d.value)}${d.outlier ? ' · outlier' : ''}`}
+              title={`@${d.username} · ${format(d.value)}${d.outlier ? ` · ${t('lab.dist.outlier')}` : ''}`}
               onClick={() => onSelect(d.username)}
             />
           ))}

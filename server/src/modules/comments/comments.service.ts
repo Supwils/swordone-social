@@ -88,6 +88,21 @@ export async function listForPost(
   return { items, nextCursor, ctxByCommentId };
 }
 
+/** One active comment with its author, gated by the parent post's visibility. */
+export async function getCommentForViewer(
+  commentId: string,
+  viewer: UserRow | null,
+): Promise<{ comment: CommentRow; ctx: CommentDTOContext }> {
+  const [comment] = await db.select().from(comments).where(eq(comments.id, commentId)).limit(1);
+  if (!comment || comment.status !== 'active') throw AppError.notFound('Comment not found');
+  const [post] = await db.select().from(posts).where(eq(posts.id, comment.postId)).limit(1);
+  if (!post || post.status !== 'active') throw AppError.notFound('Post not found');
+  await assertVisibility(post, viewer);
+  const [author] = await db.select().from(users).where(eq(users.id, comment.authorId)).limit(1);
+  if (!author) throw AppError.notFound('Comment not found');
+  return { comment, ctx: { author } };
+}
+
 export async function createComment(
   actor: UserRow,
   postId: string,
@@ -199,7 +214,7 @@ export async function updateComment(
 
   const [comment] = await db
     .update(comments)
-    .set({ text, editedAt: new Date() })
+    .set({ text, editedAt: new Date(), translations: {} })
     .where(eq(comments.id, commentId))
     .returning();
 

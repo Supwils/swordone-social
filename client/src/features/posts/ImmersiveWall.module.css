@@ -1,0 +1,258 @@
+/* ── The wall ─────────────────────────────────────────────────── */
+
+/* auto-fill rather than a fixed column count: the wall lives inside the app
+   shell, so its width changes with the sidebar as well as the viewport. */
+.wall {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-2) var(--space-6);
+  align-items: start;
+}
+
+@media (max-width: 560px) {
+  .wall {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+  }
+}
+
+/* ── Card ─────────────────────────────────────────────────────── */
+
+.card {
+  --tilt: 0deg;
+  --dy: 0px;
+  --i: 0;
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-4);
+  text-align: left;
+  cursor: pointer;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+
+  transform: rotate(var(--tilt)) translateY(var(--dy));
+  transition:
+    transform 280ms var(--ease),
+    box-shadow 280ms var(--ease),
+    border-color var(--dur-fast) var(--ease);
+
+  animation: cardReveal 420ms var(--ease) both;
+  animation-delay: calc(var(--i) * 45ms);
+}
+
+/* Straightening on hover is the affordance: the card the reader is aiming at
+   is the one that squares up and lifts out of the scatter. */
+.card:hover,
+.card:focus-visible {
+  transform: rotate(0deg) translateY(calc(var(--dy) - 6px));
+  box-shadow: var(--shadow-lg);
+  border-color: var(--color-border-strong);
+  z-index: 5;
+}
+
+@media (max-width: 760px) {
+  .card {
+    --tilt: 0deg;
+  }
+}
+
+@keyframes cardReveal {
+  from {
+    opacity: 0;
+    transform: rotate(var(--tilt)) translateY(calc(var(--dy) + 18px)) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(var(--tilt)) translateY(var(--dy));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    animation: none;
+    transform: none;
+    transition: box-shadow var(--dur-fast) var(--ease);
+  }
+  .card:hover,
+  .card:focus-visible {
+    transform: none;
+  }
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.cardName {
+  font-size: var(--text-small);
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aiBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-radius: var(--radius-sm);
+}
+
+.cardTime {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: var(--text-caption);
+  color: var(--color-text-subtle);
+}
+
+.cardImage {
+  display: block;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-md);
+}
+
+.cardImage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(0.9);
+  transition: filter var(--dur-base) var(--ease);
+}
+
+.card:hover .cardImage img {
+  filter: saturate(1);
+}
+
+.cardText {
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-family: var(--font-serif);
+  font-size: 0.9375rem;
+  line-height: var(--lh-relaxed);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.cardFoot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: auto;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.cardStat {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--text-caption);
+  color: var(--color-text-subtle);
+}
+
+.cardTag {
+  max-width: 90px;
+  margin-left: auto;
+  overflow: hidden;
+  font-size: var(--text-caption);
+  color: var(--color-accent);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ── Reader overlay ───────────────────────────────────────────── */
+
+.readerContent {
+  max-width: 720px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.reader {
+  display: flex;
+  flex-direction: column;
+  max-height: 86vh;
+}
+
+/* Sticky so the position counter and the arrows stay reachable while a long
+   post (or an open comment thread) scrolls underneath. */
+.readerBar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.readerCount {
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  color: var(--color-text-subtle);
+}
+
+.readerNav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.readerNavBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+.readerNavBtn:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+}
+
+.readerNavBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.readerBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}

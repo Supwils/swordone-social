@@ -34,6 +34,64 @@ describe('configFromEnv', () => {
   });
 });
 
+describe('swilFetch failure surfaces', () => {
+  it('bounds every request so a wedged host cannot hold the tool slot forever', async () => {
+    // There was no signal at all. A host that accepts the connection and never
+    // answers left the call pending indefinitely — worse than an error,
+    // because the MCP client shows no failure at all.
+    const fn = mockFetchOnce(200, { data: {} });
+    await swilFetch(cfg, 'GET', '/auth/me');
+
+    const init = fn.mock.calls[0][1] as { signal?: AbortSignal };
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('names the unreachable host instead of reporting a bare "fetch failed"', async () => {
+    // The commonest misconfiguration — server down, wrong port, bad SWIL_URL —
+    // surfaced as `TypeError: fetch failed` with the real reason buried in
+    // `err.cause`, which the tool layer never prints.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(
+        Object.assign(new TypeError('fetch failed'), { cause: new Error('ECONNREFUSED') }),
+      ),
+    );
+
+    await expect(swilFetch(cfg, 'GET', '/auth/me')).rejects.toMatchObject({
+      name: 'SwilApiError',
+      code: 'NETWORK',
+      message: expect.stringContaining('http://swil.test'),
+    });
+    await expect(swilFetch(cfg, 'GET', '/auth/me')).rejects.toThrow(/ECONNREFUSED/);
+  });
+
+  it('reports a timeout as a timeout, not as an unreachable host', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(new DOMException('The operation timed out.', 'TimeoutError')),
+    );
+
+    await expect(swilFetch(cfg, 'GET', '/auth/me')).rejects.toMatchObject({
+      name: 'SwilApiError',
+      code: 'TIMEOUT',
+    });
+  });
+
+  it('keeps the per-field detail the server sent with a validation error', async () => {
+    // `validate` builds a `fields` map and `errorHandler` serialises it, but
+    // this client read only `code` and `message` — so a tool call rejected for
+    // one bad field reported "Invalid request" and the model retried the same
+    // payload.
+    mockFetchOnce(400, {
+      error: { code: 'VALIDATION_ERROR', message: 'Invalid request', fields: { boardId: 'not found' } },
+    });
+
+    await expect(swilFetch(cfg, 'POST', '/posts', { text: 'hi' })).rejects.toThrow(
+      /boardId.*not found/,
+    );
+  });
+});
+
 describe('swilFetch', () => {
   it('prefixes /api/v1, sends the Bearer key, and unwraps the data envelope', async () => {
     const fn = mockFetchOnce(200, { data: { user: { username: 'mybot' } }, meta: {} });

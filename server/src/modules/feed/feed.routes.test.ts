@@ -178,7 +178,7 @@ describe('feed routes', () => {
 
     expect(error).toBeUndefined();
     expect(res.statusCode).toBe(200);
-    expect(mocks.byTag).toHaveBeenCalledWith('typescript', null, null, 20);
+    expect(mocks.byTag).toHaveBeenCalledWith('typescript', null, null, 20, 'recommended');
   });
 
   it('passes board slugs through with the default sort', async () => {
@@ -207,6 +207,82 @@ describe('feed routes', () => {
 
     expect(error).toBeUndefined();
     expect(mocks.byBoard).toHaveBeenCalledWith('market', null, null, 18, 'latest');
+  });
+
+  it('forwards sort=latest to the tag feed instead of dropping it', async () => {
+    // The same defect fixed for `/board/:slug` on 2026-08-19, left standing on
+    // its sibling: `pagingQuery` validates `sort` for every feed route, and
+    // this handler hardcoded `decodeScoreCursor` and called a `byTag` with no
+    // `sort` parameter. `?sort=latest` silently served the ranked feed.
+    mocks.byTag.mockResolvedValue({ items: [], nextCursor: null, ctxById: new Map() });
+
+    const { error } = await runRoute(feedRouter, '/tag/:slug', 'get', {
+      params: { slug: 'garden' },
+      query: { sort: 'latest', limit: '18' },
+    });
+
+    expect(error).toBeUndefined();
+    expect(mocks.byTag).toHaveBeenCalledWith('garden', null, null, 18, 'latest');
+  });
+
+  it('decodes a TIME cursor for a latest tag page and a SCORE cursor otherwise', async () => {
+    // `paginateByTime` and `paginateByScore` consume different cursor shapes;
+    // a decoder that does not follow the sort pages from the wrong key.
+    mocks.byTag.mockResolvedValue({ items: [], nextCursor: null, ctxById: new Map() });
+    const timeCursor = encodeCursor({ t: '2026-08-20T08:00:00.000Z', id: CURSOR_ID });
+    const scoreCursor = encodeScoreCursor({ s: 42, id: CURSOR_ID });
+
+    await runRoute(feedRouter, '/tag/:slug', 'get', {
+      params: { slug: 'garden' },
+      query: { sort: 'latest', cursor: timeCursor },
+    });
+    expect(mocks.byTag).toHaveBeenCalledWith(
+      'garden',
+      null,
+      decodeCursor(timeCursor),
+      20,
+      'latest',
+    );
+
+    mocks.byTag.mockClear();
+    await runRoute(feedRouter, '/tag/:slug', 'get', {
+      params: { slug: 'garden' },
+      query: { cursor: scoreCursor },
+    });
+    expect(mocks.byTag).toHaveBeenCalledWith(
+      'garden',
+      null,
+      decodeScoreCursor(scoreCursor),
+      20,
+      'recommended',
+    );
+  });
+
+  it('rejects a lang the app has no locale for instead of translating into it', async () => {
+    // `lang` used to be `z.string().max(8)`. `needsTranslation` returns true
+    // for anything that is not en/zh, so an anonymous `?lang=xx` bought a
+    // Translate call per uncached post and wrote `{"xx": ...}` into every
+    // row's `translations` jsonb. Sweeping the two-letter space was an
+    // unauthenticated way to grow the column and the bill without limit.
+    mocks.global.mockResolvedValue({ items: [], nextCursor: null, ctxById: new Map() });
+
+    const { error } = await runRoute(feedRouter, '/global', 'get', {
+      query: { lang: 'fr' },
+    });
+
+    expect(error).toMatchObject({ status: 400, fields: { lang: expect.any(String) } });
+    expect(mocks.global).not.toHaveBeenCalled();
+  });
+
+  it('still accepts the two languages the app ships locales for', async () => {
+    mocks.global.mockResolvedValue({ items: [], nextCursor: null, ctxById: new Map() });
+
+    for (const lang of ['en', 'zh']) {
+      mocks.global.mockClear();
+      const { error } = await runRoute(feedRouter, '/global', 'get', { query: { lang } });
+      expect(error).toBeUndefined();
+      expect(mocks.global).toHaveBeenCalledTimes(1);
+    }
   });
 
   it('decodes a TIME cursor under latest and a SCORE cursor otherwise', async () => {

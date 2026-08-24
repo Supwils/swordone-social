@@ -1,4 +1,5 @@
 import type { InferSelectModel } from 'drizzle-orm';
+import { detectLang, type Locale } from './lang';
 import type { users, posts, comments, tags, boards, messages, conversations } from '../db/schema';
 import type { NotificationType } from '../db/schema/messaging';
 
@@ -40,6 +41,7 @@ export interface UserDTO {
     language: 'en' | 'zh';
     emailNotifications: boolean;
     pushNotifications: boolean;
+    autoTranslate?: boolean;
   };
 }
 
@@ -80,6 +82,8 @@ export interface PostDTO {
   text: string;
   originalText?: string;
   originalLang?: string;
+  /** Detected language of the ORIGINAL body — the client decides from this whether a Translate control makes sense. */
+  lang: Locale;
   images: Array<{ url: string; width: number; height: number; blurhash?: string }>;
   video: { url: string; width: number; height: number; durationSec?: number } | null;
   tags: Array<{ slug: string; display: string }>;
@@ -103,6 +107,7 @@ export interface CommentDTO {
   author: UserLiteDTO;
   text: string;
   originalText?: string;
+  lang: Locale;
   likeCount: number;
   likedByMe: boolean;
   createdAt: string;
@@ -231,25 +236,37 @@ export interface PostDTOContext {
 
 export function toPostDTO(post: PostRow, ctx: PostDTOContext): PostDTO {
   const translated = ctx.translatedText;
+  // A deleted post reaches this function through exactly one path: it is the
+  // ORIGINAL of somebody's echo. `hydratePosts` and `getPostForViewer` load
+  // those without an `active` filter on purpose, so the echo card keeps its
+  // attribution — but with no tombstone here, they kept its body and media
+  // too, forever, for viewers who had never seen it. Same branch
+  // `toCommentDTO` below already carries. The media is doubly wrong: S3
+  // deletes those objects, so the URLs are dead links as well.
+  const isDeleted = post.status === 'deleted';
   return {
     id: post.id,
     author: toUserLiteDTO(ctx.author),
-    text: translated ?? post.text,
-    ...(translated ? { originalText: post.text, originalLang: ctx.originalLang } : {}),
-    images: (post.images ?? []).map((i) => ({
-      url: i.url,
-      width: i.width,
-      height: i.height,
-      ...(i.blurhash ? { blurhash: i.blurhash } : {}),
-    })),
-    video: post.video
-      ? {
-          url: post.video.url,
-          width: post.video.width,
-          height: post.video.height,
-          ...(post.video.durationSec != null ? { durationSec: post.video.durationSec } : {}),
-        }
-      : null,
+    text: isDeleted ? '[deleted]' : (translated ?? post.text),
+    ...(translated && !isDeleted ? { originalText: post.text, originalLang: ctx.originalLang } : {}),
+    lang: detectLang(post.text),
+    images: isDeleted
+      ? []
+      : (post.images ?? []).map((i) => ({
+          url: i.url,
+          width: i.width,
+          height: i.height,
+          ...(i.blurhash ? { blurhash: i.blurhash } : {}),
+        })),
+    video:
+      post.video && !isDeleted
+        ? {
+            url: post.video.url,
+            width: post.video.width,
+            height: post.video.height,
+            ...(post.video.durationSec != null ? { durationSec: post.video.durationSec } : {}),
+          }
+        : null,
     tags: ctx.tags.map((t) => ({
       slug: t.slug,
       display: (ctx.lang && t.translations?.[ctx.lang]) || t.display,
@@ -264,7 +281,7 @@ export function toPostDTO(post: PostRow, ctx: PostDTOContext): PostDTO {
     bookmarkedByMe: Boolean(ctx.bookmarkedByMe),
     ...(ctx.echoOf ? { echoOf: ctx.echoOf } : {}),
     createdAt: post.createdAt.toISOString(),
-    editedAt: post.editedAt ? post.editedAt.toISOString() : null,
+    editedAt: isDeleted ? null : post.editedAt ? post.editedAt.toISOString() : null,
   };
 }
 
@@ -284,6 +301,7 @@ export function toCommentDTO(comment: CommentRow, ctx: CommentDTOContext): Comme
     author: toUserLiteDTO(ctx.author),
     text: isDeleted ? '[deleted]' : (translated ?? comment.text),
     ...(translated && !isDeleted ? { originalText: comment.text } : {}),
+    lang: detectLang(comment.text),
     likeCount: comment.likeCount,
     likedByMe: Boolean(ctx.likedByMe),
     createdAt: comment.createdAt.toISOString(),

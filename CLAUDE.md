@@ -16,7 +16,7 @@ Swil Social — full-stack social platform with AI agents. TypeScript monorepo:
 - **`server/`** — Express + Drizzle ORM / Postgres (Neon, pgvector) + Socket.IO + Vitest
 - **`client/`** — React 19 + Vite + TanStack Query + Zustand + Vitest + Testing Library
 - **`agent/`** — autonomous agent runtime (bash + Claude/Codex CLI)
-- **`mcp/`** — MCP server (stdio, 14 tools) exposing the API to Claude/any MCP client as a BYOA agent
+- **`mcp/`** — MCP server (stdio, 20 tools incl. DMs, bookmarks, board feeds) exposing the API to Claude/any MCP client as a BYOA agent
 - **`e2e/`** — Playwright real-stack suite (`npm run test:e2e`, own ports + own DB)
 - **`docs/`** — architecture / API / decisions
 
@@ -30,13 +30,14 @@ must follow.
 npm run ci:check
 ```
 
-Runs all 10 steps that GitHub Actions runs:
+Runs all 13 steps that GitHub Actions runs:
 
 1. Typecheck server + 2. client
 3. Lint server + 4. client
-5. Test server + 6. client (with coverage thresholds)
-7. Typecheck mcp + 8. Test mcp
+5. Test server + 6. client (coverage thresholds enforced since 2026-08-24)
+7. Typecheck mcp + 8. Test mcp (with its own coverage floor)
 9. Build server + 10. client
+11. Lint agent + 12. Typecheck agent + 13. Test agent (pytest, cov ≥ 97)
 
 Even with the local git hooks installed (`npm run install-hooks`), the
 hooks run a *subset* per phase — pre-commit skips the build, pre-push
@@ -149,7 +150,8 @@ hooks alone suffice — but `ci:check` is still the safe play.
 **Live deployment (2026-07-21) — full details in `docs/08-deployment.md`:**
 split frontend/backend. Frontend (Vite SPA) → **Vercel** (project **`client`** —
 NOT the root-linked `swil-social` project, which serves nothing;
-`https://swilsocial.vercel.app`). Backend (Express + Socket.IO)
+`https://swordone.space` — custom domain since 2026-08-24, brand **SwordOne**;
+`swilsocial.vercel.app` still aliases the same deployment). Backend (Express + Socket.IO)
 → **Railway** (service `swil-social-api`,
 `https://swil-social-api-production.up.railway.app`). **Push does NOT
 auto-deploy either side.** Order: (1) migrate Neon first if there's a new
@@ -168,7 +170,13 @@ to be triggered by hand. Two ways that work:
   ```bash
   # token lives in ~/.railway/config.json (user.accessToken, 1h TTL).
   # Refresh it with user.refreshToken against POST /oauth/token —
-  # note that endpoint requires application/x-www-form-urlencoded, not JSON.
+  # note that endpoint requires application/x-www-form-urlencoded, not JSON,
+  # AND a client_id (else 400 "no client authentication mechanism"). The
+  # CLI's id is embedded in its binary: `strings $(brew --prefix)/bin/railway | grep -o "rlwy_oaci_[A-Za-z0-9]*"`.
+  # Use curl, not Python urllib — Cloudflare 403s (error 1010) the latter.
+  # Env vars: query `variables(projectId,environmentId,serviceId)`, write with
+  # `variableUpsert(input:{projectId,environmentId,serviceId,name,value})`, then
+  # serviceInstanceRedeploy below — a variable change alone does not restart.
   curl -s -X POST https://backboard.railway.com/graphql/v2 \
     -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
     -d '{"query":"mutation($e:String!,$s:String!){serviceInstanceRedeploy(environmentId:$e,serviceId:$s)}",
@@ -227,8 +235,10 @@ The Dockerfile stays in the repo for two reasons:
 1. This file
 2. `docs/12-handoff.md` (current state)
 3. `docs/09-contributing.md` (conventions)
-4. `docs/01-architecture.md` (system shape)
-5. Whichever `docs/<area>.md` matches the task
+4. `docs/19-testing-standards.md` (testing & reliability rules — binding for
+   any change that touches tests)
+5. `docs/01-architecture.md` (system shape)
+6. Whichever `docs/<area>.md` matches the task
 
 ## ⚠ `agent/humans/*` are simulated humans — read this before touching them
 

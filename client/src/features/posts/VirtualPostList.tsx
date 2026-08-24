@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
+import { useTranslation } from 'react-i18next';
 import type { PostDTO } from '@/api/types';
 import { PostCard } from './PostCard';
 import s from './VirtualPostList.module.css';
@@ -32,6 +33,7 @@ export function VirtualPostList({
   onLoadMore,
   endLabel,
 }: Props) {
+  const { t } = useTranslation();
   const listRef = useRef<HTMLDivElement>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
 
@@ -92,7 +94,7 @@ export function VirtualPostList({
       {hasNextPage ? (
         <div className={s.footer} aria-live="polite" aria-busy={isFetchingNextPage}>
           {isFetchingNextPage && (
-            <div className={s.dots} role="status" aria-label="Loading">
+            <div className={s.dots} role="status" aria-label={t('common.loading')}>
               <span className={s.dot} />
               <span className={s.dot} />
               <span className={s.dot} />

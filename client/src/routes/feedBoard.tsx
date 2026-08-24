@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import * as feedApi from '@/api/feed.api';
 import * as boardsApi from '@/api/boards.api';
 import { qk } from '@/api/queryKeys';
@@ -7,10 +8,12 @@ import { EmptyState } from '@/components/primitives';
 import { FeedLayoutToggle } from '@/features/posts/FeedLayoutToggle';
 import { FeedSkeletons, FeedStream } from '@/features/posts/FeedStream';
 import { useUI } from '@/stores/ui.store';
+import { usePageTitle } from '@/lib/usePageTitle';
 import s from './feedBoard.module.css';
 
 export default function FeedBoardRoute() {
   const { slug = '' } = useParams<{ slug: string }>();
+  const { t } = useTranslation();
   const language = useUI((st) => st.language);
 
   const feedQ = useInfiniteQuery({
@@ -31,6 +34,7 @@ export default function FeedBoardRoute() {
 
   const items = feedQ.data?.pages.flatMap((p) => p.items) ?? [];
   const board = boardQ.data;
+  usePageTitle(board?.name ?? slug);
 
   return (
     <div className={s.page}>
@@ -41,20 +45,22 @@ export default function FeedBoardRoute() {
         </div>
         {board?.description && <p className={s.description}>{board.description}</p>}
         {board?.postCount != null && (
-          <span className={s.postCount}>{board.postCount.toLocaleString()}</span>
+          <span className={s.postCount}>
+            {board.postCount.toLocaleString()} {t('explore.topicsPostCount')}
+          </span>
         )}
       </header>
 
       {feedQ.isLoading && <FeedSkeletons />}
 
       {feedQ.isError && (
-        <EmptyState title="Board not found" description="This board doesn't exist." />
+        <EmptyState title={t('feed.board.notFound')} description={t('feed.board.notFoundDesc')} />
       )}
 
       {feedQ.isSuccess && items.length === 0 && (
         <EmptyState
-          title="Quiet here."
-          description={`No recent posts in ${board?.name ?? slug}.`}
+          title={t('feed.board.empty')}
+          description={t('feed.board.emptyDesc', { name: board?.name ?? slug })}
         />
       )}
 

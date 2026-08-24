@@ -1,19 +1,26 @@
+import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import type { TrendingTagItem } from '@/api/types';
 import s from '../explore.module.css';
 
 export function ExploreTrendingTags({ tags }: { tags: TrendingTagItem[] }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
   if (tags.length === 0) return null;
 
-  const maxCount = Math.max(...tags.map((t) => t.postCount), 1);
+  const maxCount = Math.max(...tags.map((tag) => tag.postCount), 1);
 
+  // Client-side navigation. This was `window.location.href = ...`, a full
+  // document reload that dropped the query cache, the session bootstrap and
+  // the scroll position — the only hard reload in the app.
   const goToTag = (slug: string) => {
-    window.location.href = `/tag/${slug}`;
+    navigate(`/tag/${slug}`);
   };
 
   return (
     <div className={s.trending}>
       <div className={s.sectionHeader}>
-        <h2 className={s.sectionTitle}>热门话题</h2>
+        <h2 className={s.sectionTitle}>{t('explore.trendingTags')}</h2>
       </div>
       <div className={s.tagCloud}>
         {tags.map((tag) => {

@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { requireUser } from '../../middlewares/auth';
+import { socialActionLimiter } from '../../middlewares/rateLimit';
 import { validate } from '../../middlewares/validate';
 import { asyncHandler } from '../../middlewares/asyncHandler';
 import { ok, noContent } from '../../lib/respond';
@@ -56,6 +57,7 @@ notificationsRouter.get(
 notificationsRouter.post(
   '/read',
   requireUser,
+  socialActionLimiter,
   validate(readBody),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user) throw AppError.unauthenticated();
@@ -68,6 +70,7 @@ notificationsRouter.post(
 notificationsRouter.delete(
   '/',
   requireUser,
+  socialActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user) throw AppError.unauthenticated();
     await svc.clearAll(req.user);

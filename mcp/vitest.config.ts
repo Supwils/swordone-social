@@ -1,0 +1,36 @@
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    globals: false,
+    environment: 'node',
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json-summary'],
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.test.ts'],
+      // Ratchet log (lines / branches / functions / statements) — raise these
+      // whenever coverage rises, never lower them without a written reason in
+      // the commit message. Same policy as server/client; this package went
+      // without any floor until 2026-08-24, i.e. deleting every mcp test
+      // would have passed CI.
+      //
+      //   2026-08-24  72 / 67 / 52 / 72   first floor, measured
+      //                                   73.95 / 69.49 / 55.00 / 74.48.
+      //                                   Functions is low because index.ts
+      //                                   tool handlers are exercised via
+      //                                   dispatch, not one-by-one.
+      //   2026-08-24  78 / 69 / 65 / 78   (second ratchet) after the DM /
+      //                                   board-feed / bookmark tool rounds
+      //                                   landed with behavior tests;
+      //                                   measured 79.67 / 70.76 / 67.27 /
+      //                                   79.52.
+      thresholds: {
+        lines: 78,
+        branches: 69,
+        functions: 65,
+        statements: 78,
+      },
+    },
+  },
+});

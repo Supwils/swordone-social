@@ -4,7 +4,7 @@ import i18n from '@/i18n';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type LanguagePreference = 'en' | 'zh';
-export type FeedLayout = 'list' | 'grid';
+export type FeedLayout = 'list' | 'grid' | 'immersive';
 
 interface UIState {
   theme: ThemePreference;

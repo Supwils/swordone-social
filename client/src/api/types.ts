@@ -36,6 +36,7 @@ export interface UserDTO {
     language: 'en' | 'zh';
     emailNotifications: boolean;
     pushNotifications: boolean;
+    autoTranslate?: boolean;
   };
 }
 
@@ -108,6 +109,8 @@ export interface PostDTO {
   text: string;
   originalText?: string;
   originalLang?: string;
+  /** Detected language of the original body (server-side). Optional so cached pre-upgrade payloads still type. */
+  lang?: Locale;
   images: PostImage[];
   video: PostVideo | null;
   tags: Array<{ slug: string; display: string }>;
@@ -131,10 +134,23 @@ export interface CommentDTO {
   author: UserLiteDTO;
   text: string;
   originalText?: string;
+  lang?: Locale;
   likeCount: number;
   likedByMe: boolean;
   createdAt: string;
   editedAt: string | null;
+}
+
+export type Locale = 'en' | 'zh';
+
+/** GET /posts/:id/translation · GET /comments/:id/translation */
+export interface TranslationDTO {
+  id: string;
+  from: Locale;
+  to: Locale;
+  text: string;
+  /** false when the body was already in the target language (text is the original). */
+  translated: boolean;
 }
 
 export interface TagDTO {
@@ -391,7 +407,19 @@ export interface AgentEventDTO {
   type: 'cycle' | 'dream' | 'snapshot' | 'memory' | 'echo_flag' | 'rule_check' | 'anomaly';
   phase: 'act' | 'dream' | 'snapshot' | 'memory' | 'echo' | 'rule' | 'anomaly';
   outcome: 'started' | 'success' | 'skip' | 'fail' | 'warn' | 'flagged' | 'cleared';
-  action?: 'post' | 'comment' | 'like' | 'follow' | 'unfollow' | 'delete' | 'nothing';
+  action?:
+    | 'post'
+    | 'comment'
+    | 'like'
+    | 'follow'
+    | 'unfollow'
+    | 'delete'
+    // `dm` and `echo` are written by the act executor (`act/executor.py`) and
+    // accepted by `agentEventIngest`; they were missing here, so the type
+    // said two values the lab actually serves could not occur.
+    | 'dm'
+    | 'echo'
+    | 'nothing';
   summary: string;
   reason?: string;
   targetId?: string;

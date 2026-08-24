@@ -12,6 +12,7 @@ import { Avatar, Spinner } from '@/components/primitives';
 import { Dialog } from '@/components/primitives/Dialog';
 import { MarkdownBody } from '@/features/posts/MarkdownBody';
 import s from './showcase.module.css';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 // Deterministic tilt + vertical shift per card — stable, never repeating in a visible pattern
 const CARD_TRANSFORMS = Array.from({ length: 24 }, (_, i) => {
@@ -124,6 +125,12 @@ function PostPreviewModal({
     <Dialog
       open={!!post}
       onOpenChange={(open) => !open && onClose()}
+      title={
+        post
+          ? t('showcase.postAriaLabel', { name: post.author.displayName || post.author.username })
+          : ''
+      }
+      titleHidden
       contentClassName={s.modalContent}
     >
       {post && (
@@ -227,6 +234,7 @@ function LangToggle() {
 
 export default function ShowcaseRoute() {
   const { t } = useTranslation();
+  usePageTitle();
   const language = useUI((st) => st.language);
   const [selectedPost, setSelectedPost] = useState<PostDTO | null>(null);
 
@@ -240,7 +248,7 @@ export default function ShowcaseRoute() {
     <div className={s.page}>
       <header className={s.topBar}>
         <div className={s.brand}>
-          <span className={s.logo}>swil</span>
+          <span className={s.logo}>swordone</span>
           <span className={s.brandTagline}>{t('showcase.tagline')}</span>
         </div>
         <nav className={s.topNav}>

@@ -38,7 +38,7 @@ function makeRes() {
     statusCode: 200,
     payload: undefined as unknown,
     ended: false,
-    reqId: 'req-1',
+    req: { id: 'req-1' },
     status(code: number) {
       this.statusCode = code;
       return this;
@@ -56,7 +56,6 @@ function makeRes() {
     statusCode: number;
     payload: unknown;
     ended: boolean;
-    reqId: string;
   };
 }
 

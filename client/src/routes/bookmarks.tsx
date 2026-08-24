@@ -1,9 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import { BookmarksFeed } from '@/features/bookmarks/BookmarksFeed';
 import s from './bookmarks.module.css';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 export default function BookmarksRoute() {
   const { t } = useTranslation();
+  usePageTitle(t('nav.bookmarks'));
 
   return (
     <div className={s.page}>

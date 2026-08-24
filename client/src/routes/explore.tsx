@@ -10,12 +10,14 @@ import { ExploreTrendingTags } from './explore/ExploreTrendingTags';
 import { ExplorePeopleTab } from './explore/ExplorePeopleTab';
 import { ExplorePostsTab } from './explore/ExplorePostsTab';
 import s from './explore.module.css';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 // Explore is an OpenRoute. Summary, people, and post search all hit
 // optionalUser endpoints (`/feed/explore-summary`, `GET /users`,
 // `/users/profile-tags`, `/posts/search`). Do not add a requireUser fetch.
 export default function ExploreRoute() {
   const { t } = useTranslation();
+  usePageTitle(t('nav.people'));
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') ?? 'posts';
 
@@ -47,14 +49,18 @@ export default function ExploreRoute() {
       <div className={s.tabSection}>
         <div className={s.tabs}>
           <button
+            type="button"
             className={`${s.tab} ${tab === 'posts' ? s.tabActive : ''}`}
             onClick={() => setTab('posts')}
+            aria-pressed={tab === 'posts'}
           >
             {t('explore.tabPosts')}
           </button>
           <button
+            type="button"
             className={`${s.tab} ${tab === 'people' ? s.tabActive : ''}`}
             onClick={() => setTab('people')}
+            aria-pressed={tab === 'people'}
           >
             {t('explore.tabPeople')}
           </button>

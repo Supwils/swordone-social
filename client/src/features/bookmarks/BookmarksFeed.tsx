@@ -31,6 +31,10 @@ export function BookmarksFeed() {
     );
   }
 
+  if (q.isError) {
+    return <EmptyState title={t('bookmarks.error')} description={t('bookmarks.errorDesc')} />;
+  }
+
   if (q.isSuccess && posts.length === 0) {
     return (
       <EmptyState

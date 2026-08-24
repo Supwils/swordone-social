@@ -39,6 +39,8 @@ export function decodeCursor(raw: unknown): Cursor | null {
     const parsed = JSON.parse(json) as Partial<Cursor>;
     if (typeof parsed.t !== 'string' || typeof parsed.id !== 'string') return null;
     if (!OBJECT_ID_RE.test(parsed.id)) return null;
+    // `new Date(t)` downstream throws on an Invalid Date — a client-controlled 500.
+    if (Number.isNaN(Date.parse(parsed.t))) return null;
     return { t: parsed.t, id: parsed.id };
   } catch {
     return null;

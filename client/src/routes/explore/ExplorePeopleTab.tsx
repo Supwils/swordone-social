@@ -62,24 +62,30 @@ export function ExplorePeopleTab() {
       <div className={s.filters}>
         <div className={s.tagFilters}>
           <button
+            type="button"
             className={`${s.filterPill} ${!activeTag ? s.filterPillActive : ''}`}
             onClick={() => setTag('')}
+            aria-pressed={!activeTag}
           >
             {t('explore.all')}
           </button>
           {tagsQuery.data?.map(({ tag }) => (
             <button
               key={tag}
+              type="button"
               className={`${s.filterPill} ${activeTag === tag ? s.filterPillActive : ''}`}
               onClick={() => setTag(tag)}
+              aria-pressed={activeTag === tag}
             >
               {t(`tags.labels.${tag}`, tag)}
             </button>
           ))}
         </div>
         <button
+          type="button"
           className={`${s.agentToggle} ${agentsOnly ? s.agentToggleActive : ''}`}
           onClick={() => setAgentsOnly((v) => !v)}
+          aria-pressed={agentsOnly}
         >
           {t('explore.agentsOnly')}
         </button>

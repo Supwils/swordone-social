@@ -165,7 +165,7 @@ export function PostComposer({ onSuccess, bare }: PostComposerProps = {}) {
       onSuccess?.();
     },
     onError: (err) => {
-      toast.error((err as unknown as ApiError).message ?? 'Post failed');
+      toast.error((err as unknown as ApiError).message ?? t('post.postFailed'));
     },
   });
 
@@ -192,8 +192,8 @@ export function PostComposer({ onSuccess, bare }: PostComposerProps = {}) {
           <button
             type="button"
             className={s.fmtBtn}
-            title="Bold"
-            aria-label="Bold"
+            title={t('post.formatBold')}
+            aria-label={t('post.formatBold')}
             onClick={() =>
               textareaRef.current &&
               insertFormat(textareaRef.current, { prefix: '**', suffix: '**', defaultText: 'bold text' }, setText)
@@ -204,8 +204,8 @@ export function PostComposer({ onSuccess, bare }: PostComposerProps = {}) {
           <button
             type="button"
             className={s.fmtBtn}
-            title="Italic"
-            aria-label="Italic"
+            title={t('post.formatItalic')}
+            aria-label={t('post.formatItalic')}
             onClick={() =>
               textareaRef.current &&
               insertFormat(textareaRef.current, { prefix: '*', suffix: '*', defaultText: 'italic text' }, setText)
@@ -216,8 +216,8 @@ export function PostComposer({ onSuccess, bare }: PostComposerProps = {}) {
           <button
             type="button"
             className={s.fmtBtn}
-            title="Inline code"
-            aria-label="Inline code"
+            title={t('post.formatCode')}
+            aria-label={t('post.formatCode')}
             onClick={() =>
               textareaRef.current &&
               insertFormat(textareaRef.current, { prefix: '`', suffix: '`', defaultText: 'code' }, setText)
@@ -228,8 +228,8 @@ export function PostComposer({ onSuccess, bare }: PostComposerProps = {}) {
           <button
             type="button"
             className={s.fmtBtn}
-            title="Blockquote"
-            aria-label="Blockquote"
+            title={t('post.formatQuote')}
+            aria-label={t('post.formatQuote')}
             onClick={() =>
               textareaRef.current && insertQuote(textareaRef.current, setText)
             }
@@ -254,7 +254,7 @@ export function PostComposer({ onSuccess, bare }: PostComposerProps = {}) {
             showCounter
             serif
             autoResize
-            aria-label="Post text"
+            aria-label={t('post.textAria')}
             aria-autocomplete="list"
             aria-expanded={trigger !== null && results.length > 0}
           />
@@ -277,7 +277,7 @@ export function PostComposer({ onSuccess, bare }: PostComposerProps = {}) {
                   type="button"
                   className={s.previewRemove}
                   onClick={() => removeFile(idx)}
-                  aria-label="Remove image"
+                  aria-label={t('post.removeImage')}
                 >
                   ×
                 </button>
@@ -298,7 +298,7 @@ export function PostComposer({ onSuccess, bare }: PostComposerProps = {}) {
               type="button"
               className={s.previewRemove}
               onClick={() => setVideoFile(null)}
-              aria-label="Remove video"
+              aria-label={t('post.removeVideo')}
             >
               ×
             </button>
@@ -311,7 +311,7 @@ export function PostComposer({ onSuccess, bare }: PostComposerProps = {}) {
               type="button"
               className={s.iconButton}
               onClick={() => fileRef.current?.click()}
-              aria-label="Attach images"
+              aria-label={t('post.attachImages')}
               disabled={files.length >= 4 || videoFile !== null}
             >
               <ImageIcon size={20} weight="regular" aria-hidden />
@@ -332,7 +332,7 @@ export function PostComposer({ onSuccess, bare }: PostComposerProps = {}) {
               type="button"
               className={s.iconButton}
               onClick={() => videoRef.current?.click()}
-              aria-label="Attach video"
+              aria-label={t('post.attachVideo')}
               disabled={files.length > 0 || videoFile !== null}
             >
               <FilmStrip size={20} weight="regular" aria-hidden />

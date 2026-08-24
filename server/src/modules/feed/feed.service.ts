@@ -114,13 +114,21 @@ export async function global(
 }
 
 /**
- * Posts bearing a tag, ranked by score.
+ * Posts bearing a tag, ranked or chronological.
+ *
+ * `sort` mirrors `global` and `byBoard`. It was missing here until 2026-08-23
+ * while the route already validated the parameter through the shared
+ * `pagingQuery`, so `/feed/tag/:slug?sort=latest` answered with the ranked
+ * feed and no error -- the exact defect fixed for `byBoard` on 2026-08-19,
+ * left standing on the sibling. See that function's note for why a silently
+ * ignored `sort` is worse than a rejected one.
  */
 export async function byTag(
   slug: string,
   viewer: UserRow | null,
-  cursor: ScoreCursor | null,
+  cursor: ScoreCursor | Cursor | null,
   limit: number,
+  sort: FeedSort = 'recommended',
 ): Promise<FeedPage> {
   const [tag] = await db.select().from(tags).where(eq(tags.slug, slug.toLowerCase())).limit(1);
   if (!tag) throw AppError.notFound('Tag not found');
@@ -131,7 +139,9 @@ export async function byTag(
     arrayOverlaps(posts.tagIds, allTagIds),
     await notReservedBoardClause(),
   );
-  return paginateByScore(base, viewer, cursor, limit);
+  return sort === 'latest'
+    ? paginateByTime(base, viewer, cursor as Cursor, limit)
+    : paginateByScore(base, viewer, cursor as ScoreCursor, limit);
 }
 
 /**
@@ -310,6 +320,7 @@ export async function getExploreSummary(viewer: UserRow | null): Promise<Explore
           inArray(posts.id, allPinnedIds),
           eq(posts.status, 'active'),
           eq(posts.visibility, 'public'),
+          await notReservedBoardClause(),
         ),
       );
     if (pinnedDocs.length > 0) {
@@ -366,6 +377,7 @@ export async function byAuthor(
     eq(posts.authorId, author.id),
     eq(posts.status, 'active'),
     inArray(posts.visibility, allowedVisibilities),
+    await notReservedBoardClause(),
   );
   return paginateByTime(base, viewer, cursor, limit);
 }

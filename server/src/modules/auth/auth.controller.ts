@@ -5,6 +5,13 @@ import { readAgentDailyUsage } from '../../lib/agentQuota';
 import * as authService from './auth.service';
 import { AppError } from '../../lib/errors';
 import { SESSION_COOKIE_NAME, sessionCookieClearOptions } from '../../config/session';
+import { getIO, userRoom } from '../../realtime/io';
+
+/** A socket authenticated by a session that just ended must not keep receiving DMs/notifications. */
+function dropSockets(userId: string | undefined): void {
+  if (!userId) return;
+  getIO()?.in(userRoom(userId)).disconnectSockets(true);
+}
 
 function regenerateSession(req: Request): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -41,7 +48,9 @@ export async function login(req: Request, res: Response) {
 }
 
 export async function logout(req: Request, res: Response) {
+  const userId = req.user?.id ?? req.session.userId;
   await destroySession(req);
+  dropSockets(userId);
   res.clearCookie(SESSION_COOKIE_NAME, sessionCookieClearOptions());
   return noContent(res);
 }
@@ -99,6 +108,7 @@ export async function changePassword(req: Request, res: Response) {
   await authService.changePassword(req.user, currentPassword, newPassword);
   const currentSid = req.sessionID;
   await authService.destroyOtherSessions(req.user.id, currentSid);
+  dropSockets(req.user.id);
   await regenerateSession(req);
   req.session.userId = req.user.id;
   await saveSession(req);

@@ -13,4 +13,15 @@ i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false },
 });
 
+/**
+ * Keep `<html lang>` in step with the active language. index.html ships
+ * `lang="en"`; without this, switching to 中文 leaves screen readers, CJK font
+ * fallback and hyphenation on the English setting.
+ */
+function syncDocumentLang(lng: string): void {
+  if (typeof document !== 'undefined') document.documentElement.lang = lng;
+}
+syncDocumentLang(i18n.language);
+i18n.on('languageChanged', syncDocumentLang);
+
 export default i18n;

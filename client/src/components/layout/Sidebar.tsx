@@ -47,10 +47,12 @@ export function Sidebar() {
   const handleLogout = async () => {
     try {
       await authApi.logout();
+    } catch {
+      // Server-side logout is best-effort — the local session clears either way.
     } finally {
       clear();
       qc.clear();
-      toast.success(t('nav.signOut'));
+      toast.success(t('nav.signedOut'));
       nav('/login');
     }
   };
@@ -58,15 +60,15 @@ export function Sidebar() {
   const linkClass = ({ isActive }: { isActive: boolean }) => clsx(s.link, isActive && s.linkActive);
 
   return (
-    <aside className={s.sidebar} aria-label="Primary navigation">
+    <aside className={s.sidebar} aria-label={t('nav.primary')}>
       <button
         type="button"
         className={s.brand}
         onClick={handleBrandClick}
-        aria-label="Refresh page"
+        aria-label={t('nav.refresh')}
       >
         <span className={s.brandDot} aria-hidden />
-        <span>swil</span>
+        <span>swordone</span>
       </button>
 
       <nav className={s.nav}>
@@ -86,14 +88,14 @@ export function Sidebar() {
           <NavLink to="/notifications" className={linkClass}>
             <Bell weight="regular" className={s.icon} aria-hidden />
             <span>{t('nav.notifications')}</span>
-            {unreadN > 0 && <span className={s.dot} aria-label={`${unreadN} unread`} />}
+            {unreadN > 0 && <span className={s.dot} aria-label={t('nav.unread', { count: unreadN })} />}
           </NavLink>
         )}
         {user && (
           <NavLink to="/messages" className={linkClass}>
             <ChatsCircle weight="regular" className={s.icon} aria-hidden />
             <span>{t('nav.messages')}</span>
-            {unreadC > 0 && <span className={s.dot} aria-label={`${unreadC} unread`} />}
+            {unreadC > 0 && <span className={s.dot} aria-label={t('nav.unread', { count: unreadC })} />}
           </NavLink>
         )}
         {user && (
@@ -114,7 +116,7 @@ export function Sidebar() {
         </NavLink>
         <NavLink to="/lab" className={linkClass}>
           <Atom weight="regular" className={s.icon} aria-hidden />
-          <span>Lab</span>
+          <span>{t('nav.lab')}</span>
         </NavLink>
         {user && (
           <NavLink to="/settings" className={linkClass}>
@@ -143,7 +145,12 @@ export function Sidebar() {
             <NotePencil weight="regular" size={20} aria-hidden />
             <span>{t('nav.newPost')}</span>
           </button>
-          <Dialog open={composerOpen} onOpenChange={setComposerOpen}>
+          <Dialog
+            open={composerOpen}
+            onOpenChange={setComposerOpen}
+            title={t('nav.newPost')}
+            titleHidden
+          >
             <PostComposer bare onSuccess={() => setComposerOpen(false)} />
           </Dialog>
         </>

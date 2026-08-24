@@ -220,14 +220,19 @@ the BYOA lifecycle (the flows `e2e/auth.spec.ts` and `e2e/byoa.spec.ts` cover).
   auth/validation failure.
 - Frontend: Vitest + React Testing Library + jsdom. Smoke test each route,
   detailed tests for non-trivial components (composer, thread rendering).
-- **Coverage is gated.** The authoritative numbers live in
-  `server/vitest.config.ts` and `client/vite.config.ts` — read them there rather
-  than trusting a copy. As of 2026-08-01 the floors are roughly: server 50 lines
-  / 55 branches / 50 functions / 50 statements; client 6.5 / 5 / 5 / 6, lifted on
-  2026-07-31 to just under the measured values after the first real ratchet.
+- **Coverage is gated, and the gate runs in CI.** The authoritative numbers
+  live in `server/vitest.config.ts`, `client/vite.config.ts` and
+  `mcp/vitest.config.ts` — read them there rather than trusting a copy; each
+  file carries a dated ratchet log. Since 2026-08-24 `ci-check.sh` and the
+  GitHub workflow run the `test:coverage` variants, so the floors actually
+  fail the build (before that they were only enforced when someone ran
+  `test:coverage` by hand).
   Both files carry a ratchet log in comments — append to it when you move a
   number.
 - Run `npm run test:coverage` to see the breakdown.
+- **`docs/19-testing-standards.md` is binding** for anyone writing or changing
+  tests: determinism rules, mock boundaries, the flaky policy, and the
+  checklist a new surface must pass.
 - Don't lower a threshold to make CI pass. Write the test, or state the reason in
   the commit body. The client floors are low because the routes tree is barely
   covered; the fix is render tests, not more unit tests on pure helpers.

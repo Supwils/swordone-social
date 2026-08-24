@@ -9,6 +9,7 @@ import type { UserRow } from '../../lib/dto';
 const mocks = vi.hoisted(() => ({
   listForViewer: vi.fn(),
   findOrCreateWith: vi.fn(),
+  getById: vi.fn(),
   unreadCount: vi.fn(),
   listMessages: vi.fn(),
   send: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock('../../middlewares/auth', () => ({
 vi.mock('./messages.service', () => ({
   listForViewer: mocks.listForViewer,
   findOrCreateWith: mocks.findOrCreateWith,
+  getById: mocks.getById,
   unreadCount: mocks.unreadCount,
   listMessages: mocks.listMessages,
   send: mocks.send,
@@ -242,5 +244,137 @@ describe('messages routes', () => {
       null,
       10,
     );
+  });
+});
+
+describe('messages routes — remaining surface', () => {
+  beforeEach(resetDb);
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('lists conversations with the default limit and a null cursor', async () => {
+    mocks.listForViewer.mockResolvedValue({ items: [], nextCursor: null });
+
+    const { res, error } = await runRoute(conversationsRouter, '/', 'get');
+
+    expect(error).toBeUndefined();
+    expect(res.statusCode).toBe(200);
+    expect(mocks.listForViewer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'viewer-id' }),
+      null,
+      20,
+    );
+  });
+
+  it('rejects a paging limit above the schema maximum', async () => {
+    const { error } = await runRoute(conversationsRouter, '/:id/messages', 'get', {
+      params: { id: newId() },
+      query: { limit: '101' },
+    });
+
+    expect(error).toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+    expect(mocks.listMessages).not.toHaveBeenCalled();
+  });
+
+  it('answers 200 (not 201) for an existing conversation and computes unread', async () => {
+    const peer = await seedUser({
+      username: 'bob',
+      usernameDisplay: 'bob',
+      email: 'bob@example.com',
+      displayName: 'Bob',
+    });
+    const conversation = {
+      id: newId(),
+      participantIds: [peer.id],
+      // The route builds the DTO for the MOCKED viewer ('viewer-id'), so this
+      // marks the thread unread for exactly that viewer.
+      unreadBy: ['viewer-id'],
+      lastMessageAt: new Date('2026-04-23T00:00:00.000Z'),
+      lastMessageId: null,
+    };
+    mocks.findOrCreateWith.mockResolvedValue({ conversation, created: false });
+
+    const { res, error } = await runRoute(conversationsRouter, '/', 'post', {
+      body: { recipientUsername: 'bob' },
+    });
+
+    expect(error).toBeUndefined();
+    expect(res.statusCode).toBe(200);
+    const payload = res.payload as { data: { conversation: { unread: boolean } } };
+    expect(payload.data.conversation.unread).toBe(true);
+  });
+
+  it('rejects a too-short recipientUsername before touching the service', async () => {
+    const { error } = await runRoute(conversationsRouter, '/', 'post', {
+      body: { recipientUsername: 'ab' },
+    });
+
+    expect(error).toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+    expect(mocks.findOrCreateWith).not.toHaveBeenCalled();
+  });
+
+  it('serves a single conversation through getById', async () => {
+    const id = newId();
+    mocks.getById.mockResolvedValue({ id, participants: [] });
+
+    const { res, error } = await runRoute(conversationsRouter, '/:id', 'get', {
+      params: { id },
+    });
+
+    expect(error).toBeUndefined();
+    expect(mocks.getById).toHaveBeenCalledWith(expect.objectContaining({ id: 'viewer-id' }), id);
+    expect((res.payload as { data: { conversation: { id: string } } }).data.conversation.id).toBe(
+      id,
+    );
+  });
+
+  it('rejects a malformed conversation id before the service runs', async () => {
+    const { error } = await runRoute(conversationsRouter, '/:id', 'get', {
+      params: { id: 'not-hex' },
+    });
+
+    expect(error).toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+    expect(mocks.getById).not.toHaveBeenCalled();
+  });
+
+  it('sends a message with trimmed text and answers 201', async () => {
+    const id = newId();
+    mocks.send.mockResolvedValue({ id: 'm-1', text: 'hi' });
+
+    const { res, error } = await runRoute(conversationsRouter, '/:id/messages', 'post', {
+      params: { id },
+      body: { text: '  hi  ' },
+    });
+
+    expect(error).toBeUndefined();
+    expect(res.statusCode).toBe(201);
+    expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({ id: 'viewer-id' }), id, 'hi');
+    expect((res.payload as { data: { message: { id: string } } }).data.message.id).toBe('m-1');
+  });
+
+  it('rejects a message body over 4000 characters', async () => {
+    const { error } = await runRoute(conversationsRouter, '/:id/messages', 'post', {
+      params: { id: newId() },
+      body: { text: 'x'.repeat(4001) },
+    });
+
+    expect(error).toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
+  it('marks a conversation read and answers 204 with no body', async () => {
+    const id = newId();
+    mocks.markRead.mockResolvedValue(undefined);
+
+    const { res, error } = await runRoute(conversationsRouter, '/:id/read', 'post', {
+      params: { id },
+    });
+
+    expect(error).toBeUndefined();
+    expect(mocks.markRead).toHaveBeenCalledWith(expect.objectContaining({ id: 'viewer-id' }), id);
+    expect(res.statusCode).toBe(204);
+    expect(res.ended).toBe(true);
+    expect(res.payload).toBeUndefined();
   });
 });

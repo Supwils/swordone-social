@@ -116,3 +116,63 @@ describe('calcFeedScore', () => {
     expect(ancient).toBeGreaterThan(0);
   });
 });
+
+describe('refreshFeedScore batching', () => {
+  it('flushes queued ids after the batch window and persists real scores', async () => {
+    // Dynamic imports keep this describe append-only: the file's top half is
+    // a pure-function suite with no DB dependency, and should stay that way.
+    const { db } = await import('../db/client');
+    const { posts, users } = await import('../db/schema');
+    const { resetDb } = await import('../test/db-reset');
+    const { refreshFeedScore, calcFeedScore } = await import('./feedScorer');
+
+    await resetDb();
+    const [author] = await db
+      .insert(users)
+      .values({
+        username: 'scorer1',
+        usernameDisplay: 'scorer1',
+        email: 'scorer1@example.com',
+        displayName: 'Scorer',
+      })
+      .returning();
+    const [p1] = await db
+      .insert(posts)
+      .values({ authorId: author.id, text: 'a', likeCount: 5, feedScore: 0 })
+      .returning();
+    const [p2] = await db
+      .insert(posts)
+      .values({ authorId: author.id, text: 'b', commentCount: 3, feedScore: 0 })
+      .returning();
+
+    refreshFeedScore(p1.id);
+    refreshFeedScore(p2.id);
+    refreshFeedScore(p1.id); // duplicate — the pending set dedupes it
+
+    // The 2s delay IS the contract under test; the wait is event-driven on
+    // the persisted value, bounded well past one batch window.
+    await expect
+      .poll(
+        async () => {
+          const rows = await db.select({ id: posts.id, feedScore: posts.feedScore }).from(posts);
+          const s1 = rows.find((r) => r.id === p1.id)?.feedScore ?? 0;
+          const s2 = rows.find((r) => r.id === p2.id)?.feedScore ?? 0;
+          return s1 > 0 && s2 > 0;
+        },
+        { timeout: 8_000, interval: 250 },
+      )
+      .toBe(true);
+
+    // The persisted number is the real formula, not a sentinel.
+    const [row] = await db.select().from(posts).where((await import('drizzle-orm')).eq(posts.id, p1.id));
+    expect(row.feedScore).toBeCloseTo(
+      calcFeedScore({
+        likeCount: row.likeCount,
+        commentCount: row.commentCount,
+        repostCount: row.repostCount,
+        createdAt: row.createdAt,
+      }),
+      2,
+    );
+  }, 15_000);
+});

@@ -10,7 +10,9 @@ other backend).
 
 from __future__ import annotations
 
+import logging
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -122,3 +124,38 @@ def test_distill_neutral_collapses_doubled_output() -> None:
     runner = FakeRunner(body + body)
     out = distill_neutral(CompletionRequest(system="S", user="U"), runner, "haiku")
     assert out == body
+
+
+def test_a_failing_child_puts_its_stderr_and_exit_code_in_the_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A CLI that exits non-zero writes the reason to STDERR, and `run`
+    returned only stdout -- so "Credit balance too low", "not logged in" and
+    a rate-limit notice all arrived as `BackendUnavailableError(... produced
+    no output)`. That is the "no response from codex" incident class this
+    module's own `FileNotFoundError` comment says the project has already
+    lost real time to; the reason was on the floor, not missing."""
+    runner = SubprocessRunner()
+
+    with caplog.at_level(logging.WARNING):
+        script = "import sys; sys.stderr.write('Credit balance too low'); sys.exit(1)"
+        out = runner.run([sys.executable, "-c", script])
+
+    assert out == ""
+    assert "Credit balance too low" in caplog.text
+    assert "1" in caplog.text
+
+
+def test_a_timed_out_child_says_so_instead_of_looking_like_a_dead_llm(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A 300s hang and an instantly-dead backend both returned `""`. One is a
+    wedged host, the other a broken install; the operator saw the same
+    `outcome=backend_unavailable` for both."""
+    runner = SubprocessRunner()
+
+    with caplog.at_level(logging.WARNING):
+        out = runner.run([sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.2)
+
+    assert out == ""
+    assert "timed out" in caplog.text.lower()

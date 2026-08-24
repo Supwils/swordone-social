@@ -20,14 +20,14 @@ The app is deployed **split frontend/backend**, with Postgres on Neon:
 
 | Piece | Where | URL |
 |---|---|---|
-| Frontend (Vite SPA) | Vercel (project **`client`** — linked from `client/.vercel`; the root-linked `swil-social` project serves nothing) | https://swilsocial.vercel.app |
+| Frontend (Vite SPA) | Vercel (project **`client`** — linked from `client/.vercel`; the root-linked `swil-social` project serves nothing) | **https://swordone.space** (custom domain since 2026-08-24; `swilsocial.vercel.app` still aliases the same deployment) |
 | Backend (Express + Socket.IO) | Railway (`swil-social-api`, uploads `server/` as build root, RAILPACK) | https://swil-social-api-production.up.railway.app |
 | Database | Neon Postgres (Vercel Marketplace, pgvector) | — |
 | Images | AWS S3 + CloudFront | — |
 
 **Wiring**
 - Client build bakes in `VITE_API_BASE` (`<backend>/api/v1`) and `VITE_SOCKET_URL` (`<backend>`).
-- Cross-origin: backend `CORS_ORIGINS` allowlists the Vercel origins; session cookie is
+- Cross-origin: backend `CORS_ORIGINS` allowlists `https://swordone.space`, `https://www.swordone.space` and the Vercel origins (a new frontend domain is a 500 on preflight until it is added here and the service is redeployed); session cookie is
   `SameSite=None; Secure` (`COOKIE_SAMESITE=none`, `COOKIE_SECURE=true`) so it survives the
   cross-site SPA→API round trip.
 - Backend `DATABASE_URL` = Neon **direct/unpooled** string (persistent server → small pool; the
@@ -43,7 +43,7 @@ NEITHER side auto-deploys.** The runbook, in order:
    every column explicitly): `DATABASE_URL=<DATABASE_URL_UNPOOLED> npm --prefix server run db:migrate`.
 2. Backend: trigger a deploy — see "Backend deploy" below. The source is GitHub `main`,
    so push first.
-3. Frontend: `cd client && npx vercel --prod` (aliases to swilsocial.vercel.app).
+3. Frontend: `cd client && npx vercel --prod` (aliases to swordone.space and swilsocial.vercel.app).
 4. Verify: backend `/health` returns 200; the deployment shows SUCCESS; frontend bundle
    contains a string from the new build.
 
@@ -177,7 +177,7 @@ the opposite case and does need `COOKIE_SAMESITE=none` + `COOKIE_SECURE=true`.
 | `PORT` | Listen port (default 8899). |
 | `DATABASE_URL` | **Required, no default** — the server exits at boot without it. Neon **direct/unpooled** string for the persistent Railway service. |
 | `SESSION_SECRET` | Signs session cookies. ≥ 32 chars **and** rejected if it still looks like the `.env.example` placeholder (`change-me` / `your-secret` / `placeholder` / `example`). Rotate on suspected compromise. |
-| `CORS_ORIGINS` | Comma-separated allowlist. Must list the Vercel origins for the split deploy; can be empty/self with same-origin serving. |
+| `CORS_ORIGINS` | Comma-separated allowlist. Must list every frontend origin for the split deploy (`https://swordone.space`, `https://www.swordone.space`, the Vercel origins); can be empty/self with same-origin serving. |
 | `COOKIE_SAMESITE` | `lax` (default) for single-origin. **`none` for the live split deploy** — and `none` requires `COOKIE_SECURE=true`. |
 | `COOKIE_SECURE` / `COOKIE_DOMAIN` | `true` + your domain in prod. |
 | `REDIS_URL` | Optional cache; enables the Socket.IO Redis adapter for multi-instance (see Scaling). |

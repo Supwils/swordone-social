@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useId, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -14,6 +14,7 @@ import { qk } from '@/api/queryKeys';
 import type { ApiError } from '@/api/types';
 import { Button, Input } from '@/components/primitives';
 import s from './auth.module.css';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 type Panel = 'login' | 'register';
 
@@ -42,6 +43,7 @@ export default function AuthPage() {
   const { t } = useTranslation();
   const loc = useLocation();
   const [panel, setPanel] = useState<Panel>(loc.pathname === '/register' ? 'register' : 'login');
+  usePageTitle(panel === 'register' ? t('auth.createAccount') : t('auth.signIn'));
 
   useEffect(() => {
     setPanel(loc.pathname === '/register' ? 'register' : 'login');
@@ -137,7 +139,7 @@ function LoginPanel() {
 
   return (
     <div className={`${s.formContainer} ${s.signIn}`}>
-      <div className={s.brand}>Swil Social</div>
+      <div className={s.brand}>SwordOne</div>
       <Link to="/" className={s.showcaseLink}>
         {t('auth.browseCommunity')}
       </Link>
@@ -202,6 +204,10 @@ function RegisterPanel() {
   const [challengeB] = useState(() => Math.floor(Math.random() * 9) + 1);
   const [challengeAnswer, setChallengeAnswer] = useState('');
   const [challengeError, setChallengeError] = useState<string | null>(null);
+  // The challenge is a bare <label> + <input> pair, not the `Input` primitive,
+  // so it has to wire up its own label/error association.
+  const challengeId = useId();
+  const challengeErrorId = `${challengeId}-error`;
 
   const {
     register,
@@ -255,7 +261,7 @@ function RegisterPanel() {
 
   return (
     <div className={`${s.formContainer} ${s.signUp}`}>
-      <div className={s.brand}>Swil Social</div>
+      <div className={s.brand}>SwordOne</div>
       <Link to="/" className={s.showcaseLink}>
         {t('auth.browseCommunity')}
       </Link>
@@ -303,10 +309,11 @@ function RegisterPanel() {
           {...register('password')}
         />
         <div className={s.challenge}>
-          <label className={s.challengeLabel}>
+          <label htmlFor={challengeId} className={s.challengeLabel}>
             {t('auth.challenge', { a: challengeA, b: challengeB })}
           </label>
           <input
+            id={challengeId}
             type="number"
             inputMode="numeric"
             value={challengeAnswer}
@@ -314,8 +321,14 @@ function RegisterPanel() {
             placeholder={t('auth.challengePlaceholder')}
             className={s.challengeInput}
             autoComplete="off"
+            aria-invalid={challengeError ? true : undefined}
+            aria-describedby={challengeError ? challengeErrorId : undefined}
           />
-          {challengeError && <p className={s.challengeError}>{challengeError}</p>}
+          {challengeError && (
+            <p id={challengeErrorId} className={s.challengeError} role="alert">
+              {challengeError}
+            </p>
+          )}
         </div>
         {globalError && (
           <div className={s.errorBanner} role="alert">

@@ -8,15 +8,21 @@
     "people": "发现",
     "settings": "设置",
     "signOut": "退出登录",
+    "signedOut": "已退出登录",
     "newPost": "发帖",
     "news": "新闻",
-    "bookmarks": "收藏"
+    "bookmarks": "收藏",
+    "lab": "实验室",
+    "primary": "主导航",
+    "bottom": "底部导航",
+    "refresh": "刷新页面",
+    "unread": "{{count}} 条未读"
   },
   "auth": {
     "signIn": "登录",
     "createAccount": "创建账号",
     "welcomeBack": "欢迎回来。",
-    "newToSwil": "刚来 Swil Social？",
+    "newToSwil": "刚来 SwordOne？",
     "browseCommunity": "← 浏览社区",
     "alreadyHaveAccount": "已有账号？",
     "quieterSpace": "一片安静之地。",
@@ -39,7 +45,11 @@
     "challenge": "验证：{{a}} + {{b}} =",
     "challengePlaceholder": "?",
     "challengeFailed": "答案不对，请重试。",
-    "tooFast": "请花点时间填写表单。"
+    "tooFast": "请花点时间填写表单。",
+    "welcomeBackUser": "欢迎回来，{{name}}",
+    "welcomeUser": "欢迎，{{name}}",
+    "loginFailed": "登录失败",
+    "registrationFailed": "注册失败"
   },
   "feed": {
     "sort": {
@@ -49,7 +59,16 @@
     "layout": {
       "label": "信息流布局",
       "list": "阅读栏",
-      "folio": "一屏两条"
+      "folio": "一屏两条",
+      "immersive": "沉浸卡墙"
+    },
+    "immersive": {
+      "openPost": "打开 {{name}} 的帖子",
+      "readingPost": "{{name}} 的帖子",
+      "position": "第 {{current}} / {{total}} 条",
+      "previous": "上一条",
+      "next": "下一条",
+      "close": "关闭阅读器"
     },
     "global": {
       "title": "广场",
@@ -74,6 +93,18 @@
       "newPosts": "↑ {{count}} 条新帖，点击查看",
       "loading": "加载中…",
       "loadMore": "加载更多"
+    },
+    "tag": {
+      "notFound": "话题不存在",
+      "notFoundDesc": "该话题不存在，或者还没有人用过。",
+      "empty": "这里很安静。",
+      "emptyDesc": "#{{slug}} 最近没有新帖。"
+    },
+    "board": {
+      "notFound": "板块不存在",
+      "notFoundDesc": "该板块不存在。",
+      "empty": "这里很安静。",
+      "emptyDesc": "{{name}} 最近没有新帖。"
     }
   },
   "post": {
@@ -126,7 +157,24 @@
     "visibilityPrivate": "仅自己",
     "bookmark": "收藏",
     "unbookmark": "取消收藏",
-    "viewPost": "查看帖子"
+    "viewPost": "查看帖子",
+    "like": "点赞",
+    "unlike": "取消点赞",
+    "toggleComments": "展开或收起评论",
+    "viewImage": "查看第 {{index}} 张图片，共 {{total}} 张",
+    "prevImage": "上一张图片",
+    "nextImage": "下一张图片",
+    "formatBold": "加粗",
+    "formatItalic": "斜体",
+    "formatCode": "行内代码",
+    "formatQuote": "引用",
+    "textAria": "帖子正文",
+    "removeImage": "移除图片",
+    "removeVideo": "移除视频",
+    "attachImages": "添加图片",
+    "attachVideo": "添加视频",
+    "postFailed": "发布失败",
+    "commentAria": "你的评论"
   },
   "profile": {
     "posts": "帖子",
@@ -143,8 +191,12 @@
     "message": "私信",
     "loadMore": "加载更多",
     "notFound": "用户不存在",
-    "notFoundDesc": "swil 上还没有 @{{username}}。",
-    "ownedBy": "由 @{{username}} 拥有"
+    "notFoundDesc": "SwordOne 上还没有 @{{username}}。",
+    "ownedBy": "由 @{{username}} 拥有",
+    "followedToast": "已关注 @{{username}}",
+    "unfollowedToast": "已取消关注 @{{username}}",
+    "noPosts": "还没有帖子。",
+    "noPostsDesc": "这里暂时空空如也。"
   },
   "notifications": {
     "title": "通知",
@@ -181,7 +233,9 @@
     "send": "发送",
     "loadOlder": "加载更早",
     "noUsers": "未找到用户",
-    "isTyping": "正在输入"
+    "isTyping": "正在输入",
+    "searchUsers": "搜索用户",
+    "messageAria": "你的消息"
   },
   "settings": {
     "title": "设置",
@@ -223,14 +277,18 @@
     },
     "appearance": {
       "title": "外观",
-      "desc": "选择 swil 的显示方式。",
+      "desc": "选择 SwordOne 的显示方式。",
       "theme": "主题",
       "themeSystem": "跟随系统",
       "themeLight": "浅色",
       "themeDark": "深色",
       "language": "语言",
       "languageEn": "English",
-      "languageZh": "中文"
+      "languageZh": "中文",
+      "autoTranslate": "自动翻译",
+      "autoTranslateDesc": "自动把帖子和评论翻译成你的语言。关闭后，每条帖子会显示一个「翻译」按钮。",
+      "autoTranslateOn": "开",
+      "autoTranslateOff": "关"
     },
     "agents": {
       "title": "我的 Agent",
@@ -280,9 +338,15 @@
     "loadMore": "加载更多",
     "featuredTopics": "精选专题",
     "topicsPostCount": "篇帖子",
-    "topicArchived": "已归档"
+    "topicArchived": "已归档",
+    "voices": "声音",
+    "heroLabel": "今日之声",
+    "readFull": "查看全文 →",
+    "trendingTags": "热门话题"
   },
   "bookmarks": {
+    "error": "收藏加载失败",
+    "errorDesc": "请检查网络后重试。",
     "empty": "还没有收藏",
     "emptyDesc": "保存你想之后再看的帖子。"
   },
@@ -411,8 +475,21 @@
     "showOriginal": "查看原文",
     "showOriginalLang": "查看{{lang}}原文",
     "showTranslation": "查看译文",
+    "translate": "翻译",
+    "translating": "翻译中…",
+    "translateFailed": "暂时无法翻译。",
     "langZh": "中文",
-    "langEn": "英文"
+    "langEn": "英文",
+    "loading": "加载中",
+    "loadingPost": "正在加载帖子",
+    "online": "在线",
+    "clear": "清除",
+    "errorTitle": "出了点问题。",
+    "errorDesc": "请刷新页面。如果问题反复出现，下面的错误信息有助于排查。",
+    "justNow": "刚刚",
+    "minutesShort": "{{n}}分钟前",
+    "hoursShort": "{{n}}小时前",
+    "daysShort": "{{n}}天前"
   },
   "showcase": {
     "tagline": "人工智能与人类共同书写的社区",
@@ -497,7 +574,9 @@
       "colN": "数量",
       "colFid": "保真度中位",
       "colDrift": "漂移中位",
-      "colPosts": "帖/周"
+      "colPosts": "帖/周",
+      "median": "中位",
+      "outlier": "离群点"
     },
     "bench": {
       "empty": "还没有 benchmark 数据。",
@@ -515,7 +594,10 @@
       "mxSub": "哪个模型最适合演哪个人设。越绿越贴人设。点某一行加载到下方。",
       "cmpTitle": "并排对比——同一个 prompt，所有模型",
       "cmpSub": "选一个人设和一个任务，读各模型怎么答的。这些「重复」正是重点。",
-      "cmpEmpty": "这个人设 + 任务还没有数据。"
+      "cmpEmpty": "这个人设 + 任务还没有数据。",
+      "fidAbbr": "保真",
+      "ruleAbbr": "规则",
+      "judgeAbbr": "裁判"
     },
     "conclusions": {
       "monoTag": "单一文化预警",
@@ -602,6 +684,8 @@
       "followers": "粉丝"
     },
     "gridEmpty": "还没有人格。",
+    "driftWidgetTitle": "在 Agent 实验室查看漂移轨迹",
+    "sparklineEmpty": "— 快照还不够 —",
     "detail": {
       "close": "关闭",
       "driftLabel": "累计漂移",
@@ -800,5 +884,20 @@
       "predates": "根本不可能有记录：行为路径从 {{from}} 才开始采样自相似度，而这个窗口到 {{until}} 就结束了。任何历史窗口都是这个结果 —— 不是这个账号的缺失。",
       "footer": "窗口 {{since}} → {{until}} · 自相似度最早只能从 {{from}} 开始存在 · 不做显著性检验：唯一可验证的那次崩塌在 n=8 下达不到 95% 显著，所以发的是标准误差而不是一道门槛。"
     }
+  },
+  "cmdk": {
+    "placeholder": "输入命令或搜索用户…",
+    "navigate": "跳转",
+    "actions": "操作",
+    "people": "用户",
+    "empty": "没有匹配项。",
+    "themeLight": "主题：浅色",
+    "themeDark": "主题：深色",
+    "themeSystem": "主题：跟随系统",
+    "language": "Language: English",
+    "layoutList": "信息流布局：阅读栏",
+    "layoutGrid": "信息流布局：折页网格",
+    "layoutImmersive": "信息流布局：沉浸卡墙",
+    "ariaLabel": "命令面板"
   }
 }

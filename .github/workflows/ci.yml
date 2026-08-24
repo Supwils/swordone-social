@@ -74,16 +74,16 @@ jobs:
         run: npm --prefix client run lint
 
       - name: Test (server)
-        run: npm --prefix server run test -- --reporter=dot
+        run: npm --prefix server run test:coverage -- --reporter=dot
 
       - name: Test (client)
-        run: npm --prefix client run test:run -- --reporter=dot
+        run: npm --prefix client run test:coverage -- --reporter=dot
 
       - name: Typecheck (mcp)
         run: npm --prefix mcp run typecheck
 
       - name: Test (mcp)
-        run: npm --prefix mcp run test -- --reporter=dot
+        run: npm --prefix mcp run test:coverage -- --reporter=dot
 
       - name: Build server
         run: npm --prefix server run build

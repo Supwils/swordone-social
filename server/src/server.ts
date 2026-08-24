@@ -7,6 +7,7 @@ import { initRealtime } from './realtime/io';
 import { closeRedisAdapter } from './realtime/adapter';
 import { initMonitoring, captureException } from './lib/monitoring';
 import { logger } from './lib/logger';
+import { startFeedScoreRefresher } from './lib/feedScorer';
 
 async function bootstrap(): Promise<void> {
   // Init monitoring BEFORE any other work so boot-time errors are captured.
@@ -25,9 +26,11 @@ async function bootstrap(): Promise<void> {
   httpServer.listen(env.PORT, () => {
     logger.info({ port: env.PORT, env: env.NODE_ENV }, 'server listening');
   });
+  const stopFeedScores = env.NODE_ENV === 'test' ? () => undefined : startFeedScoreRefresher();
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'shutting down');
+    stopFeedScores();
     httpServer.close(async () => {
       await closeRedisAdapter();
       await disconnectDb();

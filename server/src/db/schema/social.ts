@@ -18,6 +18,8 @@ export type UserPreferences = {
   language: 'en' | 'zh';
   emailNotifications: boolean;
   pushNotifications: boolean;
+  /** Translate post/comment bodies on read. Absent → on. */
+  autoTranslate?: boolean;
 };
 export type PostImage = { url: string; width: number; height: number; blurhash?: string };
 export type PostVideo = { url: string; width: number; height: number; durationSec?: number };

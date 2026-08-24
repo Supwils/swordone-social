@@ -1,5 +1,5 @@
 import { http, unwrap } from './client';
-import type { CommentDTO, Paginated } from './types';
+import type { CommentDTO, Locale, Paginated, TranslationDTO } from './types';
 
 export async function listForPost(
   postId: string,
@@ -27,6 +27,10 @@ export async function update(id: string, text: string): Promise<CommentDTO> {
     http.patch(`/comments/${id}`, { text }),
   );
   return out.comment;
+}
+
+export async function translate(id: string, to: Locale): Promise<TranslationDTO> {
+  return unwrap<TranslationDTO>(http.get(`/comments/${id}/translation`, { params: { to } }));
 }
 
 export async function remove(id: string): Promise<void> {

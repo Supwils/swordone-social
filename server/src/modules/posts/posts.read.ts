@@ -87,7 +87,11 @@ export async function getPostForViewer(
   };
 }
 
-export async function getShowcasePosts(viewer: UserRow | null, lang: string): Promise<PostDTO[]> {
+export async function getShowcasePosts(
+  viewer: UserRow | null,
+  lang: string,
+  content = true,
+): Promise<PostDTO[]> {
   const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 3_600_000);
 
   const candidates = await db
@@ -99,6 +103,7 @@ export async function getShowcasePosts(viewer: UserRow | null, lang: string): Pr
         eq(posts.visibility, 'public'),
         isNull(posts.echoOf),
         gte(posts.createdAt, sixtyDaysAgo),
+        await notReservedBoardClause(),
       ),
     )
     .orderBy(desc(posts.feedScore), desc(posts.id))
@@ -144,7 +149,7 @@ export async function getShowcasePosts(viewer: UserRow | null, lang: string): Pr
 
   const pagePosts = shuffled.slice(0, 24);
   const ctxMap = await hydratePosts(pagePosts, viewer);
-  await translatePosts(pagePosts, ctxMap, lang);
+  await translatePosts(pagePosts, ctxMap, lang, { content });
 
   return pagePosts
     .map((p) => {

@@ -34,21 +34,58 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): SwilConfig 
   return { baseUrl, apiKey };
 }
 
+/**
+ * Ceiling for one API call. A stdio MCP server answers one tool call at a
+ * time, so an unbounded request does not merely fail slowly — it holds the
+ * slot with no error for the client to show. 20s is well past the slowest
+ * real endpoint (feed hydration) and well short of a human's patience.
+ */
+export const REQUEST_TIMEOUT_MS = 20_000;
+
+/** Flatten the server's per-field validation detail onto the message. */
+function withFields(message: string, fields?: Record<string, string>): string {
+  if (!fields) return message;
+  const detail = Object.entries(fields)
+    .map(([field, why]) => `${field}: ${why}`)
+    .join('; ');
+  return detail ? `${message} (${detail})` : message;
+}
+
 export async function swilFetch<T>(
   cfg: SwilConfig,
   method: 'GET' | 'POST' | 'DELETE' | 'PATCH',
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const res = await fetch(`${cfg.baseUrl}/api/v1${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${cfg.apiKey}`,
-      Accept: 'application/json',
-      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${cfg.baseUrl}/api/v1${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${cfg.apiKey}`,
+        Accept: 'application/json',
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    // The two transport failures a caller can actually act on, told apart:
+    // "the host never answered" needs a different fix from "SWIL_URL is
+    // wrong / the server is down". Both used to arrive as a bare
+    // `TypeError: fetch failed`, with the real reason only in `err.cause`.
+    const name = (err as { name?: string }).name;
+    if (name === 'TimeoutError' || name === 'AbortError') {
+      throw new SwilApiError(
+        0,
+        'TIMEOUT',
+        `${cfg.baseUrl} did not answer within ${REQUEST_TIMEOUT_MS}ms (${method} ${path})`,
+      );
+    }
+    const cause = (err as { cause?: unknown }).cause;
+    const why = cause instanceof Error ? cause.message : ((err as Error)?.message ?? String(err));
+    throw new SwilApiError(0, 'NETWORK', `Cannot reach ${cfg.baseUrl}: ${why}`);
+  }
 
   if (res.status === 204) return undefined as T;
 
@@ -60,11 +97,13 @@ export async function swilFetch<T>(
   }
 
   if (!res.ok) {
-    const err = (parsed as { error?: { code?: string; message?: string } }).error;
+    const err = (parsed as {
+      error?: { code?: string; message?: string; fields?: Record<string, string> };
+    }).error;
     throw new SwilApiError(
       res.status,
       err?.code ?? 'UNKNOWN',
-      err?.message ?? `HTTP ${res.status}`,
+      withFields(err?.message ?? `HTTP ${res.status}`, err?.fields),
     );
   }
 
@@ -144,5 +183,51 @@ export const api = {
       cfg,
       'GET',
       `/notifications?limit=${limit}`,
+    ),
+
+  boardFeed: (cfg: SwilConfig, slug: string, limit: number, sort: 'recommended' | 'latest') =>
+    swilFetch<{ items: Json[] }>(
+      cfg,
+      'GET',
+      `/feed/board/${encodeURIComponent(slug)}?limit=${limit}&sort=${sort}`,
+    ),
+
+  listConversations: (cfg: SwilConfig, limit: number) =>
+    swilFetch<{ items: Json[]; nextCursor: string | null }>(
+      cfg,
+      'GET',
+      `/conversations?limit=${limit}`,
+    ),
+
+  openConversation: (cfg: SwilConfig, recipientUsername: string) =>
+    swilFetch<{ conversation: Json }>(cfg, 'POST', '/conversations', { recipientUsername }),
+
+  listMessages: (cfg: SwilConfig, conversationId: string, limit: number) =>
+    swilFetch<{ items: Json[]; nextCursor: string | null }>(
+      cfg,
+      'GET',
+      `/conversations/${conversationId}/messages?limit=${limit}`,
+    ),
+
+  sendMessage: (cfg: SwilConfig, conversationId: string, text: string) =>
+    swilFetch<{ message: Json }>(cfg, 'POST', `/conversations/${conversationId}/messages`, {
+      text,
+    }),
+
+  markConversationRead: (cfg: SwilConfig, conversationId: string) =>
+    swilFetch<undefined>(cfg, 'POST', `/conversations/${conversationId}/read`),
+
+  setBookmark: (cfg: SwilConfig, postId: string, bookmarked: boolean) =>
+    swilFetch<Json | undefined>(
+      cfg,
+      bookmarked ? 'POST' : 'DELETE',
+      `/posts/${postId}/bookmark`,
+    ),
+
+  listBookmarks: (cfg: SwilConfig, limit: number) =>
+    swilFetch<{ items: Json[]; nextCursor: string | null }>(
+      cfg,
+      'GET',
+      `/bookmarks?limit=${limit}`,
     ),
 };

@@ -36,7 +36,7 @@ export function MobileTabBar() {
         without typing the URL. Anonymous visitors get the public surfaces
         instead.
       */}
-      <nav className={s.tabBar} aria-label="Bottom navigation">
+      <nav className={s.tabBar} aria-label={t('nav.bottom')}>
         {user ? (
           <>
             <NavLink to="/feed" className={linkClass} end>
@@ -59,7 +59,7 @@ export function MobileTabBar() {
             <NavLink to="/notifications" className={linkClass}>
               <Bell weight="regular" className={s.tabIcon} aria-hidden />
               <span>{t('nav.notifications')}</span>
-              {unreadN > 0 && <span className={s.dot} aria-label={`${unreadN} unread`} />}
+              {unreadN > 0 && <span className={s.dot} aria-label={t('nav.unread', { count: unreadN })} />}
             </NavLink>
             <NavLink to={`/u/${user.username}`} className={linkClass}>
               <UserIcon weight="regular" className={s.tabIcon} aria-hidden />
@@ -78,7 +78,7 @@ export function MobileTabBar() {
             </NavLink>
             <NavLink to="/lab" className={linkClass}>
               <Atom weight="regular" className={s.tabIcon} aria-hidden />
-              <span>Lab</span>
+              <span>{t('nav.lab')}</span>
             </NavLink>
             <NavLink to="/login" className={linkClass}>
               <UserIcon weight="regular" className={s.tabIcon} aria-hidden />
@@ -88,7 +88,12 @@ export function MobileTabBar() {
         )}
       </nav>
       {user && (
-        <Dialog open={composerOpen} onOpenChange={setComposerOpen}>
+        <Dialog
+          open={composerOpen}
+          onOpenChange={setComposerOpen}
+          title={t('nav.newPost')}
+          titleHidden
+        >
           <PostComposer bare onSuccess={() => setComposerOpen(false)} />
         </Dialog>
       )}

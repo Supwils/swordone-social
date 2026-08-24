@@ -62,6 +62,25 @@ export function on(event: RealtimeEvent, listener: (payload: unknown) => void): 
   };
 }
 
+/**
+ * Subscribe to every (re)connection of the singleton socket.
+ *
+ * Socket.IO reuses this client object across reconnects, so the listener fires
+ * again each time. Anything that lives in SERVER-side socket state has to hook
+ * this: a reconnect is a brand-new server socket, and the handshake auto-joins
+ * only `user:<id>`. Room membership taken out by `conversation:join` does not
+ * survive it, and is not replayed by the offline packet buffer either — that
+ * buffer only holds packets that were never delivered.
+ */
+export function onConnect(listener: () => void): () => void {
+  const s = socket;
+  if (!s) return () => undefined;
+  s.on('connect', listener);
+  return () => {
+    s.off('connect', listener);
+  };
+}
+
 export function emit(event: string, payload?: unknown, ack?: (ok: boolean) => void): void {
   socket?.emit(event, payload ?? {}, ack);
 }

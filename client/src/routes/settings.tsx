@@ -1,5 +1,5 @@
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState, useCallback } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { X, Eye, EyeSlash } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
@@ -12,6 +12,7 @@ import { PRESET_TAGS } from '@/lib/tagPresets';
 import { MyAgentsSection } from '@/features/agents/MyAgentsSection';
 import { useSession } from '@/stores/session.store';
 import { useUI, type ThemePreference, type LanguagePreference } from '@/stores/ui.store';
+import { useSetLanguage } from '@/lib/useSetLanguage';
 import type { ApiError } from '@/api/types';
 import {
   Avatar,
@@ -21,11 +22,13 @@ import {
   Textarea,
 } from '@/components/primitives';
 import s from './settings.module.css';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 const TAGS_PER_CATEGORY_DEFAULT = 8;
 
 export default function SettingsRoute() {
   const { t } = useTranslation();
+  usePageTitle(t('nav.settings'));
   const user = useSession((st) => st.user);
   const setUser = useSession((st) => st.setUser);
 
@@ -45,13 +48,18 @@ export default function SettingsRoute() {
     });
   }, []);
 
+  // Seed the form ONCE PER ACCOUNT, not on every change to the user object.
+  // `avatar.onSuccess` republishes `{ ...user, avatarUrl }`, so an effect that
+  // reseeded whenever `user` changed identity threw away whatever the person
+  // had typed but not yet saved, silently, mid-edit.
+  const seededFor = useRef<string | null>(null);
   useEffect(() => {
-    if (user) {
-      setDisplayName(user.displayName || '');
-      setBio(user.bio || '');
-      setHeadline(user.headline || '');
-      setProfileTags(user.profileTags ?? []);
-    }
+    if (!user || seededFor.current === user.id) return;
+    seededFor.current = user.id;
+    setDisplayName(user.displayName || '');
+    setBio(user.bio || '');
+    setHeadline(user.headline || '');
+    setProfileTags(user.profileTags ?? []);
   }, [user]);
 
   const addTag = (raw: string) => {
@@ -122,16 +130,22 @@ export default function SettingsRoute() {
   const theme = useUI((st) => st.theme);
   const setTheme = useUI((st) => st.setTheme);
   const language = useUI((st) => st.language);
-  const setLanguage = useUI((st) => st.setLanguage);
+  const changeLanguage = useSetLanguage();
 
   const changeTheme = (val: ThemePreference) => {
     setTheme(val);
     usersApi.updateMe({ preferences: { theme: val } }).catch(() => {});
   };
 
-  const changeLanguage = async (val: LanguagePreference) => {
-    await usersApi.updateMe({ preferences: { language: val } }).catch(() => {});
-    setLanguage(val);
+  const qc = useQueryClient();
+  const autoTranslate = user?.preferences?.autoTranslate !== false;
+  const changeAutoTranslate = async (on: boolean) => {
+    const updated = await usersApi.updateMe({ preferences: { autoTranslate: on } }).catch(() => null);
+    if (!updated) return;
+    setUser(updated);
+    // Bodies are translated on read, so every cached page is now the wrong shape.
+    void qc.invalidateQueries({ queryKey: ['feed'] });
+    void qc.invalidateQueries({ queryKey: ['posts'] });
   };
 
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -395,6 +409,21 @@ export default function SettingsRoute() {
               onClick={() => changeLanguage(lang)}
             >
               {lang === 'en' ? t('settings.appearance.languageEn') : t('settings.appearance.languageZh')}
+            </button>
+          ))}
+        </div>
+        <p className={s.appearanceLabel}>{t('settings.appearance.autoTranslate')}</p>
+        <p className={s.sectionDesc}>{t('settings.appearance.autoTranslateDesc')}</p>
+        <div className={s.themeToggle} role="group" aria-label={t('settings.appearance.autoTranslate')}>
+          {[true, false].map((on) => (
+            <button
+              key={String(on)}
+              type="button"
+              className={`${s.themeBtn} ${autoTranslate === on ? s.themeBtnActive : ''}`}
+              aria-pressed={autoTranslate === on}
+              onClick={() => changeAutoTranslate(on)}
+            >
+              {on ? t('settings.appearance.autoTranslateOn') : t('settings.appearance.autoTranslateOff')}
             </button>
           ))}
         </div>

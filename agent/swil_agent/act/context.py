@@ -805,7 +805,14 @@ def read_news_digest(
 
     try:
         digest = (agent_root / "context" / NEWS_CACHE_FILENAME).read_text(encoding="utf-8")
-    except OSError:
+    # `UnicodeDecodeError` is a `ValueError`, so `except OSError` alone does
+    # NOT catch it -- the trap `locks.py:69-73` documents by name. This cache
+    # is SHARED state that `news-fetch.sh` rewrites, so a single truncated
+    # multi-byte write used to escape a function whose every other
+    # degradation fails open, and take every account in the round with it.
+    # Decoded, not `errors="replace"`: mojibake in the world context reaches
+    # every persona prompt, and "unavailable" is the honest degradation.
+    except (OSError, UnicodeDecodeError):
         return WORLD_CONTEXT_UNAVAILABLE
     # `rstrip("\n")`, deliberately not `.strip()`. Bash reads this file
     # through `$(cat ...)`, and command substitution removes TRAILING

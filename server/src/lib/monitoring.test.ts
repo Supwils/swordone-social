@@ -13,3 +13,48 @@ describe('monitoring (disabled without SENTRY_DSN)', () => {
     await expect(captureException('not-an-error')).resolves.toBeUndefined();
   });
 });
+
+// Enabled paths — a fresh module registry per test so the module-level
+// `initialized` / `sentry` state and config/env's parse see the stubbed DSN.
+// vi.doMock (not hoisted) keeps this describe append-only.
+import { afterEach, vi } from 'vitest';
+
+describe('monitoring (enabled via SENTRY_DSN)', () => {
+  afterEach(() => {
+    vi.doUnmock('@sentry/node');
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('initializes sentry once and forwards exceptions to it', async () => {
+    vi.resetModules();
+    vi.stubEnv('SENTRY_DSN', 'https://key@sentry.example/1');
+    const init = vi.fn();
+    const captureException = vi.fn();
+    vi.doMock('@sentry/node', () => ({ init, captureException }));
+
+    const mod = await import('./monitoring');
+    await mod.initMonitoring();
+    await mod.initMonitoring(); // second call must not re-init
+
+    expect(init).toHaveBeenCalledTimes(1);
+    expect(init).toHaveBeenCalledWith(
+      expect.objectContaining({ dsn: 'https://key@sentry.example/1' }),
+    );
+
+    await mod.captureException(new Error('boom'));
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it('survives a failing sentry import and stays a no-op afterwards', async () => {
+    vi.resetModules();
+    vi.stubEnv('SENTRY_DSN', 'https://key@sentry.example/1');
+    vi.doMock('@sentry/node', () => {
+      throw new Error('module exploded at import time');
+    });
+
+    const mod = await import('./monitoring');
+    await expect(mod.initMonitoring()).resolves.toBeUndefined();
+    await expect(mod.captureException(new Error('boom'))).resolves.toBeUndefined();
+  });
+});

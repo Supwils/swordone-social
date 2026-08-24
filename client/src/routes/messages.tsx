@@ -13,9 +13,11 @@ import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import { formatRelative } from '@/lib/formatDate';
 import type { ApiError, ConversationDTO, UserLiteDTO } from '@/api/types';
 import s from './messages.module.css';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 export default function MessagesRoute() {
   const { t } = useTranslation();
+  usePageTitle(t('messages.title'));
   const me = useSession((st) => st.user);
   const nav = useNavigate();
   const qc = useQueryClient();

@@ -45,14 +45,14 @@ def get_backend(
     `deepseek_api_key` docstring and `cli.py`'s `_health_check` transport.
 
     Note what is NOT passed to the CLI backends: the resolved model. Their
-    `default_model` stays as it was, and the model reaches them the way it
-    always has, through `CompletionRequest.model`. This matters for one real
-    call: `dream/round.py`'s `_diff_narrative` passes `model=None` on purpose,
-    to get the CLI's own default rather than the persona's model. Injecting the
-    resolved model as a backend default would silently promote that call to
-    opus for every opus account. `ApiBackend` has no CLI default to fall back
-    to, so it does carry the model -- the asymmetry is the point, not an
-    oversight.
+    `default_model` stays as it was, and the model reaches them through
+    `CompletionRequest.model`. `_diff_narrative` still passes `model=None`
+    for claude/codex/deepseek (Bash's empty-model "use the CLI default").
+    Cursor has no safe default (`auto` is forbidden), so that one call
+    threads the persona model on the *request*, not as a backend default.
+    Injecting the resolved model as `default_model` would silently promote
+    every claude narrative to opus. `ApiBackend` has no CLI default, so it
+    does carry the model -- the asymmetry is the point, not an oversight.
     """
     if choice.kind in _CLI_KINDS:
         return build_backend(choice.wire_name, runner, settings, deepseek_api_key=deepseek_api_key)

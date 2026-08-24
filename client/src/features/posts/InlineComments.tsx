@@ -53,6 +53,23 @@ export function InlineComments({ postId, open, indented = true }: Props) {
   const [editText, setEditText] = useState('');
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
+  // On-demand translation per comment (X-style); the auto path arrives as originalText.
+  const [manualById, setManualById] = useState<Record<string, { text: string; from: 'en' | 'zh' }>>(
+    {},
+  );
+  const [originalShown, setOriginalShown] = useState<Record<string, boolean>>({});
+  const translateMutation = useMutation({
+    mutationFn: (id: string) => commentsApi.translate(id, language),
+    onSuccess: (out, id) => {
+      if (out.translated) {
+        setManualById((m) => ({ ...m, [id]: { text: out.text, from: out.from } }));
+        setOriginalShown((o) => ({ ...o, [id]: false }));
+      }
+    },
+    onError: (err) => toast.error((err as unknown as ApiError).message ?? t('common.translateFailed')),
+  });
+  const toggleOriginal = (id: string) => setOriginalShown((o) => ({ ...o, [id]: !o[id] }));
+
   // Autocomplete for compose textarea
   const { trigger: acTrigger, results: acResults } = useAutocomplete(text, cursorPos);
 
@@ -218,6 +235,13 @@ export function InlineComments({ postId, open, indented = true }: Props) {
   return (
     <div
       className={clsx(s.panel, indented && s.panelIndented, open && s.open)}
+      // The collapse is `grid-template-rows: 0fr` + `overflow: hidden`, which
+      // clips the panel without unmounting it. `aria-hidden` alone left the
+      // compose box, the sign-in link and every loaded comment's controls
+      // focusable, so tabbing down a feed dropped focus into an invisible
+      // subtree once per card. `inert` is what actually takes them out of the
+      // tab order; `aria-hidden` stays for browsers that do not support it.
+      inert={!open}
       aria-hidden={!open}
       data-comments
     >
@@ -368,8 +392,46 @@ export function InlineComments({ postId, open, indented = true }: Props) {
                       </form>
                     ) : (
                       <div className={s.itemText}>
-                        <MarkdownBody source={c.text} compact />
-                        {c.editedAt && <span className={s.edited}> ({t('common.edited')})</span>}
+                        {(() => {
+                          const manual = manualById[c.id];
+                          const original = c.originalText ?? (manual ? c.text : undefined);
+                          const translated = c.originalText ? c.text : manual?.text;
+                          const shown = originalShown[c.id] && original ? original : (translated ?? c.text);
+                          const canTranslate =
+                            !original && Boolean(c.lang) && c.lang !== language && c.text.trim().length > 0;
+                          const pending =
+                            translateMutation.isPending && translateMutation.variables === c.id;
+                          return (
+                            <>
+                              <MarkdownBody source={shown} compact />
+                              {c.editedAt && (
+                                <span className={s.edited}> ({t('common.edited')})</span>
+                              )}
+                              {original ? (
+                                <button
+                                  type="button"
+                                  className={s.translateBtn}
+                                  onClick={() => toggleOriginal(c.id)}
+                                >
+                                  {originalShown[c.id]
+                                    ? t('common.showTranslation')
+                                    : t('common.showOriginal')}
+                                </button>
+                              ) : (
+                                canTranslate && (
+                                  <button
+                                    type="button"
+                                    className={s.translateBtn}
+                                    disabled={pending}
+                                    onClick={() => translateMutation.mutate(c.id)}
+                                  >
+                                    {pending ? t('common.translating') : t('common.translate')}
+                                  </button>
+                                )
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>

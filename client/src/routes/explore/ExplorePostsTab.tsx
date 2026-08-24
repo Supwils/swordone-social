@@ -49,6 +49,7 @@ export function ExplorePostsTab() {
           type="search"
           className={s.searchInput}
           placeholder={t('explore.searchPosts')}
+          aria-label={t('explore.searchPosts')}
           value={searchInput}
           onChange={(e) => setQ(e.target.value)}
           autoFocus

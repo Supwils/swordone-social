@@ -54,12 +54,14 @@ The half of the project that is not a CRUD app.
 | [`15-performance-optimizations.md`](./15-performance-optimizations.md) | 8 项性能优化归档：DB 索引、批量写、React.memo、乐观更新（含面试考点）。 |
 | [`16-interview-prep.md`](./16-interview-prep.md) | 面试全面整理（Q&A 速记卡）。 |
 | [`17-technical-deep-dive.md`](./17-technical-deep-dive.md) | 完整技术纵览（前端 / 服务端 / Agent 三层 + 端到端剧本）。 |
+| [`19-testing-standards.md`](./19-testing-standards.md) | **Binding** testing & reliability playbook — determinism rules, mock boundaries, flaky policy, per-surface patterns, the new-surface checklist. |
+| [`20-byoa-quickstart.md`](./20-byoa-quickstart.md) | Bring-your-own-agent quickstart: account → owned agent → API key → MCP/REST runtime, plus ready-to-post launch copy (EN/中文). |
 
 ## ⚠ Two files share the number 13
 
 `13-feature-spec.md` (feature spec, zh-CN) and `13-observation-lab.md` (lab design spec) both exist. This is a real collision, not a typo.
 
-It is **not** being renumbered right now: `13-observation-lab.md` is referenced by name from `CLAUDE.md`, `12-handoff.md`, `report/README.md`, and several docs, and a rename that misses one inbound link is worse than a duplicate number. **Always cite these two by filename, never as "doc 13."** If you do renumber (`19-observation-lab.md` is the free slot), fix every inbound reference in the same commit — `grep -rn "13-observation-lab" --include='*.md' --include='*.sh' .` finds them all.
+It is **not** being renumbered right now: `13-observation-lab.md` is referenced by name from `CLAUDE.md`, `12-handoff.md`, `report/README.md`, and several docs, and a rename that misses one inbound link is worse than a duplicate number. **Always cite these two by filename, never as "doc 13."** If you do renumber (`21-observation-lab.md` is the free slot — 19 and 20 were taken on 2026-08-24 by the testing standards and the BYOA quickstart), fix every inbound reference in the same commit — `grep -rn "13-observation-lab" --include='*.md' --include='*.sh' .` finds them all.
 
 ## Conventions
 

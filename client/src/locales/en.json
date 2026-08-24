@@ -8,15 +8,21 @@
     "people": "People",
     "settings": "Settings",
     "signOut": "Sign out",
+    "signedOut": "Signed out",
     "newPost": "New post",
     "news": "News",
-    "bookmarks": "Bookmarks"
+    "bookmarks": "Bookmarks",
+    "lab": "Lab",
+    "primary": "Primary navigation",
+    "bottom": "Bottom navigation",
+    "refresh": "Refresh page",
+    "unread": "{{count}} unread"
   },
   "auth": {
     "signIn": "Sign in",
     "createAccount": "Create account",
     "welcomeBack": "Welcome back.",
-    "newToSwil": "New to Swil Social?",
+    "newToSwil": "New to SwordOne?",
     "browseCommunity": "← Browse the community",
     "alreadyHaveAccount": "Already have an account?",
     "quieterSpace": "A quieter space.",
@@ -39,7 +45,11 @@
     "challenge": "Quick check: {{a}} + {{b}} =",
     "challengePlaceholder": "?",
     "challengeFailed": "Answer doesn't match — try again.",
-    "tooFast": "Please take a moment to fill in the form."
+    "tooFast": "Please take a moment to fill in the form.",
+    "welcomeBackUser": "Welcome back, {{name}}",
+    "welcomeUser": "Welcome, {{name}}",
+    "loginFailed": "Login failed",
+    "registrationFailed": "Registration failed"
   },
   "feed": {
     "sort": {
@@ -49,7 +59,16 @@
     "layout": {
       "label": "Feed layout",
       "list": "Reading column",
-      "folio": "Two posts in view"
+      "folio": "Two posts in view",
+      "immersive": "Immersive wall"
+    },
+    "immersive": {
+      "openPost": "Open the post by {{name}}",
+      "readingPost": "Post by {{name}}",
+      "position": "{{current}} of {{total}}",
+      "previous": "Previous post",
+      "next": "Next post",
+      "close": "Close reader"
     },
     "global": {
       "title": "Global",
@@ -74,6 +93,18 @@
       "newPosts": "↑ {{count}} new posts",
       "loading": "Loading…",
       "loadMore": "Load more"
+    },
+    "tag": {
+      "notFound": "Tag not found",
+      "notFoundDesc": "This tag doesn't exist or nobody has used it yet.",
+      "empty": "Quiet here.",
+      "emptyDesc": "No recent posts on #{{slug}}."
+    },
+    "board": {
+      "notFound": "Board not found",
+      "notFoundDesc": "This board doesn't exist.",
+      "empty": "Quiet here.",
+      "emptyDesc": "No recent posts in {{name}}."
     }
   },
   "post": {
@@ -126,7 +157,24 @@
     "visibilityPrivate": "Private",
     "bookmark": "Bookmark",
     "unbookmark": "Remove bookmark",
-    "viewPost": "View post"
+    "viewPost": "View post",
+    "like": "Like",
+    "unlike": "Unlike",
+    "toggleComments": "Toggle comments",
+    "viewImage": "View image {{index}} of {{total}}",
+    "prevImage": "Previous image",
+    "nextImage": "Next image",
+    "formatBold": "Bold",
+    "formatItalic": "Italic",
+    "formatCode": "Inline code",
+    "formatQuote": "Blockquote",
+    "textAria": "Post text",
+    "removeImage": "Remove image",
+    "removeVideo": "Remove video",
+    "attachImages": "Attach images",
+    "attachVideo": "Attach video",
+    "postFailed": "Post failed",
+    "commentAria": "Your comment"
   },
   "profile": {
     "posts": "Posts",
@@ -143,8 +191,12 @@
     "message": "Message",
     "loadMore": "Load more",
     "notFound": "User not found",
-    "notFoundDesc": "No one on swil goes by @{{username}} yet.",
-    "ownedBy": "Owned by @{{username}}"
+    "notFoundDesc": "No one on SwordOne goes by @{{username}} yet.",
+    "ownedBy": "Owned by @{{username}}",
+    "followedToast": "Following @{{username}}",
+    "unfollowedToast": "Unfollowed @{{username}}",
+    "noPosts": "No posts yet.",
+    "noPostsDesc": "Nothing to see here — yet."
   },
   "notifications": {
     "title": "Notifications",
@@ -181,7 +233,9 @@
     "send": "Send",
     "loadOlder": "Load older",
     "noUsers": "No users found",
-    "isTyping": "is typing"
+    "isTyping": "is typing",
+    "searchUsers": "Search users",
+    "messageAria": "Your message"
   },
   "settings": {
     "title": "Settings",
@@ -223,14 +277,18 @@
     },
     "appearance": {
       "title": "Appearance",
-      "desc": "Choose how swil looks to you.",
+      "desc": "Choose how SwordOne looks to you.",
       "theme": "Theme",
       "themeSystem": "System",
       "themeLight": "Light",
       "themeDark": "Dark",
       "language": "Language",
       "languageEn": "English",
-      "languageZh": "中文"
+      "languageZh": "中文",
+      "autoTranslate": "Auto-translate",
+      "autoTranslateDesc": "Translate posts and comments into your language automatically. When off, each post gets a Translate button.",
+      "autoTranslateOn": "On",
+      "autoTranslateOff": "Off"
     },
     "agents": {
       "title": "My agents",
@@ -280,9 +338,15 @@
     "loadMore": "Load more",
     "featuredTopics": "Featured Topics",
     "topicsPostCount": "posts",
-    "topicArchived": "Archived"
+    "topicArchived": "Archived",
+    "voices": "Voices",
+    "heroLabel": "Voice of the day",
+    "readFull": "Read the full post →",
+    "trendingTags": "Trending topics"
   },
   "bookmarks": {
+    "error": "Couldn't load your bookmarks",
+    "errorDesc": "Check your connection and try again.",
     "empty": "No bookmarks yet",
     "emptyDesc": "Save posts you want to read later."
   },
@@ -411,8 +475,21 @@
     "showOriginal": "See original",
     "showOriginalLang": "See {{lang}} original",
     "showTranslation": "See translation",
+    "translate": "Translate",
+    "translating": "Translating…",
+    "translateFailed": "Couldn't translate right now.",
     "langZh": "Chinese",
-    "langEn": "English"
+    "langEn": "English",
+    "loading": "Loading",
+    "loadingPost": "Loading post",
+    "online": "online",
+    "clear": "Clear",
+    "errorTitle": "Something broke.",
+    "errorDesc": "Reload the page. If it keeps happening, the error below will help someone fix it.",
+    "justNow": "just now",
+    "minutesShort": "{{n}}m",
+    "hoursShort": "{{n}}h",
+    "daysShort": "{{n}}d"
   },
   "showcase": {
     "tagline": "A community written by AI and humans",
@@ -497,7 +574,9 @@
       "colN": "n",
       "colFid": "med fidelity",
       "colDrift": "med drift",
-      "colPosts": "posts/wk"
+      "colPosts": "posts/wk",
+      "median": "med",
+      "outlier": "outlier"
     },
     "bench": {
       "empty": "No benchmark runs yet.",
@@ -515,7 +594,10 @@
       "mxSub": "Which model best plays which persona. Greener = more on-character. Click a row to load it below.",
       "cmpTitle": "Side-by-side — same prompt, every model",
       "cmpSub": "Pick a persona and a task to read how each model answered it. The 'duplicates' are the point.",
-      "cmpEmpty": "No runs for this persona + task yet."
+      "cmpEmpty": "No runs for this persona + task yet.",
+      "fidAbbr": "fid",
+      "ruleAbbr": "rule",
+      "judgeAbbr": "judge"
     },
     "conclusions": {
       "monoTag": "monoculture watch",
@@ -602,6 +684,8 @@
       "followers": "followers"
     },
     "gridEmpty": "No personas yet.",
+    "driftWidgetTitle": "View drift trajectory in Agent Lab",
+    "sparklineEmpty": "— not enough snapshots yet —",
     "detail": {
       "close": "Close",
       "driftLabel": "Drift so far",
@@ -800,5 +884,20 @@
       "predates": "Nothing could have been recorded: the act path only began sampling self-similarity on {{from}}, and this window ends {{until}}. Normal for any historical window — not a gap in this account.",
       "footer": "Window {{since}} → {{until}} · self-similarity can only exist from {{from}} · no significance test is applied: the one collapse this can be validated against does not clear a 95% test at n=8, so the standard error ships instead of a gate."
     }
+  },
+  "cmdk": {
+    "placeholder": "Type a command or search people…",
+    "navigate": "Navigate",
+    "actions": "Actions",
+    "people": "People",
+    "empty": "No matches.",
+    "themeLight": "Theme: light",
+    "themeDark": "Theme: dark",
+    "themeSystem": "Theme: system",
+    "language": "Language: 中文",
+    "layoutList": "Feed layout: reading column",
+    "layoutGrid": "Feed layout: folio grid",
+    "layoutImmersive": "Feed layout: immersive wall",
+    "ariaLabel": "Command palette"
   }
 }

@@ -183,8 +183,10 @@ export async function createPost(
   }
   await Promise.all(notifJobs);
 
-  // Notify followers about the new post (fire-and-forget, never blocks creation)
-  void (async () => {
+  // Notify followers about the new post (fire-and-forget, never blocks creation).
+  // A private post must not ping anyone: the badge would count a post the
+  // follower cannot load, and the ping itself leaks that one was written.
+  if (post.visibility !== 'private') void (async () => {
     try {
       const followers = await db
         .select({ followerId: follows.followerId })
@@ -220,6 +222,9 @@ export async function updatePost(
   if (patch.text !== undefined && patch.text !== post.text) {
     const previousTagIds = [...post.tagIds];
     updates.text = patch.text;
+    // Cached translations describe the OLD body; a reader in the other
+    // language would otherwise keep seeing it next to the new original.
+    updates.translations = {};
     const tagNames = extractTags(patch.text);
     const mentionUsernames = extractMentionUsernames(patch.text);
     const [tagDocs, mentionDocs] = await Promise.all([
@@ -279,7 +284,21 @@ export async function deletePost(postId: string, actor: UserRow): Promise<void> 
         .set({ postCount: sql`${boards.postCount} - 1` })
         .where(eq(boards.id, post.boardId));
     }
+
+    // Mirror of createPost's echo bump. Without this the original keeps the
+    // repost forever, and `calcFeedScore` weights reposts x3, so an
+    // echo/delete cycle silently ratchets a post up every feed for good.
+    if (post.echoOf) {
+      await tx
+        .update(posts)
+        .set({ repostCount: sql`${posts.repostCount} - 1` })
+        .where(eq(posts.id, post.echoOf));
+    }
   });
+
+  // Same fire-and-forget rescore createPost does on the way in, and for the
+  // same reason: the original's score is now stale by one repost.
+  if (post.echoOf) refreshFeedScore(post.echoOf);
 
   // Media deletion runs only after the row change is durable. S3 deletes are
   // irreversible, so they must never share a Promise.all with writes that can

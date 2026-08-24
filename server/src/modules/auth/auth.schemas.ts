@@ -27,6 +27,18 @@ export const changePasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 
+/** An API key is a long-lived `sk-swil-` bearer credential, so its one
+ *  free-text field gets the same bound its sibling
+ *  `ownedAgents.rotateKeySchema` already enforces. Optional: the controller
+ *  falls back to "default". */
+export const createApiKeySchema = z.object({
+  name: z.string().trim().min(1).max(64).optional(),
+});
+
+export const apiKeyIdParamSchema = z.object({
+  keyId: z.string().regex(/^[a-f0-9]{24}$/, 'Invalid id'),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;

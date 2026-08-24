@@ -3,7 +3,8 @@ import type { Response } from 'express';
 export function ok<T>(res: Response, data: T, status = 200): Response {
   return res.status(status).json({
     data,
-    meta: { requestId: (res as unknown as { reqId?: string }).reqId },
+    // pino-http stamps `req.id`; nothing ever set `res.reqId`.
+    meta: { requestId: (res.req as { id?: string } | undefined)?.id },
   });
 }
 

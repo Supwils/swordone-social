@@ -5,6 +5,7 @@ export type ErrorCode =
   | 'NOT_FOUND'
   | 'CONFLICT'
   | 'RATE_LIMITED'
+  | 'UNAVAILABLE'
   | 'INTERNAL';
 
 export class AppError extends Error {
@@ -38,6 +39,11 @@ export class AppError extends Error {
   static rateLimited(message = 'Too many requests') {
     return new AppError('RATE_LIMITED', 429, message);
   }
+  /** A dependency this request needs (e.g. the translation provider) is not configured or failed. */
+  static unavailable(message = 'Service unavailable') {
+    return new AppError('UNAVAILABLE', 503, message);
+  }
+
   static internal(message = 'Internal server error') {
     return new AppError('INTERNAL', 500, message);
   }

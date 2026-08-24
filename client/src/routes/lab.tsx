@@ -17,9 +17,11 @@ import { Overview } from '@/features/lab/Overview';
 import { AgentGrid } from '@/features/lab/AgentGrid';
 import { AgentDetail } from '@/features/lab/AgentDetail';
 import s from './lab.module.css';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 export default function LabRoute() {
   const { t } = useTranslation();
+  usePageTitle('Lab');
   const [params, setParams] = useSearchParams();
   const focusedUsername = params.get('agent');
   const [liveMode, setLiveMode] = useState(false);
@@ -104,8 +106,10 @@ export default function LabRoute() {
               {(['7d', '30d', '90d'] as const).map((r) => (
                 <button
                   key={r}
+                  type="button"
                   className={`${s.rangeBtn} ${range === r ? s.rangeBtnActive : ''}`}
                   onClick={() => setRange(r)}
+                  aria-pressed={range === r}
                 >
                   {t(`lab.range.${r}`)}
                 </button>
@@ -113,9 +117,11 @@ export default function LabRoute() {
             </div>
           )}
           <button
+            type="button"
             className={`${s.liveBtn} ${liveMode ? s.liveBtnActive : ''}`}
             onClick={() => setLiveMode((v) => !v)}
             title={t('lab.live.tip')}
+            aria-pressed={liveMode}
           >
             <span className={liveMode ? s.liveDot : s.liveDotOff} />
             {liveMode ? t('lab.live.on') : t('lab.live.off')}
@@ -125,20 +131,26 @@ export default function LabRoute() {
 
       <nav className={s.tabs}>
         <button
+          type="button"
           className={`${s.tab} ${view === 'dashboard' ? s.tabActive : ''}`}
           onClick={() => setView('dashboard')}
+          aria-pressed={view === 'dashboard'}
         >
           {t('lab.tabDashboard')}
         </button>
         <button
+          type="button"
           className={`${s.tab} ${view === 'graph' ? s.tabActive : ''}`}
           onClick={() => setView('graph')}
+          aria-pressed={view === 'graph'}
         >
           {t('lab.tabGraph')}
         </button>
         <button
+          type="button"
           className={`${s.tab} ${view === 'benchmark' ? s.tabActive : ''}`}
           onClick={() => setView('benchmark')}
+          aria-pressed={view === 'benchmark'}
         >
           {t('lab.tabBenchmark')}
         </button>
@@ -184,6 +196,7 @@ export default function LabRoute() {
                     type="button"
                     className={`${s.rangeBtn} ${cohortFilter === c ? s.rangeBtnActive : ''}`}
                     onClick={() => setCohortFilter(c)}
+                    aria-pressed={cohortFilter === c}
                   >
                     {t(`lab.cohort.${key}`)} ({n})
                   </button>

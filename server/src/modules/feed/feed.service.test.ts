@@ -156,6 +156,21 @@ describe('feed.service', () => {
       expect(ids).not.toContain(strangerPost.id); // not followed
     });
 
+    it('omits reserved-board posts from a followed author', async () => {
+      const viewer = await seedUser('viewer-probe');
+      const followed = await seedUser('attacker');
+      await seedFollow(viewer.id, followed.id);
+      const [probes] = await db
+        .insert(boards)
+        .values({ slug: 'probes', name: 'Probes', sortOrder: 99 })
+        .returning();
+      const visible = await seedPost(followed.id, { text: 'organic', feedScore: 10 });
+      await seedPost(followed.id, { text: 'canary', feedScore: 99, boardId: probes.id });
+
+      const out = await following(viewer, null, 10, 'recommended');
+      expect(out.items.map((p) => p.id)).toEqual([visible.id]);
+    });
+
     it('returns only own posts when the viewer follows nobody (chrono sort)', async () => {
       const lonely = await seedUser('lonely');
       const other = await seedUser('other');
@@ -184,6 +199,29 @@ describe('feed.service', () => {
       const out = await byTag('TypeScript', null, null, 10); // upper-case slug → lowercased
       const ids = out.items.map((p) => p.id).sort();
       expect(ids).toEqual([direct.id, viaAlias.id].sort());
+    });
+
+    it('omits reserved-board posts even when they carry the tag', async () => {
+      const author = await seedUser('tag-probe');
+      const tag = await seedTag('garden');
+      const [probes] = await db
+        .insert(boards)
+        .values({ slug: 'probes', name: 'Probes', sortOrder: 99 })
+        .returning();
+      const visible = await seedPost(author.id, {
+        text: 'organic garden',
+        tagIds: [tag.id],
+        feedScore: 10,
+      });
+      await seedPost(author.id, {
+        text: 'canary garden',
+        tagIds: [tag.id],
+        feedScore: 99,
+        boardId: probes.id,
+      });
+
+      const out = await byTag('garden', null, null, 10);
+      expect(out.items.map((p) => p.id)).toEqual([visible.id]);
     });
 
     it('rejects an unknown tag slug with 404', async () => {
@@ -330,6 +368,23 @@ describe('feed.service', () => {
       return { author, pub, fol, priv };
     }
 
+    it('omits reserved-board posts from a public profile feed', async () => {
+      const author = await seedUser('probe-author');
+      const [probes] = await db
+        .insert(boards)
+        .values({ slug: 'probes', name: 'Probes', sortOrder: 99 })
+        .returning();
+      const visible = await seedPost(author.id, { text: 'organic', createdAt: ago(0) });
+      await seedPost(author.id, {
+        text: 'canary',
+        createdAt: ago(1000),
+        boardId: probes.id,
+      });
+
+      const out = await byAuthor(author.username, null, null, 10);
+      expect(out.items.map((p) => p.id)).toEqual([visible.id]);
+    });
+
     it('anonymous viewer sees only public posts', async () => {
       const { pub } = await seedAuthorWithPosts();
       const out = await byAuthor('POSTER', null, null, 10); // upper-case → lowercased
@@ -394,11 +449,19 @@ describe('feed.service', () => {
 
       // A featured topic with a pinned post exercises the pinned-hydration path.
       const pinned = await seedPost(human.id, { text: 'pinned post' });
+      const [probes] = await db
+        .insert(boards)
+        .values({ slug: 'probes', name: 'Probes', sortOrder: 99 })
+        .returning();
+      const canaryPinned = await seedPost(human.id, {
+        text: 'canary pinned',
+        boardId: probes.id,
+      });
       const featuredTag = await seedTag('golang', {
         display: 'Go',
         postCount: 3,
         featured: true,
-        pinnedPostIds: [pinned.id],
+        pinnedPostIds: [pinned.id, canaryPinned.id],
       });
 
       const summary = await getExploreSummary(viewer);

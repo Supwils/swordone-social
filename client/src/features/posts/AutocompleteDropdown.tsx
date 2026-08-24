@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Avatar } from '@/components/primitives';
 import type { AutocompleteResult } from './useAutocomplete';
 import type { UserLiteDTO, TagDTO } from '@/api/types';
@@ -16,6 +17,7 @@ function isUser(item: AutocompleteResult): item is UserLiteDTO {
 }
 
 export function AutocompleteDropdown({ results, activeIndex, onSelect }: Props) {
+  const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
   const [flipUp, setFlipUp] = useState(false);
 
@@ -69,7 +71,9 @@ export function AutocompleteDropdown({ results, activeIndex, onSelect }: Props) 
             <div className={s.tagIcon}>#</div>
             <div className={s.itemBody}>
               <span className={s.itemName}>#{tag.display}</span>
-              <span className={s.itemSub}>{tag.postCount.toLocaleString()} posts</span>
+              <span className={s.itemSub}>
+                {tag.postCount.toLocaleString()} {t('explore.topicsPostCount')}
+              </span>
             </div>
           </button>
         );

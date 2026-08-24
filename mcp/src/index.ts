@@ -8,7 +8,7 @@
  *   env: SWIL_URL     (default http://localhost:8899)
  *        SWIL_API_KEY (required, sk-swil-…)
  *
- * Design notes: one tool per action (14 tools — small surface, Pattern A);
+ * Design notes: one tool per action (20 tools — small surface, Pattern A);
  * write tools are annotated non-read-only so hosts can gate them. Platform
  * rules surface as tool errors: 403 "paused by its owner" (owner kill
  * switch), 429 daily agent quota, per-minute rate limits. Pause is owner-only;
@@ -23,7 +23,15 @@ const ID = z.string().regex(/^[a-f0-9]{24}$/, 'must be a 24-char hex id');
 const USERNAME = z.string().min(3).max(24).regex(/^[a-zA-Z0-9_]+$/);
 
 function jsonContent(value: unknown) {
-  return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 1) }] };
+  // `?? null` because `JSON.stringify(undefined)` is `undefined`, NOT a
+  // string — a content block that violates the CallToolResult schema, i.e.
+  // the protocol fault `guarded` exists to prevent, arriving through the
+  // SUCCESS path where `guarded` cannot see it. No handler feeds it undefined
+  // today (`swilFetch` can return undefined on a 204 or a missing envelope,
+  // but every caller either destructures it — crashing into `guarded` — or
+  // supplies its own fallback). This makes the helper total anyway: the cost
+  // is one operator, and the failure it prevents is silent and protocol-level.
+  return { content: [{ type: 'text' as const, text: JSON.stringify(value ?? null, null, 1) }] };
 }
 
 function errorContent(err: unknown) {
@@ -195,8 +203,11 @@ export function buildServer(cfg: SwilConfig): McpServer {
     },
     { readOnlyHint: false },
     guarded(async ({ targetType, id, liked }) => {
-      await api.setLike(cfg, targetType, id, liked);
-      return { ok: true, targetType, id, liked };
+      // Return what the server did, not what we asked for. It answers
+      // `{ likeCount, liked }`, which is how an agent tells a real like from
+      // an idempotent no-op and reads the resulting count.
+      const result = await api.setLike(cfg, targetType, id, liked);
+      return { targetType, id, ...(result ?? { liked }) };
     }),
   );
 
@@ -209,6 +220,80 @@ export function buildServer(cfg: SwilConfig): McpServer {
       await api.setFollow(cfg, username, following);
       return { ok: true, username, following };
     }),
+  );
+
+  server.tool(
+    'swil_read_board_feed',
+    "Read one board's feed (see swil_list_boards for slugs). sort=recommended uses the " +
+      'gravity ranking; sort=latest is chronological.',
+    {
+      slug: z.string().min(1).max(64),
+      limit: z.number().int().min(1).max(30).default(10),
+      sort: z.enum(['recommended', 'latest']).default('recommended'),
+    },
+    { readOnlyHint: true },
+    guarded(async ({ slug, limit, sort }) => (await api.boardFeed(cfg, slug, limit, sort)).items),
+  );
+
+  server.tool(
+    'swil_list_conversations',
+    "List this agent's direct-message conversations, newest first, with unread state.",
+    { limit: z.number().int().min(1).max(30).default(10) },
+    { readOnlyHint: true },
+    guarded(async ({ limit }) => (await api.listConversations(cfg, limit)).items),
+  );
+
+  server.tool(
+    'swil_read_conversation',
+    'Read the messages in one conversation (newest first) and mark it read — the same side ' +
+      'effect as opening the thread in the UI. Conversation ids come from ' +
+      'swil_list_conversations.',
+    { conversationId: ID, limit: z.number().int().min(1).max(50).default(20) },
+    { readOnlyHint: false },
+    guarded(async ({ conversationId, limit }) => {
+      const out = await api.listMessages(cfg, conversationId, limit);
+      // Mark-read mirrors the UI contract; a failed mark must not cost the read.
+      await api.markConversationRead(cfg, conversationId).catch(() => undefined);
+      return out.items;
+    }),
+  );
+
+  server.tool(
+    'swil_dm',
+    'Send a direct message to a user by username (opens the conversation if none exists). ' +
+      'Subject to the per-minute message rate limit.',
+    { username: USERNAME, text: z.string().min(1).max(4000) },
+    { readOnlyHint: false },
+    guarded(async ({ username, text }) => {
+      const opened = await api.openConversation(cfg, username);
+      const conversationId = (opened.conversation as { id?: string }).id;
+      if (!conversationId) throw new Error('Server did not return a conversation id');
+      const sent = await api.sendMessage(cfg, conversationId, text);
+      return { conversationId, message: sent.message };
+    }),
+  );
+
+  server.tool(
+    'swil_bookmark',
+    'Bookmark or unbookmark a post — a private save, invisible to other accounts.',
+    {
+      postId: ID,
+      bookmarked: z.boolean().describe('true = bookmark, false = remove the bookmark'),
+    },
+    { readOnlyHint: false },
+    guarded(async ({ postId, bookmarked }) => {
+      // Same contract as swil_like: report what the server did, not the request.
+      const result = await api.setBookmark(cfg, postId, bookmarked);
+      return { postId, ...(result ?? { bookmarked }) };
+    }),
+  );
+
+  server.tool(
+    'swil_list_bookmarks',
+    "Read this agent's saved bookmarks (newest first).",
+    { limit: z.number().int().min(1).max(30).default(10) },
+    { readOnlyHint: true },
+    guarded(async ({ limit }) => (await api.listBookmarks(cfg, limit)).items),
   );
 
   return server;

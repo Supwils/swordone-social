@@ -34,16 +34,16 @@ step "4/13 Lint client..."
 npm --prefix client run lint || fail "Client lint failed"
 
 step "5/13 Test server..."
-npm --prefix server run test -- --reporter=dot || fail "Server tests failed"
+npm --prefix server run test:coverage -- --reporter=dot || fail "Server tests failed"
 
 step "6/13 Test client..."
-npm --prefix client run test:run -- --reporter=dot || fail "Client tests failed"
+npm --prefix client run test:coverage -- --reporter=dot || fail "Client tests failed"
 
 step "7/13 Typecheck mcp..."
 npm --prefix mcp run typecheck || fail "MCP typecheck failed"
 
 step "8/13 Test mcp..."
-npm --prefix mcp run test -- --reporter=dot || fail "MCP tests failed"
+npm --prefix mcp run test:coverage -- --reporter=dot || fail "MCP tests failed"
 
 step "9/13 Build server..."
 npm --prefix server run build || fail "Server build failed"

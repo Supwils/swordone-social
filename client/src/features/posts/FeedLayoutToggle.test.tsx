@@ -27,4 +27,20 @@ describe('FeedLayoutToggle', () => {
     expect(list.getAttribute('aria-pressed')).toBe('true');
     expect(folio.getAttribute('aria-pressed')).toBe('false');
   });
+
+  it('switches to the immersive wall and leaves the other two unpressed', () => {
+    render(<FeedLayoutToggle />);
+
+    const immersive = screen.getByRole('button', { name: 'Immersive wall' });
+    fireEvent.click(immersive);
+
+    expect(useUI.getState().feedLayout).toBe('immersive');
+    expect(immersive.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Two posts in view' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+    expect(screen.getByRole('button', { name: 'Reading column' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+  });
 });

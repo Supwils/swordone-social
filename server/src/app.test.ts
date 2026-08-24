@@ -19,6 +19,7 @@ vi.mock('./middlewares/rateLimit', () => ({
   registerLimiter: mocks.globalLimiter,
   loginLimiter: mocks.globalLimiter,
   passwordChangeLimiter: mocks.globalLimiter,
+  apiKeyLimiter: mocks.globalLimiter,
   postWriteLimiter: mocks.globalLimiter,
   commentWriteLimiter: mocks.globalLimiter,
   messageWriteLimiter: mocks.globalLimiter,
@@ -26,6 +27,7 @@ vi.mock('./middlewares/rateLimit', () => ({
   snapshotIngestLimiter: mocks.globalLimiter,
   labReadLimiter: mocks.globalLimiter,
   searchLimiter: mocks.globalLimiter,
+  translateLimiter: mocks.globalLimiter,
   eventIngestLimiter: mocks.globalLimiter,
 }));
 

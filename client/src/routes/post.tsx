@@ -17,6 +17,7 @@ import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import { MarkdownBody } from '@/features/posts/MarkdownBody';
 import { formatRelative } from '@/lib/formatDate';
 import s from './post.module.css';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 export default function PostRoute() {
   const { t } = useTranslation();
@@ -28,10 +29,12 @@ export default function PostRoute() {
   const [commentText, setCommentText] = useState('');
 
   const post = useQuery({
-    queryKey: qk.posts.byId(id),
-    queryFn: () => postsApi.getById(id),
+    queryKey: qk.posts.byId(id, language),
+    queryFn: () => postsApi.getById(id, language),
     enabled: Boolean(id),
   });
+
+  usePageTitle(post.data ? `@${post.data.author.username}` : undefined);
 
   useEffect(() => {
     if (id) track('post_view', { postId: id });
@@ -52,7 +55,9 @@ export default function PostRoute() {
       setCommentText('');
       toast.success(t('post.commentPosted'));
       qc.invalidateQueries({ queryKey: ['posts', id, 'comments'] });
-      qc.invalidateQueries({ queryKey: qk.posts.byId(id) });
+      // Prefix, not the language-scoped key: the comment count moved for
+      // every rendering of this post, not just the one on screen.
+      qc.invalidateQueries({ queryKey: ['posts', id, 'detail'] });
     },
     onError: (err) => toast.error((err as unknown as ApiError).message),
   });

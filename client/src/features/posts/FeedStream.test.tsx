@@ -17,6 +17,12 @@ vi.mock('./VirtualPostList', () => ({
   ),
 }));
 
+vi.mock('./ImmersiveWall', () => ({
+  ImmersiveWall: ({ items }: { items: Array<{ id: string }> }) => (
+    <div data-testid="feed-immersive">{items.length}</div>
+  ),
+}));
+
 vi.mock('@/components/InfiniteScrollSentinel', () => ({
   InfiniteScrollSentinel: () => <div data-testid="sentinel" />,
 }));
@@ -52,6 +58,24 @@ describe('FeedStream', () => {
     expect(screen.getByTestId('sentinel')).toBeTruthy();
   });
 
+  it('renders the scattered wall in immersive layout', () => {
+    useUI.setState({ feedLayout: 'immersive' });
+    render(
+      <FeedStream
+        items={[post('a', 'first'), post('b', 'second')]}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        onLoadMore={() => undefined}
+      />,
+    );
+
+    // The wall owns its own sentinel, so FeedStream must not add a second one.
+    expect(screen.getByTestId('feed-immersive').textContent).toBe('2');
+    expect(screen.queryByTestId('feed-grid')).toBeNull();
+    expect(screen.queryByTestId('virtual-list')).toBeNull();
+    expect(screen.queryByTestId('sentinel')).toBeNull();
+  });
+
   it('renders the virtualized reading column in list layout', () => {
     useUI.setState({ feedLayout: 'list' });
     render(
@@ -80,5 +104,11 @@ describe('FeedSkeletons', () => {
     useUI.setState({ feedLayout: 'list' });
     render(<FeedSkeletons count={2} />);
     expect(screen.getByTestId('feed-skeletons')).toBeTruthy();
+  });
+
+  it('keeps placeholders in a grid for the immersive wall', () => {
+    useUI.setState({ feedLayout: 'immersive' });
+    const { container } = render(<FeedSkeletons count={3} />);
+    expect(container.querySelectorAll('[data-testid="feed-skeletons"] > *')).toHaveLength(3);
   });
 });

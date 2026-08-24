@@ -114,4 +114,24 @@ describe('likes.service', () => {
       commentId: comment.id,
     });
   });
+
+  it('rejects liking a private post the viewer cannot see', async () => {
+    const author = await seedUser();
+    const stranger = await seedUser();
+    const secret = await seedPost(author.id, { visibility: 'private' });
+
+    await expect(like(stranger, 'post', secret.id)).rejects.toMatchObject({ status: 404 });
+
+    const likeRows = await db.select().from(likes).where(eq(likes.targetId, secret.id));
+    expect(likeRows).toHaveLength(0);
+  });
+
+  it('lets the author like their own private post', async () => {
+    const author = await seedUser();
+    const secret = await seedPost(author.id, { visibility: 'private', likeCount: 0 });
+
+    const out = await like(author, 'post', secret.id);
+
+    expect(out).toEqual({ likeCount: 1, liked: true });
+  });
 });

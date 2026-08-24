@@ -15,7 +15,9 @@ export const qk = {
     search: (q: string) => ['users', 'search', q] as const,
   },
   posts: {
-    byId: (id: string) => ['posts', id] as const,
+    // Bodies are translated on read, so the language is part of the identity
+    // of the cached post, exactly as it already is for comments.
+    byId: (id: string, lang?: string) => ['posts', id, 'detail', lang ?? 'en'] as const,
     comments: (id: string, lang?: string) => ['posts', id, 'comments', lang ?? 'en'] as const,
   },
   bookmarks: {

@@ -39,8 +39,10 @@ async function loadApiKeyUser(req: Request): Promise<UserRow | null> {
   const [user] = await db.select().from(users).where(eq(users.id, apiKey.userId)).limit(1);
   if (!user || user.status !== 'active') return null;
 
-  // Update lastUsedAt without blocking the request.
-  void (async () => {
+  // Update lastUsedAt without blocking the request — at most once a minute,
+  // or an agent round turns its hottest read path into a write per request.
+  const stale = !apiKey.lastUsedAt || Date.now() - apiKey.lastUsedAt.getTime() > 60_000;
+  if (stale) void (async () => {
     try {
       await db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, apiKey.id));
     } catch {

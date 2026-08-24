@@ -29,8 +29,12 @@ from swil_agent.config import Settings
 from swil_agent.dream.candidate import clean_candidate
 from swil_agent.dream.distill import anchor_cache_key
 from swil_agent.dream.gate import _ASPECT_PROMPT_VERSION as _GATE_PROMPT_VERSION
-from swil_agent.dream.round import build_snapshot_payload, run_dream
-from swil_agent.llm.base import BackendUnavailableError
+from swil_agent.dream.round import _diff_narrative, build_snapshot_payload, run_dream
+from swil_agent.llm.base import (
+    BackendConfigurationError,
+    BackendUnavailableError,
+    CursorCLIBackend,
+)
 from swil_agent.locks import LockBusy, dream_lock_path
 from swil_agent.models import AspectSims, AspectVectors, Persona
 from swil_agent.persona.source import GitPersonaSource
@@ -516,6 +520,24 @@ def test_diff_narrative_falls_back_to_empty_string_on_backend_failure(tmp_path: 
     assert result.narrative == ""
 
 
+def test_diff_narrative_does_not_abort_a_cursor_dream_on_missing_model(
+    tmp_path: Path,
+) -> None:
+    """Cursor refuses `model=None` (`auto` is not a stable IV). That must
+    degrade the narrative, not the already-accepted dream -- 2026-08-23
+    three cursor accounts posted then died at rc=75 here."""
+    directory = _write_account(tmp_path)
+    backend = TwoCallBackend(
+        candidate_response=_valid_candidate(),
+        narrative_raises=BackendConfigurationError("the cursor backend requires an explicit model"),
+    )
+
+    result = _run(tmp_path, directory, backend=backend)
+
+    assert result.accepted is True
+    assert result.narrative == ""
+
+
 def test_diff_narrative_call_passes_no_model_override_even_when_the_persona_has_one(
     tmp_path: Path,
 ) -> None:
@@ -532,6 +554,34 @@ def test_diff_narrative_call_passes_no_model_override_even_when_the_persona_has_
 
     assert backend.calls[0].model == "opus"
     assert backend.calls[1].model is None
+
+
+def test_diff_narrative_on_cursor_uses_the_persona_model(tmp_path: Path) -> None:
+    """Cursor has no CLI default. The empty bash model arg meant 'use the
+    CLI default'; for cursor that is `auto`, which we refuse, so the
+    account's pinned model is the only stable stand-in."""
+
+    class CursorNamedBackend(TwoCallBackend):
+        name = "cursor"
+
+    directory = _write_account(tmp_path)
+    persona = _persona(directory, model="cursor-grok-4.6-high")
+    backend = CursorNamedBackend(candidate_response=_valid_candidate())
+
+    _run(tmp_path, directory, persona=persona, backend=backend)
+
+    assert backend.calls[0].model == "cursor-grok-4.6-high"
+    assert backend.calls[1].model == "cursor-grok-4.6-high"
+
+
+def test_diff_narrative_puts_the_model_on_the_cursor_argv() -> None:
+    """The 2026-08-23 raise lived in CursorCLIBackend.complete, not the fake."""
+    runner = RecordingRunner("ok")
+    backend = CursorCLIBackend(runner)
+    _diff_narrative("old", "new", backend, model="cursor-grok-4.6-high")
+    argv = runner.calls[0].argv
+    assert "--model" in argv
+    assert argv[argv.index("--model") + 1] == "cursor-grok-4.6-high"
 
 
 def test_aspect_drift_is_attached_to_the_snapshot_payload_in_aspect_mode(

@@ -71,6 +71,71 @@ describe('errorHandler', () => {
     });
   });
 
+  it('answers a rejected upload with the 4xx envelope, in production too', async () => {
+    // multer's fileFilter and its own LIMIT_* errors are plain Errors, not
+    // AppErrors, so they fell through to the 500 branch: a .pdf upload
+    // answered `500 INTERNAL`, the message was swallowed in production, and
+    // every client mistake was reported to Sentry as a server fault.
+    const { errorHandler, logger } = await loadHandlers(true);
+    const res = makeRes();
+    const err = Object.assign(new Error('File too large'), {
+      name: 'MulterError',
+      code: 'LIMIT_FILE_SIZE',
+      field: 'images',
+    });
+
+    errorHandler(err as unknown as Error, { id: 'req-4' } as Request, res, vi.fn());
+
+    expect(res.statusCode).toBe(400);
+    expect(res.payload).toEqual({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'File too large',
+        fields: { images: 'LIMIT_FILE_SIZE' },
+        requestId: 'req-4',
+      },
+    });
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the status of a body-parser rejection instead of turning it into a 500', async () => {
+    // express.json({ limit: '100kb' }) throws an error carrying status 413;
+    // a malformed JSON body carries 400. Both were reported as 500.
+    const { errorHandler, logger } = await loadHandlers(true);
+    const res = makeRes();
+    const err = Object.assign(new Error('request entity too large'), {
+      status: 413,
+      type: 'entity.too.large',
+    });
+
+    errorHandler(err as unknown as Error, { id: 'req-5' } as Request, res, vi.fn());
+
+    expect(res.statusCode).toBe(413);
+    expect(res.payload).toEqual({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'request entity too large',
+        requestId: 'req-5',
+      },
+    });
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('still treats a 5xx-tagged unknown error as a server fault', async () => {
+    // The status passthrough must not become a way for an upstream library to
+    // claim a 4xx-shaped 500, nor swallow a real one.
+    const { errorHandler, logger } = await loadHandlers(true);
+    const res = makeRes();
+    const err = Object.assign(new Error('upstream exploded'), { status: 502 });
+
+    errorHandler(err as unknown as Error, { id: 'req-6' } as Request, res, vi.fn());
+
+    expect(res.statusCode).toBe(500);
+    expect(res.payload).toMatchObject({ error: { code: 'INTERNAL' } });
+    expect(logger.error).toHaveBeenCalledOnce();
+  });
+
   it('returns the real message for unknown errors outside production', async () => {
     const { errorHandler, logger } = await loadHandlers(false);
     const req = { id: 'req-2' } as Request;

@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { env } from './config/env';
+import { AppError } from './lib/errors';
 import { createSessionMiddleware } from './config/session';
 import { requestLogger } from './middlewares/requestLogger';
 import { globalLimiter } from './middlewares/rateLimit';
@@ -92,7 +93,7 @@ export function createApp(opts: AppOptions = {}): Express {
       origin: (origin, cb) => {
         if (!origin) return cb(null, true);
         if (env.CORS_ORIGINS.includes(origin)) return cb(null, true);
-        cb(new Error(`Origin ${origin} not allowed`));
+        cb(AppError.forbidden(`Origin ${origin} not allowed`));
       },
       credentials: true,
       methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],

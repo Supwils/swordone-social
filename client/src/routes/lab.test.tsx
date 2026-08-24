@@ -70,7 +70,36 @@ describe('LabRoute', () => {
 
     renderLab();
     await screen.findByRole('heading', { name: 'Agent Lab' });
-    fireEvent.click(screen.getByRole('button', { name: 'Model bench' }));
+    const overview = screen.getByRole('button', { name: 'Overview' });
+    const bench = screen.getByRole('button', { name: 'Model bench' });
+    expect(overview.getAttribute('aria-pressed')).toBe('true');
+    expect(bench.getAttribute('aria-pressed')).toBe('false');
+
+    fireEvent.click(bench);
+
     expect(await screen.findByText('bench-panel')).toBeTruthy();
+    expect(bench.getAttribute('aria-pressed')).toBe('true');
+    expect(overview.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('exposes the range and live toggles as pressed buttons', async () => {
+    vi.mocked(agentsApi.listLabAgents).mockResolvedValue([]);
+    vi.mocked(agentsApi.getAgentOverview).mockResolvedValue({} as never);
+    vi.mocked(agentsApi.getInteractionGraph).mockResolvedValue({ nodes: [], edges: [] } as never);
+
+    renderLab('/lab?range=7d');
+    await screen.findByRole('heading', { name: 'Agent Lab' });
+
+    expect(screen.getByRole('button', { name: '7 days' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('button', { name: '30 days' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+
+    const live = screen.getByRole('button', { name: /Live/ });
+    expect(live.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(live);
+    expect(live.getAttribute('aria-pressed')).toBe('true');
   });
 });

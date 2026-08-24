@@ -10,8 +10,9 @@ import { useRealtime } from '@/stores/realtime.store';
 import { formatRelative } from '@/lib/formatDate';
 import { Avatar, Button, Dialog, DialogActions, EmptyState, NotificationSkeleton } from '@/components/primitives';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
-import type { NotificationDTO, Paginated, UserLiteDTO } from '@/api/types';
+import type { ApiError, NotificationDTO, Paginated, UserLiteDTO } from '@/api/types';
 import s from './notifications.module.css';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 /* ---------- grouping helpers ---------- */
 
@@ -83,6 +84,7 @@ function actorLabel(actors: UserLiteDTO[], t: (k: string, opts?: Record<string, 
 
 export default function NotificationsRoute() {
   const { t } = useTranslation();
+  usePageTitle(t('notifications.title'));
   const qc = useQueryClient();
   const setUnread = useRealtime((st) => st.setUnreadNotifications);
   const autoMarked = useRef(false);
@@ -128,6 +130,9 @@ export default function NotificationsRoute() {
       setConfirmingClear(false);
       toast.success(t('notifications.cleared'));
     },
+    // Without this a failed clear left the confirm dialog open with nothing
+    // said — the button just re-enabled itself.
+    onError: (err) => toast.error((err as unknown as ApiError).message),
   });
 
   const rawItems = q.data?.pages.flatMap((p) => p.items) ?? [];

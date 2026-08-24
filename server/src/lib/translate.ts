@@ -1,10 +1,25 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { posts, comments, tags } from '../db/schema';
 import { env } from '../config/env';
 import type { PostRow, CommentRow, TagRow, PostDTOContext, CommentDTOContext } from './dto';
+import { detectLang } from './lang';
+
+export interface TranslateOptions {
+  /** false → leave bodies alone (auto-translate off) but still localize tags. */
+  content?: boolean;
+}
 
 const TRANSLATE_URL = 'https://translation.googleapis.com/language/translate/v2';
+// Feed and post reads await this before responding, so a hung upstream must
+// not become a hung feed — past this the originals are served instead.
+const TRANSLATE_TIMEOUT_MS = 4_000;
+
+/** `translations || {lang: text}` in SQL — a read-modify-write from a request-start
+ *  snapshot lets two concurrent readers (en + zh) overwrite each other's key. */
+function mergeTranslation(lang: string, text: string) {
+  return sql`coalesce(${sql.raw('translations')}, '{}'::jsonb) || ${JSON.stringify({ [lang]: text })}::jsonb`;
+}
 
 function hasChinese(text: string): boolean {
   return /[一-鿿]/.test(text);
@@ -25,6 +40,7 @@ async function translateBatch(texts: string[], targetLang: string): Promise<stri
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ q: texts, target: apiLang, format: 'text' }),
+    signal: AbortSignal.timeout(TRANSLATE_TIMEOUT_MS),
   });
   if (!res.ok) return texts;
   const data = (await res.json()) as {
@@ -37,12 +53,13 @@ export async function translatePosts(
   postList: PostRow[],
   ctxById: Map<string, PostDTOContext>,
   targetLang: string,
+  opts: TranslateOptions = {},
 ): Promise<void> {
   if (!env.GOOGLE_TRANSLATE_API_KEY) return;
 
   const pending: PostRow[] = [];
 
-  for (const post of postList) {
+  for (const post of opts.content === false ? [] : postList) {
     const id = post.id;
     if (!post.text?.trim()) continue;
 
@@ -51,7 +68,7 @@ export async function translatePosts(
       const ctx = ctxById.get(id);
       if (ctx) {
         ctx.translatedText = cached;
-        ctx.originalLang = hasChinese(post.text) ? 'zh' : 'en';
+        ctx.originalLang = detectLang(post.text);
       }
       continue;
     }
@@ -77,10 +94,14 @@ export async function translatePosts(
           const ctx = ctxById.get(post.id);
           if (ctx) {
             ctx.translatedText = translatedText;
-            ctx.originalLang = hasChinese(post.text) ? 'zh' : 'en';
+            ctx.originalLang = detectLang(post.text);
           }
-          const merged = { ...(post.translations ?? {}), [targetLang]: translatedText };
-          updates.push(db.update(posts).set({ translations: merged }).where(eq(posts.id, post.id)));
+          updates.push(
+            db
+              .update(posts)
+              .set({ translations: mergeTranslation(targetLang, translatedText) })
+              .where(eq(posts.id, post.id)),
+          );
         }
       }
 
@@ -117,8 +138,10 @@ export async function translateComments(
   commentList: CommentRow[],
   ctxByCommentId: Map<string, CommentDTOContext>,
   targetLang: string,
+  opts: TranslateOptions = {},
 ): Promise<void> {
   if (!env.GOOGLE_TRANSLATE_API_KEY) return;
+  if (opts.content === false) return;
 
   const pending: CommentRow[] = [];
 
@@ -154,9 +177,11 @@ export async function translateComments(
       if (translatedText && translatedText !== comment.text) {
         const ctx = ctxByCommentId.get(comment.id);
         if (ctx) ctx.translatedText = translatedText;
-        const merged = { ...(comment.translations ?? {}), [targetLang]: translatedText };
         updates.push(
-          db.update(comments).set({ translations: merged }).where(eq(comments.id, comment.id)),
+          db
+            .update(comments)
+            .set({ translations: mergeTranslation(targetLang, translatedText) })
+            .where(eq(comments.id, comment.id)),
         );
       }
     }
@@ -199,7 +224,12 @@ export async function translateTags(tagList: TagRow[], targetLang: string): Prom
         const merged = { ...(tag.translations ?? {}), [targetLang]: translatedDisplay };
         // Mutate in memory so toTagDTO in the same request sees the translation.
         tag.translations = merged;
-        updates.push(db.update(tags).set({ translations: merged }).where(eq(tags.id, tag.id)));
+        updates.push(
+          db
+            .update(tags)
+            .set({ translations: mergeTranslation(targetLang, translatedDisplay) })
+            .where(eq(tags.id, tag.id)),
+        );
       }
     }
 

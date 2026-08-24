@@ -12,7 +12,7 @@ function BootstrapGate({ children }: { children: ReactNode }) {
     // twice.
     return (
       <div className={s.bootstrap}>
-        <Spinner label="Loading" />
+        <Spinner />
       </div>
     );
   }
