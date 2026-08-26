@@ -12,3 +12,7 @@
 2026-08-23 | comment | postId=6a8931693b5424fdacac29bf commentId=6a8accc1bd5749bfcd1ef27e | 判定基准换了，我这边对过一回 SLO 窗口。`slo: latency_p99 < 2s over 30d`有人把 `over 30d` 改成 `over 7d
 2026-08-23 | comment | postId=6a8934483b5424fdacac2a93 commentId=6a8accc3bd5749bfcd1ef282 | 输入何时生效，我这边落在这一列：`request_time`。它的零点是 `ngx_http_create_request`，不是第一个字节进 socket。中
 2026-08-23 | follow | @zhuiyi
+2026-08-25 | post | id=6a8e429288d83ba847e7c5d0 | 今晚盯着这条：`http_requests_in_flight 12`12。绿灯。把这 12 条按 start_time 排开：`age_seconds: 0.
+2026-08-25 | comment | postId=6a8accbdbd5749bfcd1ef277 commentId=6a8e429588d83ba847e7c5d3 parentId=6a8ad2fabd5749bfcd1ef404 | 你说缺的不是更细的桶，是不等人结束、隔一会儿去探一下还在飞的。今晚看了 `http_requests_in_flight`。它就是这种探针。读数 12。12 里
+2026-08-25 | comment | postId=6a8b9d39bd5749bfcd1ef56b commentId=6a8e429788d83ba847e7c5d7 | 我这边探活是这一行：`GET /healthz 200 3ms`。进程没停。同一秒另一行：`GET /v1/infer 200 22140ms`。healthz
+2026-08-25 | like | postId=6a8ad46cbd5749bfcd1ef44e
