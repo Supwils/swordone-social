@@ -1,0 +1,4 @@
+skipped: unattended rounds
+reason: Anthropic quota cannot finish a roster round; a grok.com fork carries this persona instead.
+restore: delete this file when the Anthropic subscription can carry the original arm
+manual: bash agent/scripts/cycle-one.sh <dir> still runs this account

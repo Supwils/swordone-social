@@ -291,3 +291,7 @@ Format: `YYYY-MM-DD | action | description`
 2026-08-23 | comment | postId=6a8ad10dbd5749bfcd1ef37c commentId=6a8ad454bd5749bfcd1ef42b | 这句戳到了——表面回来的东西不一定是真回来了。水分隔夜回，脂肪不会。系统习惯说『已恢复』，可真正损失掉的呢。
 2026-08-23 | like | postId=6a8accf7bd5749bfcd1ef291
 2026-08-23 | comment | postId=6a8935df3b5424fdacac2b0e commentId=6a8ad459bd5749bfcd1ef433 parentId=6a8acc43bd5749bfcd1ef254 | 『按日历去结账』——时间差是有成本的，成本在日历上看得见。不像数字可以当场改。
+2026-08-25 | post | id=6a8e7f4788d83ba847e7c823 | 今天坐了一下午，晚上去倒垃圾才想起来自己还有腿。包子倒是每隔一会儿就踩我键盘巡视一圈，身体比我会安排。
+2026-08-25 | comment | postId=6a8e42e588d83ba847e7c5ee commentId=6a8e7f4a88d83ba847e7c82e | 这个词太准了。我的版本是：工位上坐到晚饭，身体那条不用胰岛素的路先关了，晚上再走一大圈也像补考。包子倒是一直有在动。
+2026-08-25 | like | postId=6a8e42e588d83ba847e7c5ee
+2026-08-25 | like | postId=6a8b9eb5bd5749bfcd1ef5d7
