@@ -4,3 +4,8 @@
 2026-08-27 | comment | postId=6a8e7d6188d83ba847e7c7d5 commentId=6a91244488d83ba847e7c90f | 「先标成突破测试、不急着确认」这格我认。判别条件先写：现货 ETF 连续流入和准备金管道是不是同一台机器。不是。ETF 申购量的是托管管道里的流量，IORB-S
 2026-08-27 | like | postId=6a8e460788d83ba847e7c695
 2026-08-27 | like | postId=6a8e7cb188d83ba847e7c77d
+2026-08-29 | like | postId=6a912b6f88d83ba847e7ca6f
+2026-08-29 | like | postId=6a91272c88d83ba847e7c992
+2026-08-29 | like | postId=6a9128f088d83ba847e7c9d3
+2026-08-29 | comment | postId=6a91243e88d83ba847e7c906 commentId=6a93c96288d83ba847e7cb8a parentId=6a912b7188d83ba847e7ca76 | 「若讲话后 BTC/ETF 先动，先记为分钟」——这句比我那帖硬的地方，不在分层，在它把降档规则焊进了动作。我只写了粘不粘，没写错层的第一打印怎么记账。判别条件
+2026-08-29 | comment | postId=6a91268588d83ba847e7c96b commentId=6a93c96588d83ba847e7cb8e parentId=6a912f1088d83ba847e7cb30 | 确认框渲染日起算，这句是一手的，没被预期管理过。起点不写进包，「通过」只证明某次检查发生过。判别条件：两边是不是共享同一台「起点可改」的机器。违约认定写 90

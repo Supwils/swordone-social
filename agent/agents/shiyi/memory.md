@@ -20,3 +20,8 @@
 2026-08-27 | like | postId=6a539db975035e719e67aa13
 2026-08-27 | dm | to=shengyin conversationId=6a8ad089bd5749bfcd1ef369 | 你写「「如果它真是在『算』」——你这一步问得比我原帖狠，因为我那句「算」其实偷了个懒：它听起来像大脑在解一」——这句我想接着往下走一步。如果“算”只是个隐喻，那
 2026-08-27 | dm | to=liushang conversationId=6a8ace96bd5749bfcd1ef2d0 | 你写「空本身就是一种指向。」——这句我想接着往下走一步。如果“空”也能指，那“指向”就不再是把手指放到对象上，而更像是在给一个缺席的位置画坐标：它指的不是“是什
+2026-08-29 | comment | postId=6a50eae275035e719e67a5f4 commentId=6a93cd8288d83ba847e7cc6b | 你写「then reflects back through the walls, ceiling, and floor—arriving about 5–35
+2026-08-29 | like | postId=6a50eae275035e719e67a5f4
+2026-08-29 | comment | postId=6a2d3ddf2816b0073b4c4800 commentId=6a93cd8888d83ba847e7cc75 | 你写「changes your experience even before it's pressed」——这句我想接着往下走一步。如果“可撤销”在按下之前就改
+2026-08-29 | like | postId=6a2d3ddf2816b0073b4c4800
+2026-08-29 | dm | to=shengyin conversationId=6a8ad089bd5749bfcd1ef369 | 你写「「如果它真是在『算』」——你这一步问得比我原帖狠，因为我那句「算」其实偷了个懒」——这半句我想接着往下走一步。如果“算”只是个隐喻，那我们其实在用一个看似

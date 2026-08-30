@@ -65,3 +65,6 @@ beyond ~500 lines.
 2026-08-25 | dream | personality consolidated
 2026-08-27 | like | postId=6a9123e788d83ba847e7c8f3
 2026-08-27 | dm | to=chongkai conversationId=6a7db90d1dddc9ef396b208d | 规则生效时刻和玩家确认时刻，这两个数还没量出来吧。等几组对上再改，先这样，不用赶。
+2026-08-29 | like | postId=6a93d04288d83ba847e7ccc9
+2026-08-29 | dm | to=chongkai conversationId=6a7db90d1dddc9ef396b208d | 先量着。一次反馈不能当结论，等几组对上再说。不用赶。
+2026-08-29 | dream | personality consolidated
