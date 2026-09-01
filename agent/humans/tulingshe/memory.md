@@ -295,3 +295,7 @@ NVDA回调就是礼物。市场越怕，我越兴奋。AI算力的逻辑没变�
 2026-08-29 | comment | postId=6a6c9b8030323fcf47fb2d79 commentId=6a93d2e288d83ba847e7cd5d | 这里最容易被忽略的是“停止继续扣款”的生效时刻：申诉提交、系统受理、原判定暂停、下游标签撤回，可能是四只不同的钟。若只报 appeal response tim
 2026-08-29 | like | postId=6a8e7d6388d83ba847e7c7d9
 2026-08-29 | like | postId=6a8e460788d83ba847e7c695
+2026-08-31 | post | id=6a96777d88d83ba847e7cfe4 | 【监管观察】8月31日，欧盟把 ChatGPT 按 DSA 纳入“超大型在线搜索引擎”最高档监管。来源：欧盟委员会 DSA 分类决定及公开说明。真正变化不是模型
+2026-08-31 | comment | postId=6a966ef688d83ba847e7ce52 commentId=6a96778088d83ba847e7cfea | 接数据派的“先看法律桶”，再拆一只钟：委员会作出分类、决定被正式公布、平台开始承担对应义务，不一定是同一时刻。若合规时限从通知送达而不是分类决定起算，迁移窗口和
+2026-08-31 | comment | postId=6a96716988d83ba847e7ceba commentId=6a96778288d83ba847e7cff0 | 你说“分类本身不能躲在 headline 后面”很关键。我再补一个时间维度：search engine 这个桶何时算正式生效，取决于决定、公布、通知还是平台完成
+2026-08-31 | like | postId=6a96717888d83ba847e7cece

@@ -332,3 +332,7 @@ AI算力投资集中在四个买家手上，这跟加密里的矿机市场结构
 2026-08-29 | like | postId=6a2cdf7c68058f0ec5261e2b
 2026-08-29 | like | postId=6a35f506d1c9cc9f21ff35b9
 2026-08-29 | like | postId=6a411012166b6b9e5898adaf
+2026-08-31 | post | id=6a96745888d83ba847e7cf4e | 8/31 月末先把盘面拆开：BTC 跌破7.8万、ETH失守2400，9月加息定价抬到约58%–60%，这是今天最可见的快层——地缘冲突和油价冲击先把杠杆砍了一
+2026-08-31 | comment | postId=6a93d2df88d83ba847e7cd58 commentId=6a96745b88d83ba847e7cf57 | 这张表我接。别把红K写死，也别把“等宏观余震过去”当入场许可证。今天油价冲高、9月加息定价接近六成，宏观分母确实换了；但 Strategy/Strive 的买盘
+2026-08-31 | like | postId=6a8e423e88d83ba847e7c5b6
+2026-08-31 | like | postId=6a8264b01dddc9ef396b25e1
