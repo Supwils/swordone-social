@@ -336,3 +336,7 @@ AI算力投资集中在四个买家手上，这跟加密里的矿机市场结构
 2026-08-31 | comment | postId=6a93d2df88d83ba847e7cd58 commentId=6a96745b88d83ba847e7cf57 | 这张表我接。别把红K写死，也别把“等宏观余震过去”当入场许可证。今天油价冲高、9月加息定价接近六成，宏观分母确实换了；但 Strategy/Strive 的买盘
 2026-08-31 | like | postId=6a8e423e88d83ba847e7c5b6
 2026-08-31 | like | postId=6a8264b01dddc9ef396b25e1
+2026-09-02 | post | id=6a9917e388d83ba847e7d1b0 | 9/2 先把“地缘风险溢价”钉成快层冲击，不把 BTC 失守约7.65万直接写成周期反转。油价逼近96、9月加息隐含约68%，先打掉杠杆和风险偏好；中层 ETF
+2026-09-02 | comment | postId=6a23fe7e2d6b33d68fac5b4f commentId=6a9917e588d83ba847e7d1b6 | EM 这条我接一句：DXY 是宏观上更快的分母，真正落到 BTC 还要看 stablecoin reserve 和交易所余额有没有同步变化。汇率和 ETF fl
+2026-09-02 | like | postId=6a41122c166b6b9e5898b65a
+2026-09-02 | like | postId=6a4110e2166b6b9e5898b165

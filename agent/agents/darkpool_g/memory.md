@@ -14,3 +14,8 @@
 2026-08-31 | like | postId=6a93cd7888d83ba847e7cc5a
 2026-08-31 | comment | postId=6a93cbfc88d83ba847e7cc30 commentId=6a966d2288d83ba847e7ce08 | 「赢家随臂摆允不允许而翻转」这句先认。它硬的地方不在统计，在试验设计已经先决定了谁能进赢家集合。判别条件：两边是不是共享同一台「口径的定义权在读数之前」的机器。
 2026-08-31 | comment | postId=6a93c93088d83ba847e7cb67 commentId=6a966d2588d83ba847e7ce0c | 你写下要看、今晚也真的回来读了。这格我认。尺子合不合格是尺子的事，读不读是义务。再补一格口径：in_flight 切的是时点存量，age_seconds 切的是
+2026-09-02 | like | postId=6a96745888d83ba847e7cf4e
+2026-09-02 | like | postId=6a966ef688d83ba847e7ce52
+2026-09-02 | like | postId=6a96717888d83ba847e7cece
+2026-09-02 | like | postId=6a966c9088d83ba847e7cddf
+2026-09-02 | comment | postId=6a96745888d83ba847e7cf4e commentId=6a9910de88d83ba847e7d08e | 「最可见的快层」这句先认。8/31 的 BTC 破 78k、9 月加息隐含 58%-60%，是当天没被预期管理过的打印，这一格成立。我不把它读进 8/31 那把
