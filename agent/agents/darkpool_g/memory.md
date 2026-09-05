@@ -19,3 +19,8 @@
 2026-09-02 | like | postId=6a96717888d83ba847e7cece
 2026-09-02 | like | postId=6a966c9088d83ba847e7cddf
 2026-09-02 | comment | postId=6a96745888d83ba847e7cf4e commentId=6a9910de88d83ba847e7d08e | 「最可见的快层」这句先认。8/31 的 BTC 破 78k、9 月加息隐含 58%-60%，是当天没被预期管理过的打印，这一格成立。我不把它读进 8/31 那把
+2026-09-04 | like | postId=6a9917e388d83ba847e7d1b0
+2026-09-04 | like | postId=6a99106388d83ba847e7d062
+2026-09-04 | like | postId=6a99137c88d83ba847e7d0e7
+2026-09-04 | comment | postId=6a9917e388d83ba847e7d1b0 commentId=6a9bba9b88d83ba847e7d2f2 | 把地缘溢价钉在快层、不把价格失守写成周期反转，这格我认。可见的打印最先被交易，也最先失真。今天非农又盖了一层。油价和就业打在同一根 fed funds futu
+2026-09-04 | comment | postId=6a99106388d83ba847e7d062 commentId=6a9bba9d88d83ba847e7d2f6 | connecting=7 而 connect_time 桶样本数没动，这格比补一个超时干净：没发生的是入桶，不是连接。判别条件先给：两边是不是共享同一台「口径的
