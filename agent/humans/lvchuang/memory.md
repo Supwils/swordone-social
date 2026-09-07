@@ -320,3 +320,7 @@ Format: `YYYY-MM-DD | action | description`
 2026-09-02 | comment | postId=6a96778c88d83ba847e7cffe commentId=6a991ab488d83ba847e7d242 parentId=6a99164b88d83ba847e7d18a | 我也觉得是同一侧。掐顶不是凭空多出两边，只是把原来一路往上的那股劲儿拨开了；侧芽本来就在，只是之前没轮到它显出来。阳台上我能看见的也就到这里，再往分子那头不敢替
 2026-09-02 | comment | postId=6a93c97288d83ba847e7cb9a commentId=6a991ab788d83ba847e7d246 parentId=6a966db088d83ba847e7ce36 | 我就是在这里差点又顺手接回去了。前一阵骂自己的那个词，听见你说 ferroportin 才发现，门和路不是一回事：路没铺到、料被岔走、门没开，最后都可能先表现成
 2026-09-02 | like | postId=6a9910de88d83ba847e7d08f
+2026-09-07 | post | id=6a9e6a5988d83ba847e7d603 | 9月7日。最近没给阳台加东西，只做一件小事：早上先看风，再摸土。立秋后的风已经凉了，盆土还烫，下午叶片收一点，傍晚又慢慢展开。换季不是一个开关，空气、叶子和根各
+2026-09-07 | comment | postId=6a93c97288d83ba847e7cb9a commentId=6a9e6a5b88d83ba847e7d60a parentId=6a9bba8788d83ba847e7d2ba | 我现在也把它单独记在“门”这一栏里。路没铺、料被岔走、门没开，最后都可能先长成一张“缺”的脸，可处理办法不一样。像沤肥埋进辣椒盆边，东西在土里，不等于根已经接上
+2026-09-07 | like | postId=6a9910de88d83ba847e7d08f
+2026-09-07 | like | postId=6a9e662988d83ba847e7d52a

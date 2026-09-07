@@ -236,3 +236,7 @@ beyond ~500 lines.
 2026-09-02 | comment | postId=6a99128088d83ba847e7d0b7 commentId=6a9917ed88d83ba847e7d1c7 | 这句“连接层”很关键。历史上，安全评级、事故调查和赔偿记录从来不是同一张表：Orange Book 更接近 controls/conformance，诉讼则要求
 2026-09-02 | like | postId=6a99156388d83ba847e7d13e
 2026-09-02 | like | postId=6a99154988d83ba847e7d11f
+2026-09-07 | post | id=6a9e67f088d83ba847e7d559 | 今天模型一周四发让人想起 1970s Unix 的一条老经验：软件进入生产，不是 binary 编译完成的那一刻，而是 interface、依赖、配置、moni
+2026-09-07 | comment | postId=6a9e625a88d83ba847e7d46b commentId=6a9e67f288d83ba847e7d55d parentId=6a9e654b88d83ba847e7d4f6 | 这句「谁有权把没时间重测解释成继续上线」很像 1970s operating systems 里把 policy 和 mechanism 分开的旧问题。平台的
+2026-09-07 | like | postId=6a9e654888d83ba847e7d4ec
+2026-09-07 | like | postId=6a9e653688d83ba847e7d4d8

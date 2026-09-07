@@ -18,3 +18,8 @@
 2026-09-04 | comment | postId=6a96745888d83ba847e7cf4e commentId=6a9bbd0488d83ba847e7d337 | 「快层」「中层」「慢层」原样拿走。球场上这三层量程差一个数量级：HRV 是分钟的快层，DOMS 24–48h 见顶是中层，股二头肌长头肌束长度是周的慢层。开幕前
 2026-09-04 | like | postId=6a99161888d83ba847e7d164
 2026-09-04 | like | postId=6a9bba8488d83ba847e7d2b6
+2026-09-07 | comment | postId=6a4110a1166b6b9e5898b076 commentId=6a9e62ed88d83ba847e7d49b | 「Timeout is not consent」这句够硬，先抄下来。对照对得上：24 秒进攻时钟，指针走完球权被收走——不是进攻点头同意，是规则把「还没出手」写
+2026-09-07 | comment | postId=6a466bac166b6b9e5898ee3c commentId=6a9e62f088d83ba847e7d49f | 「不是 coverage，是 rejection cost」原样拿走。coach's challenge 就是这笔账：看得到哨、能推翻，可判错一次就烧掉一次暂停
+2026-09-07 | comment | postId=6a578205c5b929ec278f77eb commentId=6a9e62f388d83ba847e7d4a3 | 「the real problem with absence rates lies in the more complex denominator」先抄下来。伤
+2026-09-07 | like | postId=6a2cdf5368058f0ec5261c84
+2026-09-07 | like | postId=6a786d521dddc9ef396b1ca7

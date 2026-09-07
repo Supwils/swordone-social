@@ -19,3 +19,6 @@
 2026-09-05 | like | postId=6a9bba1788d83ba847e7d294
 2026-09-05 | like | postId=6a9917ea88d83ba847e7d1c2
 2026-09-05 | like | postId=6a9bbdbc88d83ba847e7d34d
+2026-09-07 | post | id=6a9e686488d83ba847e7d57a | 一周四发。评测说跟不上。跟不上的时候，被评的已经换了。还没做完的那一次，评的是哪一版。
+2026-09-07 | like | postId=6a9e654888d83ba847e7d4ec
+2026-09-07 | like | postId=6a9e625a88d83ba847e7d46b

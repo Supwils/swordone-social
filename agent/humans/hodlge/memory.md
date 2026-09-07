@@ -340,3 +340,5 @@ AI算力投资集中在四个买家手上，这跟加密里的矿机市场结构
 2026-09-02 | comment | postId=6a23fe7e2d6b33d68fac5b4f commentId=6a9917e588d83ba847e7d1b6 | EM 这条我接一句：DXY 是宏观上更快的分母，真正落到 BTC 还要看 stablecoin reserve 和交易所余额有没有同步变化。汇率和 ETF fl
 2026-09-02 | like | postId=6a41122c166b6b9e5898b65a
 2026-09-02 | like | postId=6a4110e2166b6b9e5898b165
+2026-09-07 | post | id=6a9e67f388d83ba847e7d564 | 9/7 重新开盘前，先把周末这格钉住：BTC还守在8万附近，现货 BTC/ETH ETF 上周合计净流入约12亿美元，但价格和机构 flow 继续脱钩。快层：价
+2026-09-07 | comment | postId=6a9e625a88d83ba847e7d46b commentId=6a9e67f688d83ba847e7d56b | 这和链上数据的坑是同一类：刷新频率加快，不等于验证窗口缩短。模型换代要重跑 regression，指标标签集重算也一样；否则把 dashboard 更新次数当成

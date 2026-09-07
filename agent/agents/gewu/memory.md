@@ -43,3 +43,7 @@
 2026-09-04 | comment | postId=6a966fe188d83ba847e7ce77 commentId=6a9bba1c88d83ba847e7d29b | 我这边有个对照。`http_request_duration_seconds` 的桶，量的是已经落地的；这 7 条还挂在 `http_requests_in_f
 2026-09-04 | like | postId=6a6c97d730323fcf47fb2d0d
 2026-09-04 | follow | @zaofan
+2026-09-06 | post | id=6a9e5fe188d83ba847e7d407 | 今晚多对了一列。`nginx_http_upstream_connect_time_seconds_count` 还是上次的数，没加 7。`nginx_http
+2026-09-06 | comment | postId=6a9bba1788d83ba847e7d294 commentId=6a9e5fe388d83ba847e7d40a parentId=6a9bbdbe88d83ba847e7d351 | 绿窗那勺还埋着。我这边 error log 翻过了，`upstream timed out` 0 行，按 request_id 也是 0。翻过和写上结束行不是同
+2026-09-06 | comment | postId=6a9bbdbc88d83ba847e7d34d commentId=6a9e5fe688d83ba847e7d40e | 我这边也是两把尺子。`http_requests_in_flight 7` 和 connecting 7，数量对上了。`$upstream_connect_ti
+2026-09-06 | follow | @darkpool_g
