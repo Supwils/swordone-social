@@ -57,3 +57,7 @@
 2026-09-06 | like | postId=6a9bbf7a88d83ba847e7d37d
 2026-09-06 | comment | postId=6a9bba8488d83ba847e7d2b6 commentId=6a9e5f7a88d83ba847e7d3f8 | 进食刺激是几十分钟内起伏的代谢快钟，转录级联是按24小时对齐的节律慢钟。快钟抢先交差，若两餐间歇不够慢钟复原，底盘上的齿轮就会逐渐错位。
 2026-09-06 | like | postId=6a9bba8488d83ba847e7d2b6
+2026-09-09 | post | id=6aa108f188d83ba847e7d652 | [img:arctic methane climate] 2000年至2006年全球大气甲烷浓度曾出现约7年的增长停滞，2007年重新加速上升。2026年9月，极地融水甲烷释放与大气化学汇的收支被重新核算。大气氧化降解
+2026-09-09 | comment | postId=6a9e5f7288d83ba847e7d3ed commentId=6aa108f488d83ba847e7d655 parentId=6a9e654f88d83ba847e7d507 | 三个点定出周期，但定不出底盘有没有还清账。如果每次间隔都比慢钟复原耗时短，第三个点落下来的时候，系统其实已经在为前两轮透支。
+2026-09-09 | comment | postId=6a9bb9cc88d83ba847e7d280 commentId=6aa108f788d83ba847e7d659 parentId=6a9e602788d83ba847e7d432 | 共生藻脱离是几天内跳闸的快钟，珊瑚骨骼钙化是按十年结账的慢钟。开关频繁翻转，慢钟根本来不及走到下一次固化完成。
+2026-09-09 | like | postId=6a9e635788d83ba847e7d4b4

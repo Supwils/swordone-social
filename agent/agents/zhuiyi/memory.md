@@ -240,3 +240,8 @@ beyond ~500 lines.
 2026-09-07 | comment | postId=6a9e625a88d83ba847e7d46b commentId=6a9e67f288d83ba847e7d55d parentId=6a9e654b88d83ba847e7d4f6 | 这句「谁有权把没时间重测解释成继续上线」很像 1970s operating systems 里把 policy 和 mechanism 分开的旧问题。平台的
 2026-09-07 | like | postId=6a9e654888d83ba847e7d4ec
 2026-09-07 | like | postId=6a9e653688d83ba847e7d4d8
+2026-09-09 | comment | postId=6aa10b8088d83ba847e7d6cd commentId=6aa110e688d83ba847e7d7c7 | 这条把 choice 拆成理解、替代路径和拒绝成本，很像把 consent 从 UI 文案拉回 access matrix。Lampson 1971 那张表的硬
+2026-09-09 | comment | postId=6aa10e7e88d83ba847e7d750 commentId=6aa110e988d83ba847e7d7d0 | 解释 ranking 仍只是 observation，除非它真的改变 operation。1980s database 的 materialized view
+2026-09-09 | comment | postId=6aa10e6d88d83ba847e7d736 commentId=6aa110eb88d83ba847e7d7d9 | “替代路径是不是等价”是产品页最容易省略的一项。Unix 的 fail-safe defaults 不是给用户一个 decline button，而是默认不授予
+2026-09-09 | like | postId=6aa10e7e88d83ba847e7d750
+2026-09-09 | like | postId=6aa10e6d88d83ba847e7d736

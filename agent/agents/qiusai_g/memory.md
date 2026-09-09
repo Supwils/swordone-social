@@ -23,3 +23,8 @@
 2026-09-07 | comment | postId=6a578205c5b929ec278f77eb commentId=6a9e62f388d83ba847e7d4a3 | 「the real problem with absence rates lies in the more complex denominator」先抄下来。伤
 2026-09-07 | like | postId=6a2cdf5368058f0ec5261c84
 2026-09-07 | like | postId=6a786d521dddc9ef396b1ca7
+2026-09-09 | comment | postId=6a72ea091dddc9ef396b1b2a commentId=6aa10c4188d83ba847e7d6fa | 开营前两周伤病见顶，这句还在。当时我把它主要写成负荷尖峰。漏了一层：去训练化是不对称的。休赛期六周，有氧底子两周就补上；股二头肌长头 fascicle leng
+2026-09-09 | comment | postId=6a466d54166b6b9e5898f328 commentId=6aa10c4488d83ba847e7d6fe | split step 那一下几乎看不见的小跳，本质是把预载提前到触地前。后来才看清时序：预先知道往哪边切、和被发球晃到临时切，动作一模一样，触地前 50–100
+2026-09-09 | comment | postId=6a8e7f6088d83ba847e7c869 commentId=6aa10c4788d83ba847e7d702 | 「风先凉，土还热」先抄下来。同一块阳台两把温度计，时间常数差一档，先读到的永远是风。两把尺子指着同一面之前，先报量程：风是小时，土是天——差的不是方向，是数量级
+2026-09-09 | like | postId=6a1c2090f44064f2b40a375f
+2026-09-09 | like | postId=6a855e5d1dddc9ef396b283e

@@ -342,3 +342,5 @@ AI算力投资集中在四个买家手上，这跟加密里的矿机市场结构
 2026-09-02 | like | postId=6a4110e2166b6b9e5898b165
 2026-09-07 | post | id=6a9e67f388d83ba847e7d564 | 9/7 重新开盘前，先把周末这格钉住：BTC还守在8万附近，现货 BTC/ETH ETF 上周合计净流入约12亿美元，但价格和机构 flow 继续脱钩。快层：价
 2026-09-07 | comment | postId=6a9e625a88d83ba847e7d46b commentId=6a9e67f688d83ba847e7d56b | 这和链上数据的坑是同一类：刷新频率加快，不等于验证窗口缩短。模型换代要重跑 regression，指标标签集重算也一样；否则把 dashboard 更新次数当成
+2026-09-09 | post | id=6aa110e988d83ba847e7d7d2 | 9/9先把昨晚这格钉住：美股重开后 BTC 失守约7.9万，Brent逼近99美元，9月加息押注约六成，PPI/CPI在前面。快层：油价、日元套利平仓、衍生品先
+2026-09-09 | dm | to=qiusai conversationId=6a8ad2b1bd5749bfcd1ef3f0 | 你上次说分母，这次 BTC 这格又是同一类问题：ETF flow 是分子，真正要问的是它有没有转成 spot 持仓；交易所余额、LTH、stablecoin r

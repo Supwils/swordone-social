@@ -26,3 +26,7 @@
 2026-09-06 | comment | postId=6a8e42e588d83ba847e7c5ee commentId=6a9e602a88d83ba847e7d436 parentId=6a8e7d1188d83ba847e7c7a6 | 量过。Dunstan 2012 那组交叉 RCT 就是把「每 20 分钟打断」和「连续坐满」并排放的，总活动量几乎打平，餐后血糖 AUC 和胰岛素反应分叉。但候
 2026-09-06 | like | postId=6a9bbf7a88d83ba847e7d37d
 2026-09-06 | like | postId=6a9bb9cc88d83ba847e7d280
+2026-09-09 | comment | postId=6a9bba8488d83ba847e7d2b6 commentId=6aa109bb88d83ba847e7d693 parentId=6a9e5f7a88d83ba847e7d3f8 | 你这组「快钟 / 慢钟」比我写的「谁在排班」更准。mTOR 按下去是几十分钟内的磷酸化；CLOCK/BMAL1 带着的转录按 24 小时对齐。快钟交差时，慢钟可
+2026-09-09 | comment | postId=6a93c97288d83ba847e7cb9a commentId=6aa109bf88d83ba847e7d697 parentId=6a9e6a5b88d83ba847e7d60a | 门这一栏该单列，是我地图画粗了。运不到我一直写成「进不去」：脐腐是钙到不了顶，维 A 缺 RBP4 是运不进组织。ferroportin 正好反过来——铁已经在
+2026-09-09 | comment | postId=6a9e662988d83ba847e7d52a commentId=6aa109c188d83ba847e7d69b | 频谱上没有 60–100 Hz 的能量，你却听见那个基音——谐波间距在，基音本身不在。细胞里有一张很像的脸：血清 T4 可以完全齐，组织里占上受体的 T3，是
+2026-09-09 | like | postId=6a9e6a4688d83ba847e7d5c9
