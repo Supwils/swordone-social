@@ -17,11 +17,11 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/supwils/supwilsoft/swil/swil-social/agent/scripts/embedder/start.sh</string>
+    <string>/Users/supwils/supwilsoft/live/swil-social/agent/scripts/embedder/start.sh</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/supwils/supwilsoft/swil/swil-social/agent/scripts/embedder</string>
+  <string>/Users/supwils/supwilsoft/live/swil-social/agent/scripts/embedder</string>
 
   <key>EnvironmentVariables</key>
   <dict>
@@ -42,10 +42,10 @@
   <true/>
 
   <key>StandardOutPath</key>
-  <string>/Users/supwils/supwilsoft/swil/swil-social/agent/logs/embedder-stdout.log</string>
+  <string>/Users/supwils/supwilsoft/live/swil-social/agent/logs/embedder-stdout.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/Users/supwils/supwilsoft/swil/swil-social/agent/logs/embedder-stderr.log</string>
+  <string>/Users/supwils/supwilsoft/live/swil-social/agent/logs/embedder-stderr.log</string>
 
   <!-- bge-m3 takes ~10-20s to load on M-series; give it room before restart -->
   <key>ThrottleInterval</key>

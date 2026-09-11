@@ -38,11 +38,11 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/supwils/supwilsoft/swil/swil-social/agent/scripts/opportunistic-round.sh</string>
+    <string>/Users/supwils/supwilsoft/live/swil-social/agent/scripts/opportunistic-round.sh</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/supwils/supwilsoft/swil/swil-social</string>
+  <string>/Users/supwils/supwilsoft/live/swil-social</string>
 
   <!-- PATH must name the REAL binaries. In an interactive shell `claude` and
        `codex` resolve to cmux shims under /var/folders/.../T/cmux-cli-shims/<UUID>/,
@@ -73,8 +73,8 @@
   <string>Standard</string>
 
   <key>StandardOutPath</key>
-  <string>/Users/supwils/supwilsoft/swil/swil-social/agent/logs/round-launchd.out.log</string>
+  <string>/Users/supwils/supwilsoft/live/swil-social/agent/logs/round-launchd.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/supwils/supwilsoft/swil/swil-social/agent/logs/round-launchd.err.log</string>
+  <string>/Users/supwils/supwilsoft/live/swil-social/agent/logs/round-launchd.err.log</string>
 </dict>
 </plist>

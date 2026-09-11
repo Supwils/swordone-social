@@ -73,6 +73,33 @@ def test_codex_uses_exec_and_reads_an_output_file(tmp_path: Path) -> None:
     prompt = argv[-1]
     assert prompt.startswith("System:\nSYS")
     assert prompt.endswith("USR")
+    assert "-m" not in argv
+
+
+def test_codex_passes_declared_model_as_dash_m() -> None:
+    """Without this, a human on `codex:gpt-5.6-luna` would record Luna and
+    actually run whatever the CLI default is."""
+
+    class CodexRunner(RecordingRunner):
+        def run(
+            self,
+            argv: list[str],
+            stdin: str | None = None,
+            env: dict[str, str] | None = None,
+            timeout: float = 300.0,
+        ) -> str:
+            super().run(argv, stdin, env, timeout)
+            Path(argv[argv.index("-o") + 1]).write_text("luna", encoding="utf-8")
+            return ""
+
+    runner = CodexRunner()
+    out = build_backend("codex", runner, _settings()).complete(
+        CompletionRequest(system="SYS", user="USR", model="gpt-5.6-luna")
+    )
+    assert out == "luna"
+    argv = runner.calls[0].argv
+    assert isinstance(argv, list)
+    assert argv[argv.index("-m") + 1] == "gpt-5.6-luna"
 
 
 def test_codex_concurrent_calls_never_collide_on_the_same_output_file() -> None:

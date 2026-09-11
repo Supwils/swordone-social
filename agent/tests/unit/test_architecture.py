@@ -145,6 +145,8 @@ def test_neutral_module_does_not_reference_a_concrete_backend_class() -> None:
         "ClaudeCLIBackend",
         "CodexCLIBackend",
         "DeepSeekCLIBackend",
+        "CursorCLIBackend",
+        "GrokCLIBackend",
         "_ClaudeStyleBackend",
         "build_backend",
     ):

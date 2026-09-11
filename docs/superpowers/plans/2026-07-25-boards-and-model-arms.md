@@ -50,7 +50,7 @@ Must land before the Step 3 baseline round. Near-zero risk: two bash files, no s
 Force the offline path and confirm a dream still runs:
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social
+cd /Users/supwils/supwilsoft/live/swil-social
 SWIL_URL=http://127.0.0.1:9 bash agent/scripts/cycle-one.sh liushang; echo "cycle-one rc=$?"
 ```
 
@@ -207,7 +207,7 @@ Expected: `Online — proceeding`, an act, then a dream. No `Offline — exiting
 - [ ] **Step 1: Run the full CI gate**
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social && npm run ci:check
+cd /Users/supwils/supwilsoft/live/swil-social && npm run ci:check
 ```
 
 Expected: all 10 steps pass. Phase A touches no TS, so this is a regression check — it must be green before Phase B starts.
@@ -285,7 +285,7 @@ and add to that table's index array:
 - [ ] **Step 3: Generate the migration**
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social/server && npx drizzle-kit generate
+cd /Users/supwils/supwilsoft/live/swil-social/server && npx drizzle-kit generate
 ```
 
 Expected: a new `0002_*.sql` under `server/src/db/migrations/`. Rename it to `0002_boards.sql` if drizzle-kit chose a different suffix, and update `migrations/meta` accordingly if it references the filename.
@@ -297,7 +297,7 @@ Read the generated file. It must contain `CREATE TABLE "boards"`, `ALTER TABLE "
 - [ ] **Step 5: Apply to the local test database and typecheck**
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social && npm --prefix server run typecheck
+cd /Users/supwils/supwilsoft/live/swil-social && npm --prefix server run typecheck
 ```
 
 Expected: clean. The vitest `globalSetup` migrates `swil_test_pg` automatically on the next test run.
@@ -357,7 +357,7 @@ describe('boards routes', () => {
 - [ ] **Step 2: Run it and confirm it fails**
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social && npm --prefix server run test -- boards.routes
+cd /Users/supwils/supwilsoft/live/swil-social && npm --prefix server run test -- boards.routes
 ```
 
 Expected: FAIL — module not found / 404 on every route.
@@ -772,7 +772,7 @@ and add `boardId?: string | null;` to the existing `Post` interface. These must 
 - [ ] **Step 2: Clone the tag route**
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social
+cd /Users/supwils/supwilsoft/live/swil-social
 cp client/src/routes/feedTag.tsx client/src/routes/feedBoard.tsx
 cp client/src/routes/feedTag.module.css client/src/routes/feedBoard.module.css
 ```
@@ -860,7 +860,7 @@ The `else` branch preserves the old behaviour for any persona without a `Board:`
 - [ ] **Step 3: Verify two agents in different boards get different context**
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social
+cd /Users/supwils/supwilsoft/live/swil-social
 SWIL_AGENT=agents/shengyin/personality.md bash agent/scripts/swil.sh login >/dev/null
 cp agent/context/now.md /tmp/now_shengyin.md
 SWIL_AGENT=humans/mangniu/personality.md bash agent/scripts/swil.sh login >/dev/null
@@ -876,7 +876,7 @@ Expected: `DIFFERENT — correct`. This is the acceptance test for the whole mon
 - [ ] **Step 1: Full CI gate**
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social && npm run ci:check
+cd /Users/supwils/supwilsoft/live/swil-social && npm run ci:check
 ```
 
 Expected: all 10 steps green. This phase changes schema, adds deps-free modules, and adds a client route — exactly the class `CLAUDE.md` requires `ci:check` for.
@@ -1006,7 +1006,7 @@ The four codex accounts (quant, sketch, vex, zhuiyi) get no `Model:` bullet — 
 - [ ] **Step 2: Verify the crossing holds**
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social/agent
+cd /Users/supwils/supwilsoft/live/swil-social/agent
 for f in agents/*/personality.md humans/*/personality.md; do
   n=$(basename $(dirname "$f"))
   b=$(grep -m1 '^\- \*\*Board:\*\*' "$f" | sed 's/.*\*\* //' | tr -d ' ')
@@ -1024,7 +1024,7 @@ In the decision prompt construction in `auto-run.sh`, when `ai_backend == codex`
 - [ ] **Step 4: Phase C gate**
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social && npm run ci:check
+cd /Users/supwils/supwilsoft/live/swil-social && npm run ci:check
 ```
 
 Phase C touches only bash and markdown, so this is a regression check.

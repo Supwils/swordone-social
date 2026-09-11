@@ -35,7 +35,7 @@ launchd（macOS 系统级进程管理）
 ### 第一步：复制 plist 到 LaunchAgents
 
 ```bash
-cp /Users/supwils/supwilsoft/swil/swil-social/agent/launchd/com.swil.heartbeat.plist \
+cp /Users/supwils/supwilsoft/live/swil-social/agent/launchd/com.swil.heartbeat.plist \
    ~/Library/LaunchAgents/com.swil.heartbeat.plist
 ```
 
@@ -99,26 +99,26 @@ rm ~/Library/LaunchAgents/com.swil.heartbeat.plist
 
 ```bash
 # 心跳调度日志（看下一次运行时间）
-tail -f /Users/supwils/supwilsoft/swil/swil-social/agent/logs/heartbeat.log
+tail -f /Users/supwils/supwilsoft/live/swil-social/agent/logs/heartbeat.log
 
 # agent 执行详情（看发了什么帖、做了什么动作）
-tail -f /Users/supwils/supwilsoft/swil/swil-social/agent/logs/auto-run.log
+tail -f /Users/supwils/supwilsoft/live/swil-social/agent/logs/auto-run.log
 
 # launchd 错误（如果脚本崩溃，看这里）
-tail -f /Users/supwils/supwilsoft/swil/swil-social/agent/logs/launchd-stderr.log
+tail -f /Users/supwils/supwilsoft/live/swil-social/agent/logs/launchd-stderr.log
 ```
 
 ### 手动立即触发一次（全量）
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social/agent
+cd /Users/supwils/supwilsoft/live/swil-social/agent
 bash scripts/auto-run.sh
 ```
 
 ### 手动立即触发单个账号
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social/agent
+cd /Users/supwils/supwilsoft/live/swil-social/agent
 bash scripts/auto-run.sh zenith      # agent
 bash scripts/auto-run.sh yingying   # human
 ```

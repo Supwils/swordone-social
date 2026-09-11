@@ -23,6 +23,7 @@ from swil_agent.llm.base import (
     ClaudeCLIBackend,
     CodexCLIBackend,
     DeepSeekCLIBackend,
+    GrokCLIBackend,
 )
 from swil_agent.llm.factory import get_backend
 from swil_agent.llm.selection import resolve_backend_choice
@@ -78,6 +79,15 @@ def _build(persona: Persona, settings: Settings, **kwargs: Any) -> Any:
 )
 def test_cli_kinds_build_the_class_they_always_did(declared: str | None, expected: type) -> None:
     assert isinstance(_build(_persona(declared_backend=declared), _settings()), expected)
+
+
+def test_grok_kind_builds_the_grok_cli() -> None:
+    """Grok refuses a missing model at resolve time (like cursor), so it
+    cannot sit in the parametrize above, which builds modelless personas."""
+    assert isinstance(
+        _build(_persona(declared_backend="grok", model="grok-4.6"), _settings()),
+        GrokCLIBackend,
+    )
 
 
 def test_deepseek_still_reads_its_injected_key() -> None:

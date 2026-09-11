@@ -4,21 +4,22 @@
 #
 # Usage:
 #   bash scripts/benchmark-all.sh
-#   PERSONAS="liushang shengyin" MODELS="opus haiku" K=3 bash scripts/benchmark-all.sh
+#   PERSONAS="liushang shengyin" MODELS="codex sonnet" K=3 bash scripts/benchmark-all.sh
 #   BENCH_TASKS="free_post,opinion_oss" K=2 bash scripts/benchmark-all.sh
 #
 # Env:
 #   PERSONAS  default "liushang shengyin chawendao mangniu zhuiyi"
-#   MODELS    default "opus sonnet haiku codex ds-flash"
+#   MODELS    default "codex sonnet ds-flash"  (haiku/opus still valid aliases)
 #   K         claude repeats per task (default 3)
 #   CODEX_K   codex repeats per task (default 1 — codex is ~3× slower)
 #   JUDGE     pass through to enable the LLM-judge (slow)
+#   JUDGE_MODEL  pass through (default sonnet = Claude Sonnet 5)
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 PERSONAS="${PERSONAS:-liushang shengyin chawendao mangniu zhuiyi}"
-MODELS="${MODELS:-opus sonnet haiku codex ds-flash}"
+MODELS="${MODELS:-codex sonnet ds-flash}"
 K="${K:-3}"
 CODEX_K="${CODEX_K:-1}"
 BATCH_ID="$(date -u '+%Y%m%dT%H%M%S')-sweep"

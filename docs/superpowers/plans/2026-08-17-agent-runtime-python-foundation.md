@@ -833,7 +833,7 @@ exactly `## 发帖节律` with no trailing text.
 - [ ] **Step 5: Cross-check against Bash for one account**
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social
+cd /Users/supwils/supwilsoft/live/swil-social
 grep -m1 -i '^\- \*\*Board:\*\*' agent/agents/liushang/personality.md
 cd agent && uv run python -c "
 from pathlib import Path
@@ -929,7 +929,7 @@ done
 Then run it:
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social
+cd /Users/supwils/supwilsoft/live/swil-social
 bash agent/tests/golden/capture_rhythm.sh > agent/tests/golden/rhythm_ground_truth.tsv
 wc -l agent/tests/golden/rhythm_ground_truth.tsv   # expect 93 = 1 header + 23*4
 ```
@@ -1484,7 +1484,7 @@ drift-rejected one also passes all six, because it failed the *drift* gate, not
 a structural check — the drift gate is Plan 2).
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social/agent
+cd /Users/supwils/supwilsoft/live/swil-social/agent
 uv run python -c "
 from pathlib import Path
 from swil_agent.persona.validators import validate_candidate
@@ -1782,7 +1782,7 @@ Expected: 17 passed, mypy clean.
 - [ ] **Step 5: Cross-check `collapse_doubled_text` against Bash**
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social
+cd /Users/supwils/supwilsoft/live/swil-social
 SAMPLE="这是一段足够长的中文文本用来触发折叠逻辑判断这是一段足够长的中文文本用来触发折叠逻辑判断"
 BASH_OUT=$(SOURCE_ONLY=1 bash -c '. agent/scripts/llm.sh; collapse_doubled_text "'"$SAMPLE$SAMPLE"'"')
 PY_OUT=$(cd agent && uv run python -c "
@@ -2682,7 +2682,7 @@ test — `sid` is the assumption to verify.
 - [ ] **Step 6: Verify against the live API (read-only)**
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social
+cd /Users/supwils/supwilsoft/live/swil-social
 set -a && . agent/.env && set +a
 cd agent && uv run python -c "
 import os
@@ -2881,7 +2881,7 @@ Expected: FAIL — `ModuleNotFoundError`.
 Read the server handlers rather than guessing:
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social
+cd /Users/supwils/supwilsoft/live/swil-social
 grep -rn "like" server/src/modules/posts/*.ts | grep -iE "res\.|json\(|ok\(" | head
 grep -rn "follow" server/src/modules/users/*.ts | grep -iE "res\.|json\(|ok\(" | head
 grep -rn "message" server/src/modules/messages/*.ts | grep -iE "res\.|json\(|ok\(" | head
@@ -3011,7 +3011,7 @@ Expected: 10 passed, mypy clean.
 - [ ] **Step 6: Confirm the DM endpoint against the server**
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social
+cd /Users/supwils/supwilsoft/live/swil-social
 grep -rn "router\.\(post\|get\)" server/src/modules/messages/*.routes.ts | head
 ```
 
@@ -3230,7 +3230,7 @@ Expected: 6 passed, mypy clean.
 
 ```bash
 cd agent && uv run pytest -v && uv run ruff check . && uv run ruff format --check . && uv run mypy
-cd /Users/supwils/supwilsoft/swil/swil-social && npm run ci:check
+cd /Users/supwils/supwilsoft/live/swil-social && npm run ci:check
 ```
 
 Expected: every test passes; 13/13 CI steps pass.

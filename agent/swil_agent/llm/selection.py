@@ -20,9 +20,10 @@ account and one model in one command, is the only thing that outranks the file.
 
 That distinction needs "the file declares nothing" to be representable, which
 is why `Persona` carries `declared_backend` (the raw bullet, `None` when
-absent) beside `backend` (the same value defaulted to `"claude"`). Three
-accounts -- hodlge, lvchuang, zaofan -- have no `AI Backend` bullet at all, so
-this is a live case, not a hypothetical one.
+absent) beside `backend` (the same value defaulted to `"claude"`). Through
+2026-08-25 that was a live case for hodlge / lvchuang / zaofan; they now
+declare `codex`. The field stays, because a new account can still ship
+without the bullet.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ from swil_agent.config import Settings
 from swil_agent.llm.base import BackendConfigurationError
 from swil_agent.models import Persona
 
-BackendKind = Literal["claude_cli", "codex_cli", "deepseek_cli", "cursor_cli", "api"]
+BackendKind = Literal["claude_cli", "codex_cli", "deepseek_cli", "cursor_cli", "grok_cli", "api"]
 ChoiceSource = Literal["flag", "persona", "env", "default"]
 
 DEFAULT_KIND: Final[BackendKind] = "claude_cli"
@@ -53,6 +54,8 @@ _KIND_ALIASES: Final[dict[str, BackendKind]] = {
     "cursor": "cursor_cli",
     "cursor_cli": "cursor_cli",
     "cursor_agent": "cursor_cli",
+    "grok": "grok_cli",
+    "grok_cli": "grok_cli",
     "api": "api",
 }
 
@@ -67,6 +70,7 @@ _KIND_WIRE_NAME: Final[dict[BackendKind, str]] = {
     "codex_cli": "codex",
     "deepseek_cli": "deepseek",
     "cursor_cli": "cursor",
+    "grok_cli": "grok",
     "api": "api",  # replaced by the provider's wire name; see `resolve_backend_choice`
 }
 
@@ -192,6 +196,17 @@ def resolve_backend_choice(
             "(`cursor-agent --list-models` shows the ids)"
         )
 
+    if kind == "grok_cli" and model is None:
+        # Same shape as cursor, even though the grok CLI's current default
+        # (`grok-4.6`) is a real named model rather than a router. A missing
+        # Model bullet would still record a flat `grok` while that default
+        # can move on a grok.com deploy.
+        raise BackendConfigurationError(
+            "the grok backend requires an explicit model -- set SWIL_LLM_MODEL, "
+            "pass --model, or give the account a `- **Model:**` bullet "
+            "(`grok models` shows the ids)"
+        )
+
     provider: str | None = None
     base_url: str | None = None
     if kind == "api":
@@ -235,7 +250,7 @@ def _resolve_kind(
         if kind is not None:
             return kind, source  # type: ignore[return-value]
         if source == "flag":
-            # An operator who typed `--backend grok` gets told, not defaulted.
+            # An operator who typed `--backend gork` gets told, not defaulted.
             # The forgiving path below exists for the roster's own historical
             # spellings, not for a typo made ten seconds ago.
             raise BackendConfigurationError(

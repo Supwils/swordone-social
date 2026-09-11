@@ -127,8 +127,8 @@ class Persona(BaseModel):
     # where `backend` above is the same value already defaulted to "claude".
     # Keeping both is what lets `llm/selection.py` rank a global
     # `SWIL_LLM_BACKEND` above an account that declares nothing while leaving
-    # an account that declares `claude` explicitly alone. Three accounts
-    # (hodlge, lvchuang, zaofan) ship no bullet, so the two really do differ.
+    # an account that declares `claude` explicitly alone. hodlge / lvchuang /
+    # zaofan shipped with no bullet until 2026-08-25; they now declare `codex`.
     declared_backend: str | None = None
     model: str | None = None
     board: str | None = None

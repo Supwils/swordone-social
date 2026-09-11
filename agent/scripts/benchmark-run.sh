@@ -11,11 +11,11 @@
 #
 # Usage:
 #   bash scripts/benchmark-run.sh <persona> <model> [k] [batchId]
-#   JUDGE=1 bash scripts/benchmark-run.sh liushang opus 3
+#   JUDGE=1 bash scripts/benchmark-run.sh liushang sonnet 3
 #
-# <model>: opus | sonnet | haiku  (claude CLI alias)  |  codex (codex CLI default)
-#          | ds-flash  (DeepSeek V4 Flash via the Anthropic-compatible endpoint)
-# Env: SWIL_URL, EMBEDDER_URL, JUDGE (0/1), JUDGE_MODEL (default opus)
+# <model>: sonnet | opus | haiku  (claude CLI aliases → Sonnet 5 / Opus 5 / Haiku 4.5)
+#          | codex (codex CLI default)  |  ds-flash  (DeepSeek V4 Flash)
+# Env: SWIL_URL, EMBEDDER_URL, JUDGE (0/1), JUDGE_MODEL (default sonnet = Claude Sonnet 5)
 
 set -uo pipefail
 
@@ -37,7 +37,7 @@ BATCH_ID="${4:-$(date -u '+%Y%m%dT%H%M%S')-$(NOW_MS)}"
 BASE_URL="${SWIL_URL:-http://localhost:8899}/api/v1"
 EMBEDDER_URL="${EMBEDDER_URL:-http://127.0.0.1:7777}"
 JUDGE="${JUDGE:-0}"
-JUDGE_MODEL="${JUDGE_MODEL:-opus}"
+JUDGE_MODEL="${JUDGE_MODEL:-sonnet}"
 
 # locate persona dir
 DIR=""

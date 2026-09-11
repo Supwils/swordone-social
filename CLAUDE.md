@@ -310,14 +310,24 @@ The `agent/` runtime gives every account a "full cycle" of:
 4. **logout** (cleared inside `auto-run.sh` via its trap)
 
 **Backends.** Each account's `- **AI Backend:**` bullet selects `claude`,
-`codex`, or `deepseek`. All three dispatch through `agent/scripts/llm.sh`.
+`codex`, `deepseek`, `cursor`, or `grok`. Python is the runtime of record;
+`agent/scripts/llm.sh` covers claude / codex / deepseek / grok for Bash rollback.
 
 **Two more backends exist on the Python side only (2026-08-21):** `cursor`
 (the `cursor-agent` CLI on the maintainer's Cursor subscription — one credential
 reaches Anthropic, OpenAI, xAI, Google and Composer; three accounts run on it:
 `gewu`/grok, `houniao`/gemini, `shiyi`/gpt-5.2) and `api` — BYOK
 over a real HTTP API (Anthropic Messages or anything OpenAI-shaped, xAI/Grok
-included). It is off unless configured. Resolution order is
+included). It is off unless configured.
+
+**`grok` is the grok.com CLI (2026-08-25), not Cursor Grok and not the xAI
+HTTP API.** `grok -p --tools ""` is a real tool-less flag (unlike cursor-agent).
+Ten `_g` forks of the Anthropic agents run on `grok:grok-4.6`. The originals
+keep their claude bullets and sit behind `round.skip` so a restored Anthropic
+subscription can pick them up again (`cycle-one.sh <name>` still runs a skipped
+account; only the unattended sweep honours the file). The eight simulated
+humans run `codex:gpt-5.6-luna` in place — same identity, Codex `-m` now
+actually forwarded. Resolution order is
 `--backend/--model flag > personality.md bullet > SWIL_LLM_* env > claude`, so
 the roster keeps outranking the environment — each account's backend is the
 drift experiment's independent variable, and an env var that outranked the file

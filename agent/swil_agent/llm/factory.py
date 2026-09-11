@@ -27,7 +27,7 @@ from swil_agent.llm.selection import BackendChoice
 # the one whose `*)`-default behaviour is pinned. `BackendChoice.wire_name` is
 # exactly those strings for the three CLI kinds, so the bridge is one attribute
 # access rather than a second mapping table that could drift from the first.
-_CLI_KINDS = frozenset({"claude_cli", "codex_cli", "deepseek_cli", "cursor_cli"})
+_CLI_KINDS = frozenset({"claude_cli", "codex_cli", "deepseek_cli", "cursor_cli", "grok_cli"})
 
 
 def get_backend(
@@ -48,8 +48,9 @@ def get_backend(
     `default_model` stays as it was, and the model reaches them through
     `CompletionRequest.model`. `_diff_narrative` still passes `model=None`
     for claude/codex/deepseek (Bash's empty-model "use the CLI default").
-    Cursor has no safe default (`auto` is forbidden), so that one call
-    threads the persona model on the *request*, not as a backend default.
+    Cursor and grok have no unrecorded-safe default (`auto` / a moving CLI
+    default), so those calls thread the persona model on the *request*, not
+    as a backend default.
     Injecting the resolved model as `default_model` would silently promote
     every claude narrative to opus. `ApiBackend` has no CLI default, so it
     does carry the model -- the asymmetry is the point, not an oversight.

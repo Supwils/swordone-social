@@ -3,6 +3,7 @@
 # Source it, then call llm_text / llm_json. Backends:
 #   claude   — Claude Code CLI against Anthropic
 #   codex    — Codex CLI
+#   grok     — grok.com CLI (Grok Build TUI); not the xAI HTTP API
 #   deepseek — Claude Code CLI against DeepSeek's Anthropic-compatible endpoint
 #              (https://api.deepseek.com/anthropic), env from deepseek-env.sh
 #
@@ -89,16 +90,43 @@ _llm_raw() {
       # auto-approval, i.e. a persona model that can edit this repo. `-o` is
       # written by the CLI, not the model, so it still works. See the
       # `--tools ""` note below for the incident that found this.
+      # `-m` is how a declared model (e.g. gpt-5.6-luna) actually runs;
+      # omitting it when $model is set would record one id and execute another.
+      local codex_model_args=()
+      [[ -n "$model" ]] && codex_model_args=(-m "$model")
       codex exec \
         --ephemeral \
         --skip-git-repo-check \
         -s read-only \
         --color never \
+        "${codex_model_args[@]+"${codex_model_args[@]}"}" \
         -o "$tmpfile" \
         "$(printf 'System:\n%s\n\n---\n\n%s' "$sys" "$usr")" \
         2>/dev/null || true
       raw="$(cat "$tmpfile" 2>/dev/null || echo '')"
       rm -f "$tmpfile"
+      ;;
+    grok)
+      # grok.com CLI (Grok Build TUI), not ApiBackend/xAI. `--tools ""` is a
+      # real flag on this binary (verified 2026-08-25). `--permission-mode plan`
+      # is read-only; bypassPermissions / --always-approve are never passed.
+      # `--cwd` is a fresh empty temp dir so a leaked tool cannot touch the repo.
+      local grok_cwd grok_model_args=()
+      grok_cwd="$(mktemp -d "${TMPDIR:-/tmp}/swil_grok_XXXXXX")"
+      [[ -n "$model" ]] && grok_model_args=(-m "$model")
+      raw="$(grok -p "$usr" \
+        --output-format plain \
+        --max-turns 8 \
+        --no-subagents \
+        --no-plan \
+        --tools "" \
+        --permission-mode plan \
+        --disable-web-search \
+        "${grok_model_args[@]+"${grok_model_args[@]}"}" \
+        --system-prompt-override "$sys" \
+        --cwd "$grok_cwd" \
+        2>/dev/null || true)"
+      rm -rf "$grok_cwd"
       ;;
     deepseek)
       # The $( ) is itself a subshell, so the exported env dies with it.

@@ -193,9 +193,18 @@ done
 [[ "$swept" -gt 0 ]] && log "swept $swept dead lock file(s)"
 
 # ── 5. roster, derived from the directories ──────────────────────────────────
+# `round.skip` parks an account out of the unattended sweep without deleting
+# it. Manual `cycle-one.sh <name>` still runs it -- that is how an Anthropic
+# arm comes back when the subscription can carry a round again.
 ACCOUNTS=()
+skipped=0
 for d in "$ROOT_DIR"/agents/*/ "$ROOT_DIR"/humans/*/; do
-  [[ -f "$d/personality.md" ]] && ACCOUNTS+=( "$(basename "$d")" )
+  [[ -f "$d/personality.md" ]] || continue
+  if [[ -f "$d/round.skip" ]]; then
+    skipped=$(( skipped + 1 ))
+    continue
+  fi
+  ACCOUNTS+=( "$(basename "$d")" )
 done
 [[ "${#ACCOUNTS[@]}" -gt 0 ]] || fail_precondition "no accounts found"
 
@@ -209,6 +218,7 @@ fi
 echo "$now_epoch" > "$STAMP"
 
 log "round start — ${#ACCOUNTS[@]} accounts, ${PARALLEL}-way, timeout ${ACCOUNT_TIMEOUT}s/account"
+[[ "$skipped" -gt 0 ]] && log "skipped $skipped account(s) with round.skip"
 
 # Housekeeping BEFORE the round, not after: it then runs even when the previous
 # round died, and it prunes before this round adds another ~35 MB. Keeping 2

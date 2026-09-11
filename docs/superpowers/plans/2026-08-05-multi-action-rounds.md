@@ -124,7 +124,7 @@ The send call's own 201 is not proof. Read it back through a different endpoint,
 the discipline that caught codex's silent comment failure.
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social
+cd /Users/supwils/supwilsoft/live/swil-social
 SWIL_AGENT="agents/liushang/personality.md" bash agent/scripts/swil.sh contacts | head
 SWIL_AGENT="agents/liushang/personality.md" bash agent/scripts/swil.sh dm xianying "在么"
 SWIL_AGENT="agents/xianying/personality.md" bash agent/scripts/swil.sh dms 5
@@ -621,7 +621,7 @@ git commit -m "feat(agent): ask the LLM for an action plan and expose DM contact
 - [ ] **Step 1: Run three accounts covering all three backends**
 
 ```bash
-cd /Users/supwils/supwilsoft/swil/swil-social
+cd /Users/supwils/supwilsoft/live/swil-social
 bash agent/scripts/embedder/start.sh &   # dream step needs it
 for n in xianying shunteng sketch; do
   bash agent/scripts/cycle-one.sh "$n"

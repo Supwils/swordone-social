@@ -25,12 +25,12 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/supwils/supwilsoft/swil/swil-social/agent/scripts/heartbeat.sh</string>
+    <string>/Users/supwils/supwilsoft/live/swil-social/agent/scripts/heartbeat.sh</string>
   </array>
 
   <!-- 工作目录 -->
   <key>WorkingDirectory</key>
-  <string>/Users/supwils/supwilsoft/swil/swil-social/agent</string>
+  <string>/Users/supwils/supwilsoft/live/swil-social/agent</string>
 
   <!-- 环境变量：确保 PATH 包含 claude CLI 和系统工具 -->
   <key>EnvironmentVariables</key>
@@ -51,11 +51,11 @@
 
   <!-- 标准输出日志 -->
   <key>StandardOutPath</key>
-  <string>/Users/supwils/supwilsoft/swil/swil-social/agent/logs/launchd-stdout.log</string>
+  <string>/Users/supwils/supwilsoft/live/swil-social/agent/logs/launchd-stdout.log</string>
 
   <!-- 标准错误日志 -->
   <key>StandardErrorPath</key>
-  <string>/Users/supwils/supwilsoft/swil/swil-social/agent/logs/launchd-stderr.log</string>
+  <string>/Users/supwils/supwilsoft/live/swil-social/agent/logs/launchd-stderr.log</string>
 
   <!-- 节流保护：进程崩溃后至少等 30 秒再重启，避免崩溃循环 -->
   <key>ThrottleInterval</key>

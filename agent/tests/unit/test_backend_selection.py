@@ -115,6 +115,8 @@ def test_model_ladder_is_independent_of_the_backend_ladder() -> None:
         ("claude-cli", "claude_cli"),
         ("codex", "codex_cli"),
         ("deepseek", "deepseek_cli"),
+        ("grok", "grok_cli"),
+        ("grok_cli", "grok_cli"),
         ("api", "api"),
         ("haiku", None),
         ("", None),
@@ -144,8 +146,8 @@ def test_unknown_flag_is_an_error_not_a_fallback() -> None:
     """The forgiving path above exists for the roster's historical spellings.
     A flag typed ten seconds ago is a typo, and defaulting it would run the
     wrong model while reporting success."""
-    with pytest.raises(BackendConfigurationError, match="unknown backend 'grok'"):
-        resolve_backend_choice(_persona(), _settings(), backend_override="grok")
+    with pytest.raises(BackendConfigurationError, match="unknown backend 'gork'"):
+        resolve_backend_choice(_persona(), _settings(), backend_override="gork")
 
 
 # ── the wire label ────────────────────────────────────────────────────────
@@ -160,6 +162,21 @@ def test_cli_wire_labels_are_unchanged_from_bash() -> None:
     )
     assert choice.wire_name == "claude"
     assert choice.wire_label == "claude:opus"
+
+
+def test_grok_without_a_model_is_a_configuration_error() -> None:
+    with pytest.raises(BackendConfigurationError, match="grok backend requires an explicit model"):
+        resolve_backend_choice(_persona(declared_backend="grok"), _settings())
+
+
+def test_grok_wire_label_names_the_cli_not_xai() -> None:
+    """`grok:grok-4.6` is the grok.com CLI. `xai:grok-4.6` is the HTTP API.
+    Collapsing them would mix two quota pools under one independent variable."""
+    choice, _ = resolve_backend_choice(
+        _persona(declared_backend="grok", model="grok-4.6"), _settings()
+    )
+    assert choice.kind == "grok_cli"
+    assert choice.wire_label == "grok:grok-4.6"
 
 
 def test_a_backend_with_no_model_has_no_colon() -> None:

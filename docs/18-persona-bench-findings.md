@@ -1,7 +1,7 @@
 ---
 title: Persona Bench — Findings (Round 1)
 status: results
-last-updated: 2026-06-20
+last-updated: 2026-09-11
 batch: 20260620T110827-sweep
 ---
 
@@ -96,21 +96,78 @@ feed — this is the controlled experiment next to the field study.
 - `vectorFidelity` reference = the persona's identity+voice slice (everything before
   `## 发帖节律`). It measures semantic closeness to the *stated* voice, not factual
   correctness or fine-grained role-play.
-- Judge = Haiku (fast). A stronger judge (Opus) would be more reliable but ~3× slower;
-  re-run with `JUDGE_MODEL=opus` for a higher-confidence pass.
+- Round 1 judge = Haiku (fast). **2026-09 default is now Sonnet 5** (`JUDGE_MODEL=sonnet`);
+  Opus remains available as `JUDGE_MODEL=opus` for a max-fidelity (slower/costlier) pass.
 - Codex k=1 → no consistency number. Re-run with `CODEX_K=2` to complete the table.
 - Rule check only covers parseable rules (no-exclamation, hashtag). Soft behavioural
   rules ("ironic but with weight") are only captured by the judge.
 - Latencies are inflated (~20–30s) by CLI cold-start + concurrent embedder load, not
   model inference time; treat as relative, not absolute.
 
-## Reproduce
+## Reproduce (Round 1 — historical)
 
 ```bash
-# full sweep (this report)
+# full sweep as run for this report (Haiku judge — superseded; see 2026 defaults below)
 PERSONAS="liushang shengyin chawendao mangniu zhuiyi" MODELS="opus sonnet haiku codex" \
   K=2 CODEX_K=1 JUDGE=1 JUDGE_MODEL=haiku bash agent/scripts/benchmark-all.sh
 # view: /lab?view=benchmark   (leaderboard + heatmap + side-by-side)
 ```
 
 Raw per-run archives: `agent/bench/results/<persona>/<model>/<batch>__<task>__<k>.json`.
+
+## 2026-09 model defaults (price / efficiency frontier)
+
+Sept 2026 pricing pick for Persona Bench. **Haiku is no longer a recommended default**
+(still a valid CLI alias for optional cheap runs). Scripts updated 2026-09-11:
+
+| Role | CLI id | Maps to | Why |
+|---|---|---|---|
+| **Judge (default)** | `sonnet` | Claude Sonnet 5 (`claude-sonnet-5`) · ~$2/$10 | Best mid-tier fidelity judge — discriminative without Opus cost |
+| **Generator (primary)** | `codex` | Codex CLI default (GPT-5.x / Luna family) | Round 1 value pick; Round 2 arm already running |
+| **Generator (Anthropic)** | `sonnet` | Claude Sonnet 5 | Same alias as judge; solid mid-tier agent |
+| **Generator (cheap volume)** | `ds-flash` | DeepSeek V4 Flash (`deepseek-v4-flash`) | Wired via Anthropic-compatible endpoint; ~$0.14/$0.28 |
+| Optional flagship | `opus` | Claude Opus 5 | Max quality; not default (cost) |
+| Optional legacy | `haiku` | Claude Haiku 4.5 | Kept as alias only — demoted from defaults |
+
+**CLI mapping:** `benchmark-run.sh` passes Claude aliases straight to `claude --model <id>`;
+short aliases (`sonnet` / `opus` / `haiku`) resolve to the CLI's current frontier for that
+tier. Codex uses `codex exec` (no model flag when empty). `ds-flash` → `llm_text deepseek deepseek-v4-flash`.
+
+**Script defaults (after 2026-09-11):**
+- `JUDGE_MODEL` default → `sonnet` (was `opus` in script / Haiku in Round 1 practice)
+- `MODELS` default → `codex sonnet ds-flash` (was `opus sonnet haiku codex ds-flash`)
+
+### Recommended sweeps
+
+```bash
+# Recommended frontier sweep (generators = Codex + Sonnet 5 + ds-flash; judge = Sonnet 5)
+PERSONAS="liushang shengyin chawendao mangniu zhuiyi" MODELS="codex sonnet ds-flash" \
+  K=2 CODEX_K=2 JUDGE=1 JUDGE_MODEL=sonnet bash agent/scripts/benchmark-all.sh
+
+# Optional: include Opus flagship / Haiku baseline for comparison
+MODELS="codex sonnet opus haiku ds-flash" JUDGE=1 JUDGE_MODEL=sonnet \
+  bash agent/scripts/benchmark-all.sh
+```
+
+### Round 2 note + re-judge one-liner
+
+Round 2 (2026-09-11) is generating with Claude quota blocked until ~4:30am PT:
+
+```text
+PERSONAS=liushang shengyin chawendao mangniu zhuiyi
+MODELS=codex  CODEX_K=2  JUDGE=0
+batch=20260911T112710-sweep
+log=agent/logs/persona-bench-round2-20260911T112710.log
+```
+
+Archives land with `judgeScore=null`. **Do not kill the running sweep.** Once Claude
+session limit lifts, re-judge by regenerating with the new Sonnet 5 judge (no separate
+re-judge-only script yet — this re-runs generation+judge):
+
+```bash
+# After ~4:30am PT / Claude quota back — Sonnet 5 judge pass (codex arm)
+cd agent
+PERSONAS="liushang shengyin chawendao mangniu zhuiyi" MODELS="codex" \
+  K=1 CODEX_K=2 JUDGE=1 JUDGE_MODEL=sonnet \
+  bash scripts/benchmark-all.sh
+```
