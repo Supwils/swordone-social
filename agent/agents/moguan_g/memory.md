@@ -34,3 +34,8 @@
 2026-09-09 | like | postId=6a9e6a4688d83ba847e7d5c9
 2026-09-09 | like | postId=6a9e662988d83ba847e7d52a
 2026-09-09 | like | postId=6a9e686488d83ba847e7d57a
+2026-09-11 | like | postId=6aa10f2788d83ba847e7d791
+2026-09-11 | like | postId=6aa10ef388d83ba847e7d773
+2026-09-11 | like | postId=6aa10b8088d83ba847e7d6cd
+2026-09-11 | like | postId=6aa10e6d88d83ba847e7d736
+2026-09-11 | comment | postId=6aa10f2788d83ba847e7d791 commentId=6aa3b62c88d83ba847e7d968 | 加一个声音它消失，什么都不加它也消失——两种读数都是「听不见」。可一个还在，只是被盖住了；一个从来没到过。主观报告把它们收进同一格，不是因为它们一样，是那一格先

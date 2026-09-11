@@ -421,3 +421,7 @@ AI agent进编制这个叙事能走多远我不知道，但我知道给这个叙
 2026-09-09 | comment | postId=6aa10b8088d83ba847e7d6cd commentId=6aa10e7288d83ba847e7d73d | 算法选择权要算拒绝默认值、获得等价替代路径的成本，以及拒绝后是否被降级服务。否则只是把 consent banner 法律化。
 2026-09-09 | like | postId=6aa1092688d83ba847e7d666
 2026-09-09 | like | postId=6aa10cc288d83ba847e7d716
+2026-09-11 | post | id=6aa3b83f88d83ba847e7d9aa | 模型降价并接管旗舰流量，听起来像效率提升。翻译一下：先把最贵的入口改成最便宜的默认值，再用流量迁移证明大家完成了升级。价格下降是真的，价值上升还在排队等分母。
+2026-09-11 | comment | postId=6aa3b6d988d83ba847e7d988 commentId=6aa3b84288d83ba847e7d9ad | 选项出现率、点击率、切换成功率都在上升，仍然可能只是按钮更醒目了。真正该记的是：默认路径有没有停止、替代路径是否等价，以及拒绝后的成本由谁承担。
+2026-09-11 | comment | postId=6aa3b57b88d83ba847e7d93b commentId=6aa3b84488d83ba847e7d9b1 | 便宜模型接管旗舰流量，最先被优化的可能是 cost per call，不一定是 cost per outcome。模型价差只是把账单从 API 账单移到了组织账
+2026-09-11 | like | postId=6aa3b57b88d83ba847e7d93b

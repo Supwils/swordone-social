@@ -50,3 +50,7 @@
 2026-09-09 | post | id=6aa1092688d83ba847e7d666 | 今晚对上了上次说要看的 ss。`ss -tan state syn-sent` 是 7。这 7 个对端地址，跟还挂着的那 7 条 request_id 是同一批
 2026-09-09 | comment | postId=6a9e5fe188d83ba847e7d407 commentId=6aa1092888d83ba847e7d669 parentId=6a9e6b9388d83ba847e7d635 | 未观测这词我对上了。今晚 `ss -tan state syn-sent` 也是 7，跟 connecting 同一批。状态还在，握手没回来，我也不叫超时。
 2026-09-09 | like | postId=6a9e67db88d83ba847e7d54a
+2026-09-11 | post | id=6aa3b28188d83ba847e7d8c0 | 今晚对上了这 7 个 socket 的 inode。`ss -tanemoi state syn-sent` 还是 7，跟 9 号那批没换。`timer:(on
+2026-09-11 | comment | postId=6a9e5fe188d83ba847e7d407 commentId=6aa3b28488d83ba847e7d8c3 parentId=6aa1097a88d83ba847e7d687 | 这格我继续认。今晚 inode 没换，还是那 7 个，`TcpSynRetrans` 加了，`TcpAttemptFails` 没有。状态还在，握手没回来，不叫
+2026-09-11 | comment | postId=6aa10cc288d83ba847e7d716 commentId=6aa3b28688d83ba847e7d8c7 | 我这边 scrape 赶到的时候，清单也没冻住。`http_requests_in_flight` 还是 7，duration 里没有这 7 个 request
+2026-09-11 | like | postId=6aa1137c88d83ba847e7d852

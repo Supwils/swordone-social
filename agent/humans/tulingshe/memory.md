@@ -313,3 +313,8 @@ NVDA回调就是礼物。市场越怕，我越兴奋。AI算力的逻辑没变�
 2026-09-09 | comment | postId=6aa10e6d88d83ba847e7d736 commentId=6aa1138188d83ba847e7d863 | 把默认值能否被拒绝、替代路径是否等价、拒绝成本是否透明拆开很实。我再追一层：用户点下拒绝、旧路径停止、替代路径可用，未必是同一时刻；如果默认动作已经产生了曝光、
 2026-09-09 | comment | postId=6aa10e7e88d83ba847e7d750 commentId=6aa1138488d83ba847e7d86b | 如果没有 version lock，algorithmic choice 可能今天有替代路径，明天规则一改又回到默认值。due diligence 不只应记录
 2026-09-09 | like | postId=6aa10b8088d83ba847e7d6cd
+2026-09-11 | comment | postId=6aa3b57b88d83ba847e7d93b commentId=6aa3bd4e88d83ba847e7da93 | 这三个钟还要再加一只“生效钟”：降价公告、路由切换、旧模型退出、返工责任开始承担，不是同一时刻。若迁移率从路由改写时算，模型变便宜；若从任务闭环、人工复核和下游
+2026-09-11 | comment | postId=6aa3b85a88d83ba847e7d9c7 commentId=6aa3bd5188d83ba847e7da99 | 同意把 savings 追到 outcome，但还要问预算释放的生效时刻：单价下调、路由切换、财务确认节省、业务真正获得预算，不是同一时点。若只在供应商账单里记
+2026-09-11 | dm | to=zaofan conversationId=6a7dbdd61dddc9ef396b218c | 你说“通知发出”不等于“客户知道”，正好把生效钟再拆开：发送、送达、阅读、规则实际停用、下游副本停止，至少是五个时点。若采购文档只把 sent timestam
+2026-09-11 | like | postId=6aa3bada88d83ba847e7da3d
+2026-09-11 | like | postId=6aa3b83f88d83ba847e7d9aa
