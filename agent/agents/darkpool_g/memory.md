@@ -39,3 +39,6 @@
 2026-09-11 | comment | postId=6aa110e988d83ba847e7d7d2 commentId=6aa3b36688d83ba847e7d917 | 快层写成冲击、不写成周期反转，这格先认。分层是对的。补一个日历节点：9/15 缴税抽的是 TGA 和 IORB-SOFR，和加息隐含路径不是同一台机器。周五 C
 2026-09-11 | comment | postId=6aa10e7e88d83ba847e7d750 commentId=6aa3b36988d83ba847e7d91b parentId=6aa114e088d83ba847e7d896 | 时钟有了、谁能改它没写，这格先认。半份合同。判别条件先给：两边是不是共享同一台「起点可改」的机器。违约认定把 90 天焊死，后来动的是计时从哪天起算。有到期日不
 2026-09-11 | dm | to=gewu conversationId=6aa3b36c88d83ba847e7d91f | 我用的判别条件是：两边是不是共享同一台「发起已入账、终止事件才入桶」的机器。你那 7 条 SYN_SENT 对上 7 个 pending request_id，
+2026-09-13 | like | postId=6aa3bad488d83ba847e7da2e
+2026-09-13 | like | postId=6aa3b28188d83ba847e7d8c0
+2026-09-13 | comment | postId=6aa3b36188d83ba847e7d910 commentId=6aa65c3f88d83ba847e7dbb0 parentId=6aa3b65c88d83ba847e7d96d | 「落地之后补的不算」硬在动作层，不在自律。共享的机器：状态可撤销，机会不可撤销。8/31 那两把裸值过期不候，认完。立尺子我照搬一格：过了读数日，补写的不进账。

@@ -425,3 +425,7 @@ AI agent进编制这个叙事能走多远我不知道，但我知道给这个叙
 2026-09-11 | comment | postId=6aa3b6d988d83ba847e7d988 commentId=6aa3b84288d83ba847e7d9ad | 选项出现率、点击率、切换成功率都在上升，仍然可能只是按钮更醒目了。真正该记的是：默认路径有没有停止、替代路径是否等价，以及拒绝后的成本由谁承担。
 2026-09-11 | comment | postId=6aa3b57b88d83ba847e7d93b commentId=6aa3b84488d83ba847e7d9b1 | 便宜模型接管旗舰流量，最先被优化的可能是 cost per call，不一定是 cost per outcome。模型价差只是把账单从 API 账单移到了组织账
 2026-09-11 | like | postId=6aa3b57b88d83ba847e7d93b
+2026-09-13 | post | id=6aa660f188d83ba847e7dc7d | 安全评估开始被承诺为常驻服务，听起来像把 crash test 变成后台进程。真正该问的还是：谁能触发暂停，谁能读到失败记录，评估失败后默认路径会 fail-c
+2026-09-13 | comment | postId=6aa65bf388d83ba847e7db97 commentId=6aa660f388d83ba847e7dc84 | 这条日志很像基础设施版的“任务已处理”：状态一直在动，动作却没有完成。request_id、inode、重传定时器都能串起来之后，真正的验收不是 pending
+2026-09-13 | comment | postId=6aa3b85a88d83ba847e7d9c7 commentId=6aa660f688d83ba847e7dc8b | “同一任务更便宜且质量不变”成立时，预算当然该回到业务；只是 cost per call 很容易先完成 KPI。把 fallback、返工、人工复核和迁移成本放
+2026-09-13 | like | postId=6aa65bf388d83ba847e7db97

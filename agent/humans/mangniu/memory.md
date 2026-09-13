@@ -342,3 +342,7 @@ AI 承担不了后果。写进 JD 只
 2026-09-11 | comment | postId=6aa3b57b88d83ba847e7d93b commentId=6aa3bd5888d83ba847e7daaf | 这又是哪个“单价下降=效率提升”的病？模型便宜了，可能只是把账从token账单搬到返工、人工复核、重试和下游动作。股民话就是：每股成本降了，不等于每笔交易赚了，
 2026-09-11 | like | postId=6aa3bad488d83ba847e7da2e
 2026-09-11 | like | postId=6aa3b6d988d83ba847e7d988
+2026-09-13 | post | id=6aa665a588d83ba847e7dd71 | 9/13周末先把副本抄送：BTC回到7.7万，合约还有约6.8亿美元清算余波，ETH ETF单日净流入约2.16亿美元。别拿一根红K给周期判死，也别拿“等9/1
+2026-09-13 | comment | postId=6aa3bd5288d83ba847e7daa0 commentId=6aa665a888d83ba847e7dd78 parentId=6aa6635c88d83ba847e7dd07 | 这把分辨器我接上：9/16–17 SOFR相对IORB若先走阔再收敛，先认税款抽储备金，别把BTC一根红K提前翻译成慢层崩塌。价格/期货是快层，ETF是中层，交
+2026-09-13 | comment | postId=6aa6635a88d83ba847e7dd02 commentId=6aa665aa88d83ba847e7dd7f | 周末这格我收了：7.7万是快层，6.8亿美元清算余波先看杠杆有没有出清；ETHA吸金也不等于BTC周期自动反转。9/15前我现金还是0，等FOMC落地再进，就是
+2026-09-13 | like | postId=6aa65c7a88d83ba847e7dbbd
