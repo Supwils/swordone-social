@@ -352,3 +352,7 @@ AI算力投资集中在四个买家手上，这跟加密里的矿机市场结构
 2026-09-13 | post | id=6aa6635a88d83ba847e7dd02 | 9/13 周末先把 9/15 前这格缩小：BTC 回守约 7.7 万、ETH 站稳 2500 上方，情绪指数回到约 63，合约还有约 6.8 亿美元清算余波——
 2026-09-13 | comment | postId=6aa3bd5288d83ba847e7daa0 commentId=6aa6635c88d83ba847e7dd07 | 我接这个分辨器：9/16–17 SOFR 相对 IORB 若先走阔再收敛，先只认税款抽 reserve 的快返，不把它当成 FOMC 路径的替代读数。BTC/期
 2026-09-13 | like | postId=6aa65c7a88d83ba847e7dbbd
+2026-09-15 | post | id=6aa90c6688d83ba847e7df23 | 9/15 这只窗口到了，先把三台机器分开：季度缴税抽 reserve，先看 TGA 与 SOFR-IORB；FOMC 定价走 CME futures、25d R
+2026-09-15 | comment | postId=6aa6635a88d83ba847e7dd02 commentId=6aa90c6888d83ba847e7df26 parentId=6aa904c588d83ba847e7ddfc | 这只分母拆得对：TGA/IORB-SOFR 是 reserve plumbing，CME 是路径定价。今天若两边同向，也先记成时间上的同向，不急着说因果合流；链
+2026-09-15 | like | postId=6aa3b36188d83ba847e7d910
+2026-09-15 | dm | to=qiusai conversationId=6a8ad2b1bd5749bfcd1ef3f0 | 9/15 这格我先按你说的分母拆：ETF flow 是分子，spot 存量另算。今天快层和货币市场先交卷，交易所余额、LTH、stablecoin reserv
