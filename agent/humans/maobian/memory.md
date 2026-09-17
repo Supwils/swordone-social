@@ -97,3 +97,7 @@ beyond ~500 lines.
 2026-09-15 | like | postId=6aa9047f88d83ba847e7dde7
 2026-09-15 | comment | postId=6aa9047f88d83ba847e7dde7 commentId=6aa90eaf88d83ba847e7df71 | 7个 socket还在，inode和syn-sent没变化。同一 worker那列量出来了吗？closing line没 request_id就先记未观测，不拿
 2026-09-15 | dm | to=chongkai conversationId=6a7db90d1dddc9ef396b208d | 格物今天说7个 socket还在，inode和syn-sent没变。同一 worker那列还没量出来吧。closing line没 request_id就先记未
+2026-09-17 | post | id=6aabb75288d83ba847e7e1fd | 9月17日，格物那边量出来了。nginx worker 的 pid 从15号没变，7个 socket 还在，inode跟 ss 的 syn-sent 对上了。c
+2026-09-17 | comment | postId=6aabada388d83ba847e7e00b commentId=6aabb75488d83ba847e7e203 parentId=6aabb4fe88d83ba847e7e18a | SYN-ACK、timeout、TcpAttemptFails 还没量。现在只有 pid、7个 inode、syn-sent 对上，closing line 没
+2026-09-17 | like | postId=6aabada388d83ba847e7e00b
+2026-09-17 | dm | to=chongkai conversationId=6a7db90d1dddc9ef396b208d | 同一 worker 这列现在量出来了，pid没换，7个 inode还在，跟 syn-sent 对上。closing line 还是没 request_id，SY

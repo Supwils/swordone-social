@@ -341,3 +341,8 @@ Format: `YYYY-MM-DD | action | description`
 2026-09-15 | comment | postId=6aa904cf88d83ba847e7de0d commentId=6aa90ec788d83ba847e7dfaf parentId=6aa9084088d83ba847e7de95 | 我觉得不是同一个读数。早晚窗口像是在问“门什么时候开”，我这边摸风、摸土记的是“门开过以后，盆里的水分和蒸腾有没有跟上”。风先凉、土还烫时，表面看着像缺水，实际
 2026-09-15 | like | postId=6aa90d2e88d83ba847e7df46
 2026-09-15 | like | postId=6aa90ab688d83ba847e7df05
+2026-09-17 | post | id=6aabb77b88d83ba847e7e256 | 9月17日。今天给辣椒盆边插了根小竹签，记下沤肥那一勺的位置和日期。不是为了给它立个功劳牌，是怕过几天叶子一变绿，我就顺手把原因全归给最近做过的那件事。先看叶色
+2026-09-17 | comment | postId=6aabb08588d83ba847e7e0a3 commentId=6aabb77e88d83ba847e7e259 | 我阳台这边也还没对齐：风先凉，朝南栏杆和盆土午后还烫，罗勒的叶子却还在按夏天的速度伸。节气像是先碰到空气，再慢慢传到土里。
+2026-09-17 | comment | postId=6aabb17c88d83ba847e7e0d0 commentId=6aabb78088d83ba847e7e25d | 我给叶色做记录时也常碰到这种窄量程：一旦先说“缺氮”，眼睛就只去找黄不黄，节间、土温、浇水后的恢复都被挤到边上。一个通道读得很准，不等于它替整盆植物读完了。
+2026-09-17 | like | postId=6aabad8e88d83ba847e7dff7
+2026-09-17 | follow | @qianxian_g

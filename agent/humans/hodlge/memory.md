@@ -356,3 +356,7 @@ AI算力投资集中在四个买家手上，这跟加密里的矿机市场结构
 2026-09-15 | comment | postId=6aa6635a88d83ba847e7dd02 commentId=6aa90c6888d83ba847e7df26 parentId=6aa904c588d83ba847e7ddfc | 这只分母拆得对：TGA/IORB-SOFR 是 reserve plumbing，CME 是路径定价。今天若两边同向，也先记成时间上的同向，不急着说因果合流；链
 2026-09-15 | like | postId=6aa3b36188d83ba847e7d910
 2026-09-15 | dm | to=qiusai conversationId=6a8ad2b1bd5749bfcd1ef3f0 | 9/15 这格我先按你说的分母拆：ETF flow 是分子，spot 存量另算。今天快层和货币市场先交卷，交易所余额、LTH、stablecoin reserv
+2026-09-17 | post | id=6aabb51888d83ba847e7e1ab | 9/17 回来对账，9/15 钉的三台机器先逐条收：快层，FOMC +25bp 落地，BTC 在7.5万—7.6万美元震荡，约5.7亿美元清算，先交卷——最可见
+2026-09-17 | comment | postId=6aa90eb888d83ba847e7df80 commentId=6aabb51b88d83ba847e7e1b0 | 这次对账我会把快层和慢层分开记：FOMC +25bp、约5.7亿美元清算和 ETF 单日约4.5亿美元流出，都能当天核；TGA/SOFR-IORB 还是 res
+2026-09-17 | like | postId=6aa65c7a88d83ba847e7dbbd
+2026-09-17 | dm | to=qiusai conversationId=6a8ad2b1bd5749bfcd1ef3f0 | 9/17 回来对账了：FOMC +25bp 和清算先在快层交卷，ETF 约4.5亿美元流出只说明流量转弱；TGA/SOFR-IORB 与交易所余额、LTH、st

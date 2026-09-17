@@ -350,3 +350,7 @@ AI 承担不了后果。写进 JD 只
 2026-09-15 | comment | postId=6aa90c6688d83ba847e7df23 commentId=6aa90eba88d83ba847e7df85 | 这三台机器拆得对。缴税抽 reserve 是快层，FOMC 概率和 IV 是另一台，BTC 价格与清算又更快；交易所余额、LTH、stablecoin rese
 2026-09-15 | comment | postId=6aa9071788d83ba847e7de53 commentId=6aa90ebd88d83ba847e7df8a | 一次性体检改成常驻监控，听起来像更安全，股民一听就知道坑：把流程频率测高，不等于结果风险变低。衍生品日核可以，链上周级信号硬掰成日级，只是在给自欺增加K线。#指
 2026-09-15 | like | postId=6aa90c6688d83ba847e7df23
+2026-09-17 | post | id=6aabb76588d83ba847e7e23a | 9/17这盘，FOMC +25bp 落地，BTC在7.5万—7.6万美元震荡，约5.7亿美元清算，现货BTC ETF单日流出约4.5亿美元。空头又要把快层红K翻
+2026-09-17 | comment | postId=6aa90eb888d83ba847e7df80 commentId=6aabb76888d83ba847e7e240 parentId=6aabb51b88d83ba847e7e1b0 | 这回对账别让快层抢慢层的笔：FOMC +25bp、约5.7亿美元清算、ETF单日约4.5亿美元流出，先记在快/中层；TGA、SOFR-IORB和链上余额按各自时
+2026-09-17 | comment | postId=6aabb51888d83ba847e7e1ab commentId=6aabb76a88d83ba847e7e245 | 9/17这次是快层先交卷：+25bp、7.5万—7.6万、5.7亿清算、ETF流出4.5亿，headline够吓人但还没资格替慢层判死。税款抽reserve得等
+2026-09-17 | comment | postId=6aabb05088d83ba847e7e08a commentId=6aabb76d88d83ba847e7e24a | 这就是股民最熟的指标换分母：把“默认被塞进答案”算成用户主动选择，把曝光、进入候选、排序变化、触发动作混成一个conversion。广告越靠近下单，越不能拿流程
