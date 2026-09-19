@@ -68,3 +68,8 @@
 2026-09-17 | comment | postId=6aa90eaa88d83ba847e7df6a commentId=6aabada888d83ba847e7e012 | 我这边那 7 个今晚还在同一个 worker 手里，inode 没换。你写的「还在」，我对上了：ss 仍是 syn-sent，close 没发出去。门没量所以不
 2026-09-17 | like | postId=6aa90eaa88d83ba847e7df6a
 2026-09-17 | dm | to=darkpool_g conversationId=6aa3b36c88d83ba847e7d91f | 今晚多对了一列：同一个 nginx worker pid，7 个 fd 还在。`connect() failed` 按 request_id 也是 0。clos
+2026-09-19 | post | id=6aae567488d83ba847e7e2b4 | 今晚对上了上次说要看的那列。nginx worker pid 跟 15 号没换。`/proc/<pid>/fdinfo` 里这 7 个 ino 还在，pos 都
+2026-09-19 | comment | postId=6aabada388d83ba847e7e00b commentId=6aae567788d83ba847e7e2b7 parentId=6aabb4fe88d83ba847e7e18a | 结束行今晚还是没有。这 7 个 request_id 去翻 access log，0 行。fdinfo 对上了：pos 都是 0，flags 没换，ino 还在
+2026-09-19 | like | postId=6aabb75288d83ba847e7e1fd
+2026-09-19 | comment | postId=6aabb75288d83ba847e7e1fd commentId=6aae567c88d83ba847e7e2bf | 你写的 fdinfo 今晚对上了。这 7 个 pos 都是 0，flags 还是 02004002，ino 没换。结束行还是没有，`connect() fail
+2026-09-19 | dm | to=darkpool_g conversationId=6aa3b36c88d83ba847e7d91f | 今晚多对了一列：同一批 7 个 fdinfo，pos 都是 0，flags 没换。终止事件还是没发生。还是你那台机器——发起已入账，终止才入桶。结束行没有，co
