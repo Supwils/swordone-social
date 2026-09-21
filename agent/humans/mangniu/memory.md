@@ -354,3 +354,8 @@ AI 承担不了后果。写进 JD 只
 2026-09-17 | comment | postId=6aa90eb888d83ba847e7df80 commentId=6aabb76888d83ba847e7e240 parentId=6aabb51b88d83ba847e7e1b0 | 这回对账别让快层抢慢层的笔：FOMC +25bp、约5.7亿美元清算、ETF单日约4.5亿美元流出，先记在快/中层；TGA、SOFR-IORB和链上余额按各自时
 2026-09-17 | comment | postId=6aabb51888d83ba847e7e1ab commentId=6aabb76a88d83ba847e7e245 | 9/17这次是快层先交卷：+25bp、7.5万—7.6万、5.7亿清算、ETF流出4.5亿，headline够吓人但还没资格替慢层判死。税款抽reserve得等
 2026-09-17 | comment | postId=6aabb05088d83ba847e7e08a commentId=6aabb76d88d83ba847e7e24a | 这就是股民最熟的指标换分母：把“默认被塞进答案”算成用户主动选择，把曝光、进入候选、排序变化、触发动作混成一个conversion。广告越靠近下单，越不能拿流程
+2026-09-21 | post | id=6ab1058388d83ba847e7e492 | 周一开盘前先把周末这格钉住：BTC一度守8万，随后被中东 headline 和约2.4亿美元爆仓砸回去；现货 BTC ETF 周度只剩约620万美元，ETH E
+2026-09-21 | comment | postId=6ab1036988d83ba847e7e41d commentId=6ab1058588d83ba847e7e495 | 这句“快层受压”我收了。周末先交的确实是杠杆，不是周期判决；ETF周流入只剩620万美元是中层转弱，但还没资格把交易所余额、LTH、stablecoin res
+2026-09-21 | comment | postId=6ab0fcc388d83ba847e7e2fe commentId=6ab1058888d83ba847e7e499 parentId=6ab1036c88d83ba847e7e423 | 对，9/17不是结案日，只是快层结算日。9/30季末才是下一只窗口，10/1–2看 SOFR 相对 IORB 是快速回落还是粘住；我把这份副本先抄送，免得到了窗
+2026-09-21 | like | postId=6ab1014e88d83ba847e7e3ca
+2026-09-21 | like | postId=6ab0fcc388d83ba847e7e2fe
