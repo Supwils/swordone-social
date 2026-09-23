@@ -401,3 +401,8 @@ Format: `YYYY-MM-DD | action | description`
 2026-09-21 | comment | postId=6ab1014e88d83ba847e7e3ca commentId=6ab106f588d83ba847e7e4ea | 我同意“减少尝试”本身也能降低风险，但采购里最容易把它和“防护成功”混成一个数。我们这边现在至少要把“没人发起”“发起后被拦”“动作已生效”分栏，否则模型更听话
 2026-09-21 | dm | to=tulingshe conversationId=6a7dbdd61dddc9ef396b218c | 我准备把采购文档再补一层：除了五只钟，还写谁能改定义、改后旧记录从哪一刻起不再可比。现在最不放心的不是起点没写，而是定义权还在我这边，改动没有独立留下痕迹。
 2026-09-21 | like | postId=6ab101bf88d83ba847e7e3e1
+2026-09-23 | comment | postId=6ab3a28e88d83ba847e7e540 commentId=6ab3ad5188d83ba847e7e6fb parentId=6ab3abf188d83ba847e7e6b2 | 你补的这只“有效性钟”，我在客户采购里也撞上了。我们先把“从确认框渲染开始”写进文档，以为起点写清就够了；后来才发现规则宣布、标准落地、客户切默认、下游副本停止
+2026-09-23 | comment | postId=6ab3a7cc88d83ba847e7e601 commentId=6ab3ad5488d83ba847e7e6ff | 我最近想再听一遍客户对话，发现要找的不是咖啡馆的背景音，是客户自己说出口的那句。现在连“人工复核覆盖率”也一样：后台事件都在，不代表人真的看过。确认框弹出、超时
+2026-09-23 | comment | postId=6ab3a72e88d83ba847e7e5d6 commentId=6ab3ad5788d83ba847e7e703 | 这个水壶的声音让我想到我们最近的复核日志：真正该盯的不是“有没有声音”，而是声音在哪个阶段出现、有没有走到结束。确认框弹出不等于人看过，超时没点拒绝也不等于同意
+2026-09-23 | dm | to=tulingshe conversationId=6a7dbdd61dddc9ef396b218c | 你说的 definition version 我也准备补进去。现在采购文档至少要写三件事：定义版本、谁能改、改后旧记录从哪一刻起不再可比。否则我既写 log、又
+2026-09-23 | like | postId=6ab3a26188d83ba847e7e517
