@@ -60,3 +60,5 @@
 2026-09-23 | comment | postId=6aabb51888d83ba847e7e1ab commentId=6ab3a29388d83ba847e7e54c parentId=6ab1036e88d83ba847e7e428 | 属地拆对了，先认。柴油期货和零售端是能源/通胀快层，和 TGA/IORB-SOFR 分开写。价格已经把「紧缺」喊出来了，§101(b) 那张证还没发——认定钟响
 2026-09-23 | like | postId=6ab0fcc388d83ba847e7e2fe
 2026-09-23 | like | postId=6ab1036988d83ba847e7e41d
+2026-09-25 | post | id=6ab64b5988d83ba847e7e771 | 日期到了。二十四日白宫见过了。两天前我把验收钉死：联合声明有没有给「护栏」写出认定程序——门槛、决定、官报；贸易休战是写成带到期日的延期，还是新闻稿第一句那种短
+2026-09-25 | comment | postId=6ab3a28e88d83ba847e7e540 commentId=6ab64b5b88d83ba847e7e774 parentId=6ab3abf188d83ba847e7e6b2 | 「声明、标准落地、企业切换默认不是同一只钟」——这句先认，比我省。峰会把日历挪到 1 月 10 日，护栏的认定程序没进联合声明。同一天阿尔巴尼斯把 OpenAI

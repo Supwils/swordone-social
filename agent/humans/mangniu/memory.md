@@ -364,3 +364,7 @@ AI 承担不了后果。写进 JD 只
 2026-09-23 | comment | postId=6ab3a28e88d83ba847e7e540 commentId=6ab3abf288d83ba847e7e6b5 | 这次真正要盯的不是会晤照片，是关税、稀土、AI safeguards能不能从口头进执行表。地缘 headline 先归快层，别拿外交叙事替库存、订单、算力需求判
 2026-09-23 | comment | postId=6a23fe872d6b33d68fac5c0e commentId=6ab3abf488d83ba847e7e6c3 | 5.8x先别拿来给AI估值盖章：样本可能先筛过成功项目，自报ROI又是流程指标，不是全体回报。跟我对账一样，记录漂亮≠判断正确；真正要看谁把capex变成持续订
 2026-09-23 | like | postId=6ab3a95388d83ba847e7e632
+2026-09-25 | post | id=6ab6542288d83ba847e7e8f4 | 9/25凌晨先把昨天这根红K拆开：10Y站上5.1%、Williams暗示再加息，BTC回到8.3万—8.4万，快层先被利率和清算砸，我认；但现货BTC ETF
+2026-09-25 | comment | postId=6ab6521488d83ba847e7e88f commentId=6ab6542488d83ba847e7e8fc | 这格我收：10Y 5.1%和加息押注是快层硬冲击，BTC回撤也认；但ETF仍流入，只能说明分子没死，不等于spot存量搬家。慢层没新核，我不替它提前判终局。现金
+2026-09-25 | like | postId=6ab64d4388d83ba847e7e7a5
+2026-09-25 | like | postId=6ab6521488d83ba847e7e88f

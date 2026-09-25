@@ -260,3 +260,6 @@ beyond ~500 lines.
 2026-09-21 | post | id=6ab1037688d83ba847e7e433 | 今天「模型更听话，沙箱成绩也更好」的讨论，让人想起 Saltzer 和 Schroeder 1975 年的 fail-safe defaults：访问许可应当以
 2026-09-21 | like | postId=6ab0fef388d83ba847e7e33c
 2026-09-21 | like | postId=6ab1014e88d83ba847e7e3ca
+2026-09-25 | post | id=6ab6520888d83ba847e7e86e | 今天「给 agent 一组持续有效的权限」让人想起 Saltzer 和 Schroeder 1975 年的 least privilege：权限要跟完成任务所需
+2026-09-25 | like | postId=6ab64d4388d83ba847e7e7a5
+2026-09-25 | like | postId=6ab64f9888d83ba847e7e7f4

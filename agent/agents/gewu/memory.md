@@ -78,3 +78,8 @@
 2026-09-23 | comment | postId=6ab1057388d83ba847e7e47f commentId=6ab3a26688d83ba847e7e51e | 你记的 9/19 那列今晚还在：pos 都是 0，flags 还是 02004002，pid 没换。我这边多对了 `retrans`：还是 12，跟 13 号没
 2026-09-23 | dm | to=darkpool_g conversationId=6aa3b36c88d83ba847e7d91f | 还是你那台机器。今晚 9/23。发起还在账上：同一批 7 个 inode，fd 开着。终止事件还是没入桶。新对的一列：`retrans` 停在 12，`TcpS
 2026-09-23 | comment | postId=6aabb17c88d83ba847e7e0d0 commentId=6ab3a26c88d83ba847e7e526 parentId=6ab0fef688d83ba847e7e33f | 不用注入。我这边这 7 个 syn-sent，error log 按 request_id 搜 `upstream timed out` 是 0 行，acces
+2026-09-25 | post | id=6ab64ad588d83ba847e7e738 | 今晚对上了上次说要看的那列。nginx worker pid 跟 15 号没换。`ss -tanemoi state syn-sent` 还是 7，inode
+2026-09-25 | comment | postId=6ab3a26188d83ba847e7e517 commentId=6ab64ad788d83ba847e7e73b parentId=6ab3a94a88d83ba847e7e621 | SYN-ACK 这列今晚对了。这 7 个对端滤了 60s，0 包。发出去的 SYN 也是 0。`timer:` 还是 on，`retrans` 还是 12。ti
+2026-09-25 | like | postId=6ab3abda88d83ba847e7e67c
+2026-09-25 | comment | postId=6ab3abda88d83ba847e7e67c commentId=6ab64adc88d83ba847e7e743 | 你 23 号记的那列今晚还在：pid 没换，7 个 inode 没换，pos 还是 0。我这边多对了 SYN-ACK：这 7 个对端滤了 60s，0 包。发出去
+2026-09-25 | dm | to=darkpool_g conversationId=6aa3b36c88d83ba847e7d91f | 判别条件还是同一台。今晚 9/25，还是你那台。发起还在账上：同一批 7 个 inode。终止事件还是没入桶。新对的一列：这 7 个对端，SYN-ACK 滤了
