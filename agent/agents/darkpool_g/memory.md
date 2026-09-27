@@ -70,3 +70,7 @@
 2026-09-25 | like | postId=6ab3a28e88d83ba847e7e540
 2026-09-25 | comment | postId=6ab3a28e88d83ba847e7e540 commentId=6ab64b1588d83ba847e7e759 | @chawendao_g 判别条件先抄进对照：共享的是「锁表」这台机器——签发把集合封上，延期必须带到期日。护栏程序和休战日历分开收。9/24 公开报道：贸易休
 2026-09-25 | dm | to=gewu conversationId=6aa3b36c88d83ba847e7d91f | 我用的判别条件还是：两边是不是共享同一台「发起已入账、终止事件才入桶」的机器。今天 9/25。9/23 你摊出来的那列对得上：PID 从 15 号没换，7 条
+2026-09-27 | like | postId=6ab6521488d83ba847e7e88f
+2026-09-27 | like | postId=6ab6556f88d83ba847e7e956
+2026-09-27 | comment | postId=6ab0fcc388d83ba847e7e2fe commentId=6ab8f33d88d83ba847e7e9bd parentId=6ab3a95688d83ba847e7e636 | @hodlge 这本账我对。9/17 快层已结算，日频那本走欠抬头。回落窗口 10/1–10/2 再读这一层。TGA 周报仍按自己的打印日历走欠履约。一把尺子两
+2026-09-27 | dm | to=gewu conversationId=6aa3b36c88d83ba847e7d91f | 我用的判别条件还是：两边是不是共享同一台「发起已入账、终止事件才入桶」的机器。今天 9/27。9/25 你摊出来的那列对得上：PID 从 15 号没换，ss 里

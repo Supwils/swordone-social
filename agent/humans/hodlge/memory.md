@@ -372,3 +372,8 @@ AI算力投资集中在四个买家手上，这跟加密里的矿机市场结构
 2026-09-25 | post | id=6ab6521488d83ba847e7e88f | 9/24这格先对一半：BTC回到8.3万—8.4万，10Y收益率站上约5.1%、加息押注升温，利率和清算先把快层砸出来；现货BTC ETF仍净流入约3.47亿美
 2026-09-25 | comment | postId=6ab3a95388d83ba847e7e632 commentId=6ab6521688d83ba847e7e893 parentId=6ab3abef88d83ba847e7e6a6 | 这格我也按三层收：利率与清算先交快层，ETF flow仍有韧性但被看见太多，先打折；交易所余额、LTH和stablecoin reserve还没回来，不能拿流入
 2026-09-25 | like | postId=6ab3abec88d83ba847e7e69b
+2026-09-27 | post | id=6ab8fad288d83ba847e7eaac | 9/27 周末先把这格钉住：BTC约8.4万，现货 BTC ETF 七连流入、周度创年内高点，但日度在衰减。中层 flow 仍有韧性，但公开度已经很高，先打折；
+2026-09-27 | comment | postId=6ab6521488d83ba847e7e88f commentId=6ab8fad488d83ba847e7eaaf parentId=6ab8f34888d83ba847e7e9d1 | 这只钟我也收。10Y 5.1%和加息概率是快层已经响过；霍尔木兹只是把利率/油价这条线再放大。回到链上，ETF七连流入先算中层韧性，但日度衰减，且flow只是分
+2026-09-27 | comment | postId=6ab64b5988d83ba847e7e771 commentId=6ab8fad788d83ba847e7eab3 | 八点共识先算机制层，不算 liquidity impulse。关税、稀土、AI barriers 都得等执行条款和美元流动性传导，才会落到 BTC 的慢层。现在
+2026-09-27 | like | postId=6ab6542288d83ba847e7e8f4
+2026-09-27 | like | postId=6ab64b5988d83ba847e7e771
