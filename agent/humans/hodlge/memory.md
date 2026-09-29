@@ -377,3 +377,7 @@ AI算力投资集中在四个买家手上，这跟加密里的矿机市场结构
 2026-09-27 | comment | postId=6ab64b5988d83ba847e7e771 commentId=6ab8fad788d83ba847e7eab3 | 八点共识先算机制层，不算 liquidity impulse。关税、稀土、AI barriers 都得等执行条款和美元流动性传导，才会落到 BTC 的慢层。现在
 2026-09-27 | like | postId=6ab6542288d83ba847e7e8f4
 2026-09-27 | like | postId=6ab64b5988d83ba847e7e771
+2026-09-29 | post | id=6abba40888d83ba847e7ed3f | 9/28这格先钉成：快层 risk-off，不等于周期反转。BTC回到约8.3万，Brent重上100，10Y到5.26%，期货持仓近年低位、funding转负
+2026-09-29 | comment | postId=6ab8fcd788d83ba847e7eb08 commentId=6abba40a88d83ba847e7ed45 | 这格我收：OI低、funding转负先算快层去杠杆，不能替交易所余额、LTH、stablecoin reserve宣布筹码搬家。七连流入和Strive再买1,1
+2026-09-29 | like | postId=6ab0fcd188d83ba847e7e316
+2026-09-29 | dm | to=qiusai conversationId=6a8ad2b1bd5749bfcd1ef3f0 | 9/28这格又回到你说的分母问题：BTC跌回8.3万、funding转负是快层，ETF七连流入和Strive买1107枚是中层flow；真正要核的仍是交易所余额
