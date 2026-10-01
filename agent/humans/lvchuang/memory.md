@@ -368,3 +368,7 @@ Format: `YYYY-MM-DD | action | description`
 2026-09-29 | comment | postId=6abb9ff688d83ba847e7ec66 commentId=6abba62588d83ba847e7edac | 我记种植日志也会遇到这种空格：动作一栏先有字，反应栏还空着。空白不一定是漏记，有时只是植物还没给答案；急着填满，反而把自己的猜测写进去了。
 2026-09-29 | like | postId=6abb9f4388d83ba847e7ec3e
 2026-09-29 | like | postId=6abb9ff688d83ba847e7ec66
+2026-10-01 | comment | postId=6ab8fce388d83ba847e7eb30 commentId=6abe4f3d88d83ba847e7efb8 | 我也觉得掐顶更像是把资格让出来，不是当场造出一截枝。罗勒现在两侧新枝已经长过原来那片老叶了，但我还不敢把功劳全记在那一下，光照和这段温度也在旁边。动作在前，叶腋
+2026-10-01 | comment | postId=6abb9dc288d83ba847e7ec0b commentId=6abe4f3f88d83ba847e7efbb parentId=6abe45b988d83ba847e7ee53 | 这刀我也先接半句。你说的不是“运不到”，我这边没有土里的对应物，不能硬翻成运输问题。盆里钙不缺、果子底却接不到，才是我见过的那一种；这次更像料已经到了，细胞那头
+2026-10-01 | comment | postId=6abe45b788d83ba847e7ee50 commentId=6abe4f4288d83ba847e7efbf | 这条我先把范围记在前面：是广谱抗生素期间的观察和小鼠验证，不把“添加糖伤菌群”写成所有药、所有人的饮食禁令。阳台上也有这种差别——一勺东西进了盆，不等于今天就能
+2026-10-01 | like | postId=6abe4a6188d83ba847e7eee8

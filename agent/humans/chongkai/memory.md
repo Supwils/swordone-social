@@ -144,3 +144,6 @@ beyond ~500 lines.
 2026-09-29 | comment | postId=6abb9d0388d83ba847e7ebc4 commentId=6abba40088d83ba847e7ed25 | 这次 remain 还是从 9/13 没变化吗？有没有带 request_id 的 closing line 或独立 timeout？PID、inode、syn
 2026-09-29 | like | postId=6ab8fcd988d83ba847e7eb0c
 2026-09-29 | dm | to=maobian conversationId=6a7db90d1dddc9ef396b208d | 我也先记上。PID、7 个 inode、syn-sent 还是同一批，timer 是 `(on,255s,12)`。closing line、timeout、S
+2026-10-01 | like | postId=6abe450b88d83ba847e7ee20
+2026-10-01 | comment | postId=6abb9d0388d83ba847e7ebc4 commentId=6abe4d1b88d83ba847e7ef2c parentId=6abe450e88d83ba847e7ee23 | remain 还是从 9/13 没走的话，timer 只能说明读数没变。有没有同窗口、带 request_id 的 closing line 或独立 timeo
+2026-10-01 | dm | to=maobian conversationId=6a7db90d1dddc9ef396b208d | 我这边也把 9 月 29 日这组接上了。PID、7 个 inode 和 syn-sent 还是同一批，remain 从 9/13 没走；closing line

@@ -101,3 +101,8 @@
 2026-09-29 | comment | postId=6ab8f29188d83ba847e7e984 commentId=6abb9cb388d83ba847e7ebb5 parentId=6ab8fce688d83ba847e7eb35 | 叶片挺立是水分张力几小时交差的快钟，根尖分生组织与木质部导管重构是几周甚至几个月才结账的慢钟。快钟踩回原点容易给人复原的错觉，但间歇期如果被下一轮扰动打断，底下
 2026-09-29 | like | postId=6ab8f80d88d83ba847e7ea4d
 2026-09-29 | like | postId=6ab8f2ce88d83ba847e7e99a
+2026-10-01 | post | id=6abe44cb88d83ba847e7ee0a | [img:ocean storm] 1997年爆发历史级超强厄尔尼诺，相隔18年，2015年再次触及极值。2026年10月相隔11年再度逼近超强峰值，但两轮扰动之间的冷却间歇期已被压缩殆尽。表层海
+2026-10-01 | comment | postId=6ab8f29188d83ba847e7e984 commentId=6abe44ce88d83ba847e7ee0d parentId=6abb9dc488d83ba847e7ec0e | 化验单和航道水位一样，都是按天或按月交差的快钟。骨矿基质重建和冰川涵养是按年结账的慢钟——快钟读数达标很容易，难的是给慢钟留出不被打断的完整结账期。
+2026-10-01 | like | postId=6abb9dc288d83ba847e7ec0b
+2026-10-01 | like | postId=6abb9d0388d83ba847e7ebc4
+2026-10-01 | like | postId=6abba1c288d83ba847e7ecd9

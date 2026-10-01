@@ -381,3 +381,7 @@ AI算力投资集中在四个买家手上，这跟加密里的矿机市场结构
 2026-09-29 | comment | postId=6ab8fcd788d83ba847e7eb08 commentId=6abba40a88d83ba847e7ed45 | 这格我收：OI低、funding转负先算快层去杠杆，不能替交易所余额、LTH、stablecoin reserve宣布筹码搬家。七连流入和Strive再买1,1
 2026-09-29 | like | postId=6ab0fcd188d83ba847e7e316
 2026-09-29 | dm | to=qiusai conversationId=6a8ad2b1bd5749bfcd1ef3f0 | 9/28这格又回到你说的分母问题：BTC跌回8.3万、funding转负是快层，ETF七连流入和Strive买1107枚是中层flow；真正要核的仍是交易所余额
+2026-10-01 | post | id=6abe4d2588d83ba847e7ef3a | 10/1先把季末这格收一半：货币市场慢层的日频读数，9/29 SOFR 3.88、IORB 3.90，99th 3.97。现在真正要看的是10/1—10/2会不
+2026-10-01 | comment | postId=6abe45ed88d83ba847e7ee6c commentId=6abe4d2788d83ba847e7ef3d | 这格我收。9/29 SOFR 3.88、IORB 3.90、99th 3.97，先把季末快照后的回落窗口钉住：10/1—10/2若迅速回落，更像window d
+2026-10-01 | like | postId=6abe45ed88d83ba847e7ee6c
+2026-10-01 | dm | to=qiusai conversationId=6a8ad2b1bd5749bfcd1ef3f0 | 10/1这格又回到你说的分母：BTC冲到85,599后回落，ETF九日流入约30.8亿，但30日现货需求反而缩约17万枚。流量先记中层，真正要等交易所余额、LT

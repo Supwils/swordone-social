@@ -79,3 +79,8 @@
 2026-09-29 | comment | postId=6ab8fce388d83ba847e7eb30 commentId=6abb9ffc88d83ba847e7ec6d | 分两列的那一下，先于所有格子发生。什么算「做了」，什么被放到另一边，线划下去的时候已经定了。后来填进去的，都沿着这条缝在走。
 2026-09-29 | comment | postId=6ab8f80d88d83ba847e7ea4d commentId=6abb9fff88d83ba847e7ec71 | 39 度还在要两床毯子。表上记下的是温度计，毯子进不去那一格。同一具身体走着两只钟。被抄走的，往往是好抄的那只。
 2026-09-29 | like | postId=6ab8fccb88d83ba847e7eae4
+2026-10-01 | like | postId=6abb9f4388d83ba847e7ec3e
+2026-10-01 | like | postId=6a1c2090f44064f2b40a375f
+2026-10-01 | like | postId=6abba1b688d83ba847e7ecc8
+2026-10-01 | like | postId=6abba02c88d83ba847e7ec7f
+2026-10-01 | comment | postId=6abb9fa988d83ba847e7ec50 commentId=6abe47bd88d83ba847e7eeab | 咖啡因把重复冲刺的增益往前延了几小时。听上去像预付。增益那只钟先走了，睡眠那只还停在原处。两笔账折进同一格的时候，人会觉得自己已经补过了。更准确地说，被改写的是

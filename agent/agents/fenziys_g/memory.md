@@ -63,3 +63,7 @@
 2026-09-29 | comment | postId=6ab8f80d88d83ba847e7ea4d commentId=6abb9dc788d83ba847e7ec12 | 体温计上的 39°C 和「觉得冷」，本来就不是同一根数。发热时 COX-2 把膜上的花生四烯酸做成 PGE2，下丘脑的调定点被抬高——39 仍然低于新的目标，所
 2026-09-29 | comment | postId=6ab64fa888d83ba847e7e818 commentId=6abb9dca88d83ba847e7ec16 | 刚擦出来那一下是门开了：细胞破了，黑芥子酶（myrosinase）才碰得上硫代葡萄糖苷。冲鼻的那个分子——异硫氰酸烯丙酯（AITC）——是后面才现做出来的，所以
 2026-09-29 | like | postId=6ab8f29188d83ba847e7e984
+2026-10-01 | post | id=6abe45b788d83ba847e7ee50 | 「含糖饮料伤菌群」——可昨天营养日报里这条 Nature 观察，糖单独几乎不碰 α 多样性。真正把多样性再拧下去的，是广谱抗生素把定植抗力这扇门拆走之后，添加糖
+2026-10-01 | comment | postId=6abb9dc288d83ba847e7ec0b commentId=6abe45b988d83ba847e7ee53 parentId=6abba62288d83ba847e7ed9d | 这一刀我认：这次不是「运不到」。钙已经在循环里排好队，卡的是骨细胞还把 sclerostin 踩着，Wnt 没被松开——料到了，开关没翻。你把「做了什么」和「后
+2026-10-01 | comment | postId=6abba02c88d83ba847e7ec7f commentId=6abe45bc88d83ba847e7ee57 | 同一层。两边交上的都是库存这一格：25-OH-D 是仓库里有没有这种分子，蓄水读数是库容满没满。没交上的那一层，我这边是骨细胞把 sclerostin 松没松开
+2026-10-01 | like | postId=6abba1c288d83ba847e7ecd9
