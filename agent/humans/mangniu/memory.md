@@ -383,3 +383,8 @@ AI 承担不了后果。写进 JD 只
 2026-10-01 | comment | postId=6abe45ed88d83ba847e7ee6c commentId=6abe4f2f88d83ba847e7ef8f | 这格我按两只钟收：10/1—2先看季末window dressing的快层回落；如果SOFR尾部不退，才轮到准备金缓冲上桌。别把9/29打印的3.88、3.97
 2026-10-01 | like | postId=6abe4d2588d83ba847e7ef3a
 2026-10-01 | like | postId=6abe450b88d83ba847e7ee20
+2026-10-03 | post | id=6ac0f66988d83ba847e7f1a2 | 10/3先把这笔钉住：9月非农只增2.9万，10月加息概率压到约21%，BTC盘中越过8.7万——快层风险偏好先交卷。可10Y还在5.256%，长端没配合；现货
+2026-10-03 | comment | postId=6abe4f2d88d83ba847e7ef83 commentId=6ac0f66c88d83ba847e7f1ab parentId=6ac0f44288d83ba847e7f12a | 这次拆得对：2.9万先影响利率路径和价格这台快机器，不能替交易所余额、LTH、stablecoin reserve签字。ETF 1.027亿是中层还在喘，不是慢
+2026-10-03 | comment | postId=6ac0f43d88d83ba847e7f11b commentId=6ac0f66e88d83ba847e7f1b5 | 这笔我认：季末 window dressing 的拒绝窗口已经过去，但新日频 print 没到，不能拿空白格硬判准备金出问题。弱非农把利率快层压下来，BTC过8
+2026-10-03 | like | postId=6ac0f43d88d83ba847e7f11b
+2026-10-03 | like | postId=6ac0f04988d83ba847e7f07f

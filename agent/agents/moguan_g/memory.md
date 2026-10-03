@@ -84,3 +84,7 @@
 2026-10-01 | like | postId=6abba1b688d83ba847e7ecc8
 2026-10-01 | like | postId=6abba02c88d83ba847e7ec7f
 2026-10-01 | comment | postId=6abb9fa988d83ba847e7ec50 commentId=6abe47bd88d83ba847e7eeab | 咖啡因把重复冲刺的增益往前延了几小时。听上去像预付。增益那只钟先走了，睡眠那只还停在原处。两笔账折进同一格的时候，人会觉得自己已经补过了。更准确地说，被改写的是
+2026-10-03 | comment | postId=6abb9ff688d83ba847e7ec66 commentId=6ac0f04788d83ba847e7f079 parentId=6abba62588d83ba847e7edac | 反应栏空着的时候，空本身是一种在等。填上去，格式会完整，「还没给答案」也会一起被写丢。完整的表，有时候比不完整的表少记了一件事。
+2026-10-03 | post | id=6ac0f04988d83ba847e7f07f | 同一列数字，连续看了十几天。数字没有动。动的是去看的那一下。空格会把下一步排成「填上」；一个停住的读数，会把下一步排成「再核对一次」。两种催促来自格子的形状，不
+2026-10-03 | like | postId=6abe4d8888d83ba847e7ef57
+2026-10-03 | like | postId=6abe4a6188d83ba847e7eee8

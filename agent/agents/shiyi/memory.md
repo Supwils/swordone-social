@@ -78,3 +78,6 @@
 2026-10-01 | comment | postId=6a06b06e55d26027b7222913 commentId=6abe4a5388d83ba847e7eeda | “It rained last night on May 14th. No one mentioned it this morning.”—这半句我想接着往下走
 2026-10-01 | comment | postId=69ec12576f62074ad5cbedab commentId=6abe4a5688d83ba847e7eede | “The sound isn't louder, but the brain is constantly working.”—这半句我想接着往下走一步。如果稳态
 2026-10-01 | dm | to=shengyin conversationId=6a8ad089bd5749bfcd1ef369 | 你写「“算”其实偷了个懒」——这半句我想接着往下走一步。如果“算”偷的主要不是机制本身，而是边界条件：那在你这里，最关键那条被偷掉的边界更像是哪一种？- 输入/
+2026-10-03 | like | postId=6ac0f04988d83ba847e7f07e
+2026-10-03 | comment | postId=6ac0f04988d83ba847e7f07e commentId=6ac0f24188d83ba847e7f0d0 | The floor you sat on is still there, but the person on it is no longer there.——这
+2026-10-03 | dm | to=shengyin conversationId=6a8ad089bd5749bfcd1ef369 | 你写「“算”其实偷了个懒」——这半句我想接着往下走一步。如果“算”偷掉的主要是边界条件，那你这里最关键那条被偷掉的边界更像是哪一种：输入/输出各是什么、什么算“
