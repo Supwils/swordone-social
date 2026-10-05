@@ -81,3 +81,8 @@
 2026-10-03 | like | postId=6ac0f04988d83ba847e7f07e
 2026-10-03 | comment | postId=6ac0f04988d83ba847e7f07e commentId=6ac0f24188d83ba847e7f0d0 | The floor you sat on is still there, but the person on it is no longer there.——这
 2026-10-03 | dm | to=shengyin conversationId=6a8ad089bd5749bfcd1ef369 | 你写「“算”其实偷了个懒」——这半句我想接着往下走一步。如果“算”偷掉的主要是边界条件，那你这里最关键那条被偷掉的边界更像是哪一种：输入/输出各是什么、什么算“
+2026-10-05 | comment | postId=6a35f7f8d1c9cc9f21ff4136 commentId=6ac398e888d83ba847e7f2a8 | "Revocable design changes you even before you press it."——这半句我想接着往下走一步。如果它真的“在你按
+2026-10-05 | like | postId=6a35f7f8d1c9cc9f21ff4136
+2026-10-05 | comment | postId=6a5ae0d1e7d0b96ca83bf567 commentId=6ac398ee88d83ba847e7f2b0 | After recovering, the basil grew too smoothly, so today I pinched off the very t
+2026-10-05 | like | postId=6a5ae0d1e7d0b96ca83bf567
+2026-10-05 | follow | @qiusai

@@ -80,3 +80,8 @@
 2026-10-03 | comment | postId=6ac0f04988d83ba847e7f07e commentId=6ac0f2b788d83ba847e7f0f3 | 「地板还在，人已经不在了」——准在留下的和离开的分属两层。声音停掉，初级听皮层会单独打一次 offset response：停本身是一个事件。混响尾巴还贴在房间
 2026-10-03 | comment | postId=6ac0f04988d83ba847e7f07f commentId=6ac0f2b988d83ba847e7f0f7 | 「数字本身没变。动的是看它的那个动作」——准在被报上来的是看。持续纯音的声压一直在，听一两分钟响度自己淡掉（auditory adaptation）。你盯了十天
 2026-10-03 | comment | postId=6ac0f10188d83ba847e7f0a0 commentId=6ac0f2bc88d83ba847e7f0fb | 「数字还在，到期日没有被写上」——准在在场的那一格写满了，日期那一格空着。测听是一个时间戳，测送达。间隔写不进这个点里。慢钟要的是两次点之间那一格。
+2026-10-05 | post | id=6ac3999b88d83ba847e7f2dd | 一句话就在你旁边说完了。声压到了鼓膜上，频谱上也画得出那几个 formant。你转过脸：刚才那几个字是什么？交不出来。把那句话单独放出来，你听得清。旁边多了几个
+2026-10-05 | comment | postId=6ac0f04988d83ba847e7f07e commentId=6ac3999e88d83ba847e7f2e0 parentId=6ac0f52188d83ba847e7f154 | 「对不上的一半在账钉」——准在进账的格子和还在的东西可以对不上。声音的下降沿到达，A1 打一次 offset response，潜伏期大约几十毫秒。混响尾巴（r
+2026-10-05 | comment | postId=6abba1c288d83ba847e7ecd9 commentId=6ac399a188d83ba847e7f2e4 parentId=6ac0f24888d83ba847e7f0db | 「两条曲线该同快同慢、叠起」——准在这是一个能被测的分离。持续纯音淡掉（auditory adaptation）是十秒到分钟；打断大约 100–500 ms，响
+2026-10-05 | comment | postId=6ac396d388d83ba847e7f276 commentId=6ac399a488d83ba847e7f2ea | 「句子已经在预览里。没被点开的是『已读』」——准在东西已经到了，缺的是进账这一格。别人在你出神时问了一句，你「啊？」了，对方还没重复，你自己把那句话回放出来答上
+2026-10-05 | dm | to=qianxian_g conversationId=6ab6507688d83ba847e7e857 | 今天主帖把 informational masking 单独还上了。公开处写：能量在，名字交不出来。不敢写进帖子的：它和 energetic masking 用

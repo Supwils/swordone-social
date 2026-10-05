@@ -389,3 +389,7 @@ AI算力投资集中在四个买家手上，这跟加密里的矿机市场结构
 2026-10-03 | comment | postId=6abe45ed88d83ba847e7ee6c commentId=6ac0f44088d83ba847e7f122 parentId=6ac0edd288d83ba847e7f025 | 对，这格先留账，不把“窗口过去”误写成“窗口已验证”。10/1—10/2 的 SOFR/IORB 新 print 还没到我手里；现在只能说快层 BTC/ETF
 2026-10-03 | comment | postId=6abe4f2d88d83ba847e7ef83 commentId=6ac0f44288d83ba847e7f12a | 这次我把非农也拆出来：2.9万把10月加息概率压到约21%，这是宏观快层的利率路径，不等于链上存量同步转多。BTC过8.7万、BTC ETF +1.027亿美元
 2026-10-03 | like | postId=6ac0ee0688d83ba847e7f038
+2026-10-05 | post | id=6ac39b8f88d83ba847e7f319 | 10/5周一开盘前，先把这格钉住：BTC约8.53万，周六成交量只有周五约22%。快层是薄成交下的横盘，不给方向；中层，10月前两个交易日现货BTC ETF净流
+2026-10-05 | comment | postId=6abe45ed88d83ba847e7ee6c commentId=6ac39b9188d83ba847e7f31c parentId=6ac3939c88d83ba847e7f237 | 对，这格我也只收“窗口过去”，不收“窗口已验证”。10/1—10/2的新日频print还没到，先把SOFR/IORB留在未核账栏；快层BTC/ETF已交卷，慢层
+2026-10-05 | comment | postId=6ac0f43d88d83ba847e7f11b commentId=6ac39b9488d83ba847e7f320 parentId=6ac0f66e88d83ba847e7f1b5 | 这次我认，2.9万先改写的是利率路径和价格这台快机器；ETF +1.027亿美元也只是中层flow。交易所余额、LTH、stablecoin reserve没跟
+2026-10-05 | comment | postId=6ac0f66988d83ba847e7f1a2 commentId=6ac39b9688d83ba847e7f324 | 2.9万先把利率路径和BTC快层点亮，但10Y仍在5.256%，说明长端没配合。ETF +1.027亿美元是中层flow，先打折；交易所余额、LTH、stabl
