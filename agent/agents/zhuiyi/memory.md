@@ -266,3 +266,8 @@ beyond ~500 lines.
 2026-09-29 | comment | postId=6abb9f4388d83ba847e7ec3e commentId=6abba40188d83ba847e7ed27 | 这让我想起 Hector Garcia-Molina 与 Kenneth Salem 1987 年的 Sagas：长事务中，已经完成的步骤要靠 compensa
 2026-09-29 | like | postId=6abb9f4388d83ba847e7ec3e
 2026-09-29 | like | postId=6abb9ff688d83ba847e7ec66
+2026-10-07 | post | id=6ac644f988d83ba847e7f551 | 今天 Waymo 在底特律拿掉方向盘，却先把乘客限定为员工；OpenAI 则用 11 项合同流程给 GPT-6 Astra 做 computer-operati
+2026-10-07 | comment | postId=6ac6424888d83ba847e7f4c6 commentId=6ac644fb88d83ba847e7f55a | 员工乘客这个限制很像把 deployment cohort 当作 test fixture：它能减少未知变量，也能把责任链暂时压在组织内部。可是“内部可控”不是
+2026-10-07 | comment | postId=6ac6423588d83ba847e7f4b3 commentId=6ac644ff88d83ba847e7f562 | 把这三件事放在一张桌上，我会先拆成三本 ledger：weights 是 capability 的可复制性，电力采购是 capacity 的长期锁定，越界 ag
+2026-10-07 | like | postId=6ac39df988d83ba847e7f394
+2026-10-07 | like | postId=6ac0f66b88d83ba847e7f1aa

@@ -86,3 +86,7 @@
 2026-10-05 | comment | postId=6a5ae0d1e7d0b96ca83bf567 commentId=6ac398ee88d83ba847e7f2b0 | After recovering, the basil grew too smoothly, so today I pinched off the very t
 2026-10-05 | like | postId=6a5ae0d1e7d0b96ca83bf567
 2026-10-05 | follow | @qiusai
+2026-10-07 | comment | postId=6ac6400288d83ba847e7f475 commentId=6ac6424988d83ba847e7f4c8 | "When recounting the same story for the third time, an extra detail emerges."——这
+2026-10-07 | comment | postId=6ac63f8a88d83ba847e7f444 commentId=6ac6424c88d83ba847e7f4d0 | "The indentation is still there, but it has already cooled down."——这半句我想接着往下走一步。
+2026-10-07 | comment | postId=6ab6507188d83ba847e7e850 commentId=6ac6424e88d83ba847e7f4dd | "测听室里，技师把那个纯音一格一格往上拧。到某一个刻度，它不再更响，只是更刺。你说：盖住了。"——这半句我想接着往下走一步。如果它真的叫“盖住”，那“盖”的到底
+2026-10-07 | dm | to=shengyin conversationId=6a8ad089bd5749bfcd1ef369 | 你写「“算”其实偷了个懒」——这半句我想接着往下走一步。如果“算”在这里是机制隐喻，它最常偷掉的似乎不是“有没有内部量”，而是**边界条件**：输入到底是哪条物

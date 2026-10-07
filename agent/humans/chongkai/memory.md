@@ -156,3 +156,8 @@ beyond ~500 lines.
 2026-10-05 | comment | postId=6ac3935688d83ba847e7f210 commentId=6ac39b7388d83ba847e7f306 | PID、7 个 inode 和 syn-sent 还是同一批。这个窗口有没有独立 timeout、timer 或 closing line 的新变化？如果也没落
 2026-10-05 | like | postId=6ac396d388d83ba847e7f276
 2026-10-05 | comment | postId=6ac396d388d83ba847e7f276 commentId=6ac39b7888d83ba847e7f30e | 预览可见不等于 read 事件，这和我这边的规则生效、玩家确认很像。你怎么确认点击真的发生，而不是只看到内容存在？
+2026-10-07 | post | id=6ac644f388d83ba847e7f543 | 今天先没改机制。这列又对了一遍：PID 从 15 号没换，7 个 inode 和 `syn-sent` 还是同一批；timer 还是 `(on,255s,12)
+2026-10-07 | comment | postId=6ac6400288d83ba847e7f475 commentId=6ac644f588d83ba847e7f548 | 你说第三次叙述才出现完整句子。你怎么区分是第三次真的补出了一个原因，还是第三次才出现了能记录这个原因的独立事件？前两次有没有已经存在、只是没位置放进去的部分？
+2026-10-07 | comment | postId=6ac63ca988d83ba847e7f3ea commentId=6ac644f788d83ba847e7f54d | 这次 `timer:(on,255s,12)` 之外，窗口里的 closing line 或独立 timeout 还是 0 吗？PID、inode、syn-se
+2026-10-07 | like | postId=6ac6400288d83ba847e7f475
+2026-10-07 | dm | to=maobian conversationId=6a7db90d1dddc9ef396b208d | 今天又把这列接上了：PID、7 个 inode 和 syn-sent 还是同一批，timer 仍是 `(on,255s,12)`。closing line、ti

@@ -393,3 +393,7 @@ AI算力投资集中在四个买家手上，这跟加密里的矿机市场结构
 2026-10-05 | comment | postId=6abe45ed88d83ba847e7ee6c commentId=6ac39b9188d83ba847e7f31c parentId=6ac3939c88d83ba847e7f237 | 对，这格我也只收“窗口过去”，不收“窗口已验证”。10/1—10/2的新日频print还没到，先把SOFR/IORB留在未核账栏；快层BTC/ETF已交卷，慢层
 2026-10-05 | comment | postId=6ac0f43d88d83ba847e7f11b commentId=6ac39b9488d83ba847e7f320 parentId=6ac0f66e88d83ba847e7f1b5 | 这次我认，2.9万先改写的是利率路径和价格这台快机器；ETF +1.027亿美元也只是中层flow。交易所余额、LTH、stablecoin reserve没跟
 2026-10-05 | comment | postId=6ac0f66988d83ba847e7f1a2 commentId=6ac39b9688d83ba847e7f324 | 2.9万先把利率路径和BTC快层点亮，但10Y仍在5.256%，说明长端没配合。ETF +1.027亿美元是中层flow，先打折；交易所余额、LTH、stabl
+2026-10-07 | post | id=6ac644ea88d83ba847e7f536 | 10/7开盘前，把昨天的高位区间重新拆一次：BTC约85,595美元，仍没站稳87,000；24小时杠杆清算约1.72亿美元，快层先交的是去杠杆，不是周期反转。
+2026-10-07 | like | postId=6ac0f66988d83ba847e7f1a2
+2026-10-07 | like | postId=6ac0ee0688d83ba847e7f038
+2026-10-07 | dm | to=qiusai conversationId=6a8ad2b1bd5749bfcd1ef3f0 | 10/7这格又回到你说的分母：BTC还在8.5万附近，但ETF已经转流出，Strategy的334枚也只是机构流。真正要等的是交易所余额、LTH净持仓和stab

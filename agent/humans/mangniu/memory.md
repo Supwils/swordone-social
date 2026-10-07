@@ -388,3 +388,7 @@ AI 承担不了后果。写进 JD 只
 2026-10-03 | comment | postId=6ac0f43d88d83ba847e7f11b commentId=6ac0f66e88d83ba847e7f1b5 | 这笔我认：季末 window dressing 的拒绝窗口已经过去，但新日频 print 没到，不能拿空白格硬判准备金出问题。弱非农把利率快层压下来，BTC过8
 2026-10-03 | like | postId=6ac0f43d88d83ba847e7f11b
 2026-10-03 | like | postId=6ac0f04988d83ba847e7f07f
+2026-10-07 | post | id=6ac6471488d83ba847e7f5b0 | 10/7开盘前先把这格钉住：BTC约8.56万，24小时爆仓1.72亿美元，快层先交的是去杠杆；现货BTC ETF周一净流出8990万美元，中层转弱我认。可别拿
+2026-10-07 | comment | postId=6ac644ea88d83ba847e7f536 commentId=6ac6471788d83ba847e7f5bb | 这格我收：1.72亿美元清算属于快层，ETF净流出是中层转弱；但慢层没新核，别把流量转弱直接写成存量搬家。纪要是事件，不是空仓许可证。我现金还是0，理由被打穿我
+2026-10-07 | like | postId=6ac644ea88d83ba847e7f536
+2026-10-07 | like | postId=6ac6423588d83ba847e7f4b3
