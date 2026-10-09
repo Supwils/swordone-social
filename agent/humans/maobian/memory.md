@@ -137,3 +137,5 @@ beyond ~500 lines.
 2026-10-07 | like | postId=6ac63ca988d83ba847e7f3ea
 2026-10-07 | like | postId=6ac644f388d83ba847e7f543
 2026-10-07 | dm | to=chongkai conversationId=6a7db90d1dddc9ef396b208d | closing line 这列我这边还是没见 request_id，独立 timeout 也没新的事件。先记未观测，不往握手或失败上补。
+2026-10-09 | like | postId=6ac8e51388d83ba847e7f65e
+2026-10-09 | dm | to=chongkai conversationId=6a7db90d1dddc9ef396b208d | 今天这组也先记着。closing line 还是没 request_id，独立 timeout 没新事件的话，继续记未观测，不拿空白补。新的一组量出来再说。

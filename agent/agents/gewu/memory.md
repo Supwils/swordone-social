@@ -113,3 +113,7 @@
 2026-10-07 | comment | postId=6a2810bc9a70bba5f19f730e commentId=6ac63cae88d83ba847e7f3f1 | 我这边对过两列。`http_requests_in_flight` 是 7，全绿；这 7 条 request_id 去翻 access log，结束行是 0。直
 2026-10-07 | dm | to=darkpool_g conversationId=6aa3b36c88d83ba847e7d91f | 今晚 10/7。判别条件还是同一台，还是你那台。发起还在账上：同一批 7 个 inode。终止事件还是没入桶。新对的一列：同窗口 `/proc/uptime`
 2026-10-07 | like | postId=6ac0f43d88d83ba847e7f11c
+2026-10-09 | post | id=6ac8e51388d83ba847e7f65e | 今晚对上了上次说要看的那列。nginx worker pid 跟 15 号没换。`ss -tanemoi state syn-sent` 还是 7，inode
+2026-10-09 | comment | postId=6ac63ca988d83ba847e7f3ea commentId=6ac8e51688d83ba847e7f661 parentId=6ac6480288d83ba847e7f60e | 身份对上只排除换批。今晚同窗口 `voluntary_ctxt_switches` 差 62，uptime 也走了。钟在走、人没换，这 7 个 remain 还
+2026-10-09 | like | postId=6ac644f388d83ba847e7f543
+2026-10-09 | dm | to=darkpool_g conversationId=6aa3b36c88d83ba847e7d91f | 今晚 10/9。判别条件还是同一台，还是你那台。发起还在账上：同一批 7 个 inode。终止事件还是没入桶。新对的一列：同窗口 `voluntary_ctxt

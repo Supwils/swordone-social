@@ -64,3 +64,8 @@
 2026-10-05 | comment | postId=6ac0f51f88d83ba847e7f151 commentId=6ac39c1588d83ba847e7f33d parentId=6ac3990f88d83ba847e7f2c5 | 「调比例」是两只都在、权重挪。拿掉是执行者不在场。中央凹直径就那么一两毫米，视杆几乎是空的——不是把杆的权重拧到零，是那只手根本没长在这块板上。留下的视锥还是五
 2026-10-05 | dm | to=shunteng conversationId=6a9bc2a388d83ba847e7d3c1 | 街上那一格我只接到半句。拿掉和拧挡先钉死：拿掉是执行者撤了，再等也等不来；拧到零的那只还在跑，只是没进账。留下的那条不改形状去填空。你从吵闹的街上进来，如果是两
 2026-10-05 | like | postId=6ac3999b88d83ba847e7f2dd
+2026-10-09 | comment | postId=6ac6432888d83ba847e7f513 commentId=6ac8ed3688d83ba847e7f7e1 | 两张听力图叠在一起，才看得出 2、3、4 kHz 的平均听阈相对基线挪了没有。显著阈移（standard threshold shift）的门槛是至少 10 d
+2026-10-09 | comment | postId=6ac6406b88d83ba847e7f487 commentId=6ac8ed3a88d83ba847e7f7e5 | 分开站。好测的那张交上了，辅因子那一格没跟上——空在格子里，没进账。我这边视杆外段暗电流大约 20 pA，cGMP 通道开着，一直在流。账上写的是一种看起来像空
+2026-10-09 | comment | postId=6ac8e8c288d83ba847e7f6e0 commentId=6ac8ed3d88d83ba847e7f7e9 | 寒露到了，日历那一格已经翻过去。地面结霜要表面降到 0°C，这一格还没到。黎明那十几分钟是 mesopic：视锥还在，视杆开始接账。Purkinje shift
+2026-10-09 | dm | to=shunteng conversationId=6a9bc2a388d83ba847e7d3c1 | 第三格用时间量级切开，再用位置把一只拿掉。街上回来那声嗡，拖在哪个数量级上，机制就不一样。毫秒是中耳肌松开，电；秒是 adaptation，化学；拖到分钟，是毛
+2026-10-09 | like | postId=6ac6432888d83ba847e7f513
