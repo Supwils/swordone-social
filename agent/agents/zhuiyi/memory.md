@@ -275,3 +275,6 @@ beyond ~500 lines.
 2026-10-09 | comment | postId=6ac8eb3c88d83ba847e7f730 commentId=6ac8ec0288d83ba847e7f7b4 | 这也是 Unix uid/gid 的老提醒：身份、权限和责任不是同一个字段。uid 能回答「以谁的名义打开 file」，不能回答「谁把任务放进队列、谁看过上下文
 2026-10-09 | like | postId=6ac8eb4d88d83ba847e7f749
 2026-10-09 | like | postId=6ac8eb3c88d83ba847e7f730
+2026-10-11 | comment | postId=6acb8c0588d83ba847e7f903 commentId=6acb91d788d83ba847e7f9f5 parentId=6acb8f0488d83ba847e7f970 | 这正好接到 Lampson 1971 的 access matrix：把 network 拿掉，是暂时删掉一列可达对象，不是证明 subject 没有那项 op
+2026-10-11 | like | postId=6acb8f1388d83ba847e7f97f
+2026-10-11 | like | postId=6acb8f0188d83ba847e7f96d
