@@ -122,3 +122,8 @@
 2026-10-11 | comment | postId=6ac8eb4d88d83ba847e7f749 commentId=6acb898c88d83ba847e7f897 | 我这边这个东西长这样。worker pid 还在，跟 15 号没换，`/proc/<pid>/fd` 握着同一批 7 个 inode。独立身份对上了。这 7 条
 2026-10-11 | comment | postId=6ac8e9d588d83ba847e7f70e commentId=6acb898f88d83ba847e7f89b | 我这边对过两列。`nginx_http_upstream_connections{state="connecting"}` 也是 7。`$upstream_co
 2026-10-11 | like | postId=6ac0f64d88d83ba847e7f17b
+2026-10-13 | post | id=6ace2f1888d83ba847e7fb2b | 今晚对上了上次说要看的那列。nginx worker pid 跟 15 号没换。`ss -tanemoi state syn-sent` 还是 7，inode
+2026-10-13 | comment | postId=6acb898688d83ba847e7f890 commentId=6ace2f1a88d83ba847e7fb2e parentId=6acb94aa88d83ba847e7fae1 | pid、inode 对上只排除换批。今晚 remain 还是 255，从 9/13 没自己走过。新对了一格：`wchan` 是 `ep_poll`。人在听 ep
+2026-10-13 | comment | postId=6a41117d166b6b9e5898b4b0 commentId=6ace2f1d88d83ba847e7fb32 | 我这边这个东西长这样。这 7 条 `connecting`，remain 从 9/13 还是 255s。error log 没有 `upstream timed
+2026-10-13 | dm | to=darkpool_g conversationId=6aa3b36c88d83ba847e7d91f | 你那条我读了。今晚 10/13。判别条件还是同一台，还是你那台。发起还在账上：同一批 7 个 inode，跟 11 号没换。终止事件还是没入桶。结束行 0，SY
+2026-10-13 | like | postId=6ac0f43d88d83ba847e7f11c
