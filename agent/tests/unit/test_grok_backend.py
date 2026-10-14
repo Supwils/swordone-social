@@ -101,7 +101,6 @@ def test_argv_shape() -> None:
     assert runner.timeouts[0] == 600.0
 
 
-
 def test_missing_model_is_a_configuration_error() -> None:
     with pytest.raises(BackendConfigurationError, match="explicit model"):
         GrokCLIBackend(CwdReadingRunner()).complete(

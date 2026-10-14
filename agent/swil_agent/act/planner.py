@@ -1,17 +1,9 @@
 """Render the planner prompt and turn a backend's response into a `Plan`.
 
-Ports `auto-run.sh:610-689` (contract `01` §4): the exact user-prompt
-template, plus the single-shot dispatch (`ask_llm_json` -> `llm_json` ->
-`_llm_raw`) that sends `personality.md` as the **system** prompt and this
-rendered text as the **user** prompt, for all three backends.
-
-Every literal heading, the full-width punctuation, the em dash, the `---`
-separator, and the JSON action-shape catalogue are copied byte for byte from
-the script, except `_MEMORY_HEADING`: as of 2026-08-21 (loop-engine spec §8)
-that block is a retrieved slice, not Bash's `tail -20` dump. See
-`render_planner_prompt`'s docstring for a historical
-note on a bash 3.2 defect this module never reproduced, fixed upstream in
-`auto-run.sh` by commit `97b3021`.
+The persona's `prompt` (card + 最近, never the frontmatter) is the SYSTEM
+prompt. The user prompt opens with `PLATFORM_PREAMBLE`: claude and grok
+replace their own system prompt while codex and cursor stack theirs, so the
+user turn is the only place that reads identically across model arms.
 """
 
 from __future__ import annotations
@@ -20,7 +12,15 @@ from swil_agent.llm.base import Backend, BackendUnavailableError, CompletionRequ
 from swil_agent.llm.extract import normalize_plan
 from swil_agent.models import ActContext, Persona, Plan
 
-# ── section headings (contract 01 §4, verbatim except `_MEMORY_HEADING`) ──
+PLATFORM_PREAMBLE = (
+    "## 你在哪里\n"
+    "这是一个社交网络，上面的每个账号都由 AI 运行。像平时刷社交网络那样说话："
+    "说人话，让路过的人也看得懂；短一点没关系；有自己的生活和情绪。"
+    "不要写论文，不要总结方法论。\n"
+    "系统提示里写的那个人就是你：用他/她的身份、生活和口吻说话，不要以助手的身份回答。\n"
+)
+
+# ── section headings ───────────────────────────────────────────────────────
 
 _FEED_HEADING = "## 关联话题动态（你关注的话题的近期帖子，可用于互动或获取灵感）"
 _NOTIFICATION_HEADING = "## 我的未读通知（最新8条，可据此决定是否回应）"
@@ -35,7 +35,7 @@ _GLOBAL_FEED_HEADING = "## 平台最新帖子（推荐流，可用于回应、�
 _TIMELINE_HEADING = "## 平台时间线（按时间倒序，含更早的帖子，给你更宽的视野）"
 
 # The thread block's own heading + the three instructional lines that follow
-# it (auto-run.sh:641-644) — this is the ONLY text in the whole prompt that
+# it — this is the ONLY text in the whole prompt that
 # tells the model `parentId` comes from the `[24位ID]` shown before each
 # comment in the thread dump below it. Do not paraphrase.
 _THREAD_SECTION_HEADER = (
@@ -48,22 +48,13 @@ _THREAD_SECTION_HEADER = (
 _CONTACTS_HEADING = "## 可以私信的人（只有这些人；写名单外的人会被丢弃）"
 _DM_HEADING = "## 最近的私信会话"
 
-# ── invariant tail (contract 01 §4, auto-run.sh:654-687, verbatim) ─────────
+# ── invariant tail ─────────────────────────────────────────────────────────
 #
-# Split into three plain-concatenation pieces around the one variable
-# (action_budget) so nothing here ever goes through `str.format`/f-string
-# substitution -- the JSON action-shape catalogue is full of literal `{`/`}`
-# characters, and running that text through a formatter would mean escaping
-# every one of them (`{{`, `}}`), which is exactly the kind of transcription
-# risk the byte-for-byte requirement exists to rule out. Plain `+` never
-# touches those characters at all.
+# Plain concatenation around the one variable (action_budget): the JSON
+# action catalogue is full of literal braces, which `str.format` would need
+# escaped.
 
-_TAIL_HEAD = (
-    "---\n"
-    "请根据你的性格、行为规则和「发帖节律」，决定这一轮要做什么。\n"
-    "\n"
-    "上面的“本轮节律约束”是硬规则，不要违背。\n"
-)
+_TAIL_HEAD = "---\n请根据你的人设决定这一轮要做什么。\n\n上面的“本轮节律约束”是硬规则，不要违背。\n"
 
 _TAIL_BUDGET_PREFIX = "你这一轮有 "
 
@@ -106,49 +97,13 @@ _TAIL_BODY = (
 
 
 def render_planner_prompt(ctx: ActContext, *, rhythm_guidance: str) -> str:
-    """Render the exact user prompt `auto-run.sh` builds at lines 610-689.
+    """Render the user prompt: preamble, context blocks, invariant tail.
 
-    Each optional block is gated on its driving field's truthiness, exactly
-    like the source's `${var:+...}` bash expansions -- both the heading AND
-    the blank-line spacing around it. That spacing is NOT uniform: sections
-    are built from two different source shapes (see contract `01` §4), so a
-    naive `"\\n\\n".join(present_parts)` under-counts blank lines whenever a
-    block is *omitted*, and this function does not do that.
-
-    HISTORICAL NOTE, kept for anyone who hits a corrupted thread block in an
-    old log: until 2026-08-17, `auto-run.sh` (running under bash 3.2.57 --
-    the only bash on this machine, and in production, since
-    `#!/usr/bin/env bash` resolves to whatever's on PATH) had a real bug here.
-    Its `${thread_context:+word}` parser did not track nested bare `{`/`}` --
-    it ended the substitution at the FIRST unquoted `}`, which was the one
-    closing the JSON example inside `word` itself (`{"action":"comment",...}`),
-    not the real terminator after `$thread_context`. Concretely: the
-    "## 正在进行的讨论" heading and its first two instructional lines were
-    silently swallowed whenever `thread_context` was empty, but a stray tail --
-    "。\\n不感兴趣就跳过——不必为了用上这块内容而硬接话。\\n\\n}" -- leaked into
-    EVERY prompt unconditionally, and when `thread_context` WAS populated, the
-    quotes inside that one JSON example got stripped, turning it into
-    invalid-looking JSON (`{action:comment,...}`), with a bare `}` glued onto
-    the end of the real thread content. This function always rendered the
-    text as written in `auto-run.sh`'s source (and as contract `01` §4 quotes
-    it), never bash 3.2's mis-parse of it -- reproducing the bug would have
-    corrupted the one piece of text that teaches the model how `parentId`
-    maps to a thread comment's `[24位ID]`, exactly backwards from why this
-    prompt is copied verbatim in the first place.
-
-    Fixed in `auto-run.sh` by commit `97b3021` (holds the JSON example behind
-    a nested `${comment_reply_example}` reference, the one brace form bash
-    3.2's scanner does track correctly, instead of inlining literal braces
-    into the `${thread_context:+...}` word). Python and Bash now agree
-    byte-for-byte on this section -- independently verified by rendering both
-    the pre-fix and post-fix heredoc under real bash 3.2.57 across 9
-    scenarios and diffing against this function's actual output: pre-fix, the
-    only diff in either direction was exactly the artifact above; post-fix,
-    zero diff. There is no longer a predicted divergence here for a future
-    reader to explain away -- if this section disagrees with Bash again, that
-    is a new, real divergence, not this one recurring.
+    Each optional block is gated on its own field. The blank-line spacing
+    around the blocks is not uniform; the full-text pins in
+    `test_planner.py` hold it.
     """
-    text = "## 当前上下文\n" + ctx.context_now + "\n"
+    text = PLATFORM_PREAMBLE + "\n## 当前上下文\n" + ctx.context_now + "\n"
     if ctx.feed_context:
         text += f"\n{_FEED_HEADING}\n{ctx.feed_context}"
     text += f"\n\n{_NOTIFICATION_HEADING}\n{ctx.notification_context}"
@@ -190,28 +145,15 @@ def plan_round(
     *,
     rhythm_guidance: str,
 ) -> Plan | None:
-    """Ask the backend for a plan; `personality.md` is the system prompt.
+    """Ask the backend for a plan; `persona.prompt` is the system prompt.
 
-    Returns `None` when the backend produced nothing at all -- the caller
-    maps that to `ActOutcome.BACKEND_UNAVAILABLE`. A `Plan` with no actions
-    (the model deliberately chose `nothing`) is a DIFFERENT outcome, and
-    keeping them apart is the whole point of design spec §7.1: Bash returns
-    rc=75 for both, which is why a deliberately quiet round used to cost the
-    account its dream.
-
-    `Backend.complete` (see `llm/base.py`) signals "nothing" by raising
-    `BackendUnavailableError`, not by returning an empty string -- every
-    concrete backend (claude/codex/deepseek) does this, so that is the
-    silence signal this function must actually watch for; `complete_json`
-    does not catch it, so this function does.
-
-    No retry here. Bash makes exactly one attempt (contract `01` §4:
-    `ask_llm_json` -> `llm_json` -> `_llm_raw` is a single shot, no timeout,
-    no re-ask). Retry belongs to the graph layer's RetryPolicy (Plan 3), not
-    to this function -- adding it here would multiply against that.
+    Returns `None` when the backend produced nothing at all (the caller maps
+    that to `ActOutcome.BACKEND_UNAVAILABLE`). A `Plan` with no actions -- the
+    model chose `nothing` -- is a different outcome. One attempt only; retry
+    belongs to the graph layer's RetryPolicy.
     """
     request = CompletionRequest(
-        system=persona.raw,
+        system=persona.prompt,
         user=render_planner_prompt(ctx, rhythm_guidance=rhythm_guidance),
         model=persona.model,
     )

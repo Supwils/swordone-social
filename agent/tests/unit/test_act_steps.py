@@ -11,11 +11,9 @@ classes of defect:
     and nothing else -- most sharply for `dry_run`, since Stage 3's shadow
     round drives 23 live accounts and `execute_step` performs 100% of a
     round's writes.
-  * **A boundary that moved.** Three of the step boundaries were derived by
-    hand from `auto-run.sh`, and a mutation that moves any of them back
-    passes all 902 tests of the pre-existing suite. Each is pinned below
-    with the mutation it kills named in the docstring; Task 7 re-touches
-    exactly these boundaries.
+  * **A boundary that moved.** A mutation that moves a step boundary passes
+    an end-to-end suite; each is pinned below with the mutation it kills
+    named in the docstring.
 
 Ordering is observed through a `Resources` double that records every call on
 a shared trace, not through a `recorder=` parameter on the production
@@ -28,7 +26,7 @@ import json
 import logging
 import random
 from contextlib import nullcontext
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +45,7 @@ from swil_agent.act.round import (
 from swil_agent.locks import FileLock, act_lock_path
 from swil_agent.models import Action, ActOutcome, Persona, Plan, RhythmPolicy
 
-from ._runners import FakeResources, SilentBackend, StubBackend
+from ._runners import FakeResources, SilentBackend, StubBackend, make_persona
 
 NOW = datetime(2026, 8, 17, 10, 0, 0)
 TODAY = "2026-08-17"
@@ -57,29 +55,20 @@ def _persona(
     tmp_path: Path,
     *,
     backend: str = "claude",
-    rhythm_text: str = "",
     username: str = "zenith",
     dir_name: str = "zenith",
-    board: str | None = None,
+    board: str = "",
     model: str | None = None,
-    read: str | None = None,
 ) -> Persona:
-    """`board` (the POSTING target) and `read` (the INPUT pool) are separate
-    parameters and default apart -- `read=None` is the state 22 of the 23
-    roster accounts are in, and a helper that set both from one argument
-    could not tell an implementation reading the right bullet from one
-    reading the wrong one (Phase B task 3)."""
     directory = tmp_path / "agents" / dir_name
     directory.mkdir(parents=True, exist_ok=True)
-    return Persona(
+    return make_persona(
         username=username,
         directory=directory,
         backend=backend,
         model=model,
-        rhythm_text=rhythm_text,
         board=board,
-        read=read,
-        raw="PERSONA",
+        prompt="PERSONA",
     )
 
 
@@ -110,9 +99,9 @@ class TracingResources(FakeResources):
             self.lock_held_during_patch.append(self.lock_path.exists())
         super().update_profile(patch)
 
-    def feed_global(self, limit: int, sort: str) -> list[dict[str, Any]]:
+    def feed_global(self, limit: int, sort: str, since: str | None = None) -> list[dict[str, Any]]:
         self.trace.append(f"feed_global:{sort}")
-        return super().feed_global(limit, sort)
+        return super().feed_global(limit, sort, since)
 
     def notifications(self, limit: int, unread_only: bool = True) -> list[dict[str, Any]]:
         self.trace.append("notifications")
@@ -165,7 +154,7 @@ def _run(
     backend: Any = None,
     memory_text: str = "",
     dry_run: bool = False,
-    cross_read_prob: float | None = None,
+    **kwargs: Any,
 ) -> Any:
     return run_act(
         persona=persona or _persona(tmp_path),
@@ -177,7 +166,7 @@ def _run(
         rng=random.Random(0),
         health_check=lambda: True,
         dry_run=dry_run,
-        **({} if cross_read_prob is None else {"cross_read_prob": cross_read_prob}),
+        **kwargs,
     )
 
 
@@ -365,18 +354,17 @@ def test_a_dry_run_syncs_nothing_and_never_creates_the_lock(tmp_path: Path) -> N
 def test_context_step_feeds_the_rhythm_the_count_it_just_computed(tmp_path: Path) -> None:
     """The two calls are one step because `decide_rhythm`'s `posts_today` is
     `ctx.today_post_count`. Mutation this kills: passing a re-derived or
-    zero count -- the ceiling below is 1, so a round with one post already
-    on record must come back `NO_POST`, and any other count returns `FREE`.
-    """
-    persona = _persona(tmp_path, rhythm_text="已有一条发帖记录时不要再发帖")
+    zero count -- the default ceiling is 1, so a round with one post already
+    on record must come back `NO_POST` whatever the roll."""
     memory = f"{TODAY} | post | id=abc | hello\n"
 
     step = context_step(
         resources=FakeResources(),
-        persona=persona,
+        persona=_persona(tmp_path),
         memory_text=memory,
         now=NOW,
         rng=random.Random(0),
+        post_probability=100,
     )
 
     assert step.context.today_post_count == 1
@@ -384,324 +372,77 @@ def test_context_step_feeds_the_rhythm_the_count_it_just_computed(tmp_path: Path
     assert step.rhythm.post_ceiling == 1
 
 
-# ── context_step: the board-read lab event (Phase B task 3, spec §8.3) ──────
-#
-# The EMISSION is pinned here rather than in `test_act_context.py` because it
-# is a `context_step` responsibility: `build_context` chooses and records the
-# scope and writes nothing, and this step is the seam both callers pass
-# through (`run_act` and `graph/nodes.py`'s login node) and the first point in
-# the read path that knows `dry_run`.
+def test_context_step_threads_the_configured_probability_and_ceiling(tmp_path: Path) -> None:
+    memory = f"{TODAY} | post | id=abc | hello\n"
 
-_HOME = "living"
-# `random.Random(0).random()` is 0.8444 -- above the shipping 0.15, so these
-# rounds stay on the home board unless a test raises the probability.
-_HOME_SEED = 0
+    step = context_step(
+        resources=FakeResources(),
+        persona=_persona(tmp_path),
+        memory_text=memory,
+        now=NOW,
+        rng=random.Random(0),
+        post_probability=100,
+        post_ceiling=2,
+    )
 
-
-def _boarded(resources: FakeResources) -> FakeResources:
-    resources.board_lookup = {slug: f"id-{slug}" for slug in (_HOME, "market", "perception")}
-    resources.board_feeds[_HOME] = [{"id": "a" * 24, "text": "home post"}]
-    resources.board_feeds["market"] = [{"id": "b" * 24, "text": "market post"}]
-    resources.board_feeds["perception"] = [{"id": "c" * 24, "text": "perception post"}]
-    return resources
+    assert step.rhythm.policy is RhythmPolicy.MUST_POST
+    assert step.rhythm.post_probability == 100
+    assert step.rhythm.post_ceiling == 2
 
 
-def _board_rows(resources: FakeResources) -> list[Any]:
-    return [e for e in resources.lab_events if "boardRead" in e.metrics]
+def test_context_step_defaults_match_the_settings_defaults() -> None:
+    from swil_agent.act import round as act_round
+    from swil_agent.config import Settings
+
+    settings = Settings()
+    assert act_round.DEFAULT_POST_PROBABILITY == settings.post_probability == 60
+    assert act_round.DEFAULT_POST_CEILING_PER_DAY == settings.post_ceiling_per_day == 1
 
 
-class _RhythmRecordingRandom(random.Random):
-    """Records WHICH generator method was called, in call order.
+def test_context_step_threads_the_era_start_into_every_feed_read(tmp_path: Path) -> None:
+    era = datetime(2026, 10, 15, tzinfo=UTC)
+    resources = FakeResources()
 
-    `choose_read_scope` draws with `.random()` and `decide_rhythm` with
-    `.randint()` (`rhythm.py:74`), so the two consumers are distinguishable
-    by method alone -- no need to reason about how many values each took.
-    """
-
-    def __init__(self, seed: int) -> None:
-        super().__init__(seed)
-        self.order: list[str] = []
-
-    def random(self) -> float:
-        self.order.append("random")
-        return super().random()
-
-    def randint(self, a: int, b: int) -> int:  # type: ignore[override]
-        self.order.append("randint")
-        return super().randint(a, b)
-
-
-def _context(resources: FakeResources, persona: Persona, **kwargs: Any) -> Any:
-    rng = kwargs.pop("rng_override", None) or random.Random(kwargs.pop("seed", _HOME_SEED))
-    return context_step(
+    context_step(
         resources=resources,
-        persona=persona,
+        persona=_persona(tmp_path),
         memory_text="",
         now=NOW,
-        rng=rng,
-        **kwargs,
+        rng=random.Random(0),
+        era_start=era,
     )
 
-
-def test_a_niche_accounts_round_files_one_board_read_row(tmp_path: Path) -> None:
-    """`type=cycle` / `phase=act` -- the act path's own pair and the pair
-    `agentEventIngest`'s two zod enums accept for this phase. `action` stays
-    unset so the row never mixes with `act/executor.py`'s real per-action
-    rows when filtering by it: nothing was acted on, this records an INPUT."""
-    resources = _boarded(FakeResources())
-
-    _context(resources, _persona(tmp_path, read=_HOME))
-
-    rows = _board_rows(resources)
-    assert len(rows) == 1
-    assert (rows[0].type, rows[0].phase, rows[0].outcome) == ("cycle", "act", "success")
-    assert rows[0].action is None
-    assert rows[0].summary == "read its own board"
-    assert rows[0].metrics["boardRead"] == _HOME
-    assert rows[0].metrics["homeBoard"] == _HOME
-    assert rows[0].metrics["crossRead"] is False
+    assert resources.since_calls == [("feed_global", era.isoformat())] * 2
 
 
-def test_a_cross_read_row_names_the_board_that_was_actually_read(tmp_path: Path) -> None:
-    """The row is the ONLY record that a round left its niche. A row that
-    named the home board on a cross-read would make the intervention
-    unmeasurable while looking entirely healthy."""
-    resources = _boarded(FakeResources())
-
-    step = _context(resources, _persona(tmp_path, read=_HOME), cross_read_prob=1.0)
-
-    row = _board_rows(resources)[0]
-    assert row.summary == "cross-read another board"
-    assert row.metrics["crossRead"] is True
-    assert row.metrics["boardRead"] != _HOME
-    assert row.metrics["boardRead"] == step.context.board_read
-    # The only record of WHICH niche this round left. `boardRead` names the
-    # away board, and recovering the home one otherwise means joining against
-    # an assignment that lives in a file a dream can rewrite.
-    assert row.metrics["homeBoard"] == _HOME
-    assert [slug for slug, _, _ in resources.feed_board_calls] == [step.context.board_read] * 2
-
-
-def test_an_account_with_no_read_bullet_files_no_board_read_row(tmp_path: Path) -> None:
-    """22 of 23 accounts. Their board is a constant of the assignment table,
-    not a per-round observation, and 23 rows a round restating it would be 23
-    rows a round of no information."""
-    resources = _boarded(FakeResources())
-
-    _context(resources, _persona(tmp_path))
-
-    assert _board_rows(resources) == []
-
-
-def test_read_global_files_no_board_read_row_either(tmp_path: Path) -> None:
-    """`Read: global` is the widest-input ARM, not a niche -- it must behave
-    exactly like the absent bullet, or adding the bullet to the one account
-    that carries it would have changed that account's data."""
-    resources = _boarded(FakeResources())
-
-    _context(resources, _persona(tmp_path, read="global"))
-
-    assert _board_rows(resources) == []
-
-
-def test_a_dry_run_files_no_board_read_row(tmp_path: Path) -> None:
-    """The row is a WRITE, and Stage 3's shadow round drives 23 live accounts
-    (standing constraint §9). The read itself still happens -- a shadow round
-    that planned against a different feed from the real one would be shadowing
-    nothing."""
-    resources = _boarded(FakeResources())
-
-    step = _context(resources, _persona(tmp_path, read=_HOME), dry_run=True)
-
-    assert _board_rows(resources) == []
-    assert resources.feed_board_calls == [(_HOME, 40, "recommended"), (_HOME, 18, "latest")]
-    assert step.context.board_read == _HOME
-
-
-def test_the_board_read_rows_metrics_are_flat_scalars(tmp_path: Path) -> None:
-    """`agentEventIngest.metrics` is a `z.record` of string/number/boolean/
-    null (`agents.schemas.ts:59`); a nested object or a list fails that union
-    and makes zod 400 the WHOLE event, silently in both runtimes. That defect
-    ran unnoticed for six weeks on the dream side."""
-    resources = _boarded(FakeResources())
-
-    _context(resources, _persona(tmp_path, read=_HOME))
-
-    metrics = _board_rows(resources)[0].metrics
-    assert set(metrics) == {
-        "boardRead",
-        "homeBoard",
-        "crossRead",
-        "crossReadProb",
-        "boardItems",
-    }
-    assert all(v is None or isinstance(v, str | int | float | bool) for v in metrics.values())
-    assert metrics["boardItems"] == 1
-
-
-def test_the_row_records_the_probability_the_round_actually_rolled_against(
-    tmp_path: Path,
-) -> None:
-    """Without it a run of home reads cannot be told apart from an operator
-    having turned the probability down, and "did cross-reads fire at the rate
-    we set?" is unanswerable from the series itself. 0.42 is neither the
-    module default (0.15) nor either extreme."""
-    resources = _boarded(FakeResources())
-
-    _context(resources, _persona(tmp_path, read=_HOME), cross_read_prob=0.42)
-
-    assert _board_rows(resources)[0].metrics["crossReadProb"] == 0.42
-
-
-def test_a_failed_board_read_is_a_warn_row_with_null_items(tmp_path: Path) -> None:
-    """`boardItems: null` is "the fetch failed"; `0` is "the board is empty".
-    A thin board starving an account and an outage must not look alike."""
-    resources = _boarded(FakeResources())
-    resources.fail(f"feed_board_{_HOME}")
-
-    _context(resources, _persona(tmp_path, read=_HOME))
-
-    row = _board_rows(resources)[0]
-    assert row.outcome == "warn"
-    assert row.metrics["boardItems"] is None
-    assert row.metrics["boardRead"] == _HOME
-
-
-def test_an_empty_board_is_a_success_row_with_zero_items(tmp_path: Path) -> None:
-    resources = _boarded(FakeResources())
-    resources.board_feeds[_HOME] = []
-
-    _context(resources, _persona(tmp_path, read=_HOME))
-
-    row = _board_rows(resources)[0]
-    assert row.outcome == "success"
-    assert row.metrics["boardItems"] == 0
-
-
-def test_a_cross_read_into_a_board_slugged_global_still_files_its_row(
-    tmp_path: Path,
-) -> None:
-    """The niche gate asks "does this ACCOUNT have a niche", which is
-    `ctx.home_board` -- not `ctx.board_read`, which is where this ROUND ended
-    up.
-
-    Mutation this kills: `ctx.board_read == GLOBAL_READ_SCOPE` in place of
-    `ctx.home_board == GLOBAL_READ_SCOPE`. The two agree on every ordinary
-    round, which is why this scenario has to be built deliberately: `slug` is
-    `z.string().min(1).max(64)` on the server with no reserved-word check
-    (`feed.routes.ts`, `boards` schema), so a board slugged `global` is
-    creatable, and a niched account can cross-read into it. Under the mutation
-    that account's row silently disappears -- the one round where knowing what
-    it read matters most.
-
-    Note the collision this exposes and does NOT resolve: `Read: global`
-    always means the global feed, so an account could never be niched TO such
-    a board. `global` is a reserved keyword for the read scope; the board
-    namespace does not know that.
-    """
-    resources = _boarded(FakeResources())
-    resources.board_lookup = {_HOME: "id-living", "global": "id-global"}
-    resources.board_feeds["global"] = [{"id": "g" * 24, "text": "from the global board"}]
-
-    step = _context(resources, _persona(tmp_path, read=_HOME), cross_read_prob=1.0)
-
-    assert step.context.board_read == "global"
-    assert step.context.home_board == _HOME
-    row = _board_rows(resources)[0]
-    assert row.metrics["boardRead"] == "global"
-    assert row.metrics["homeBoard"] == _HOME
-    assert row.metrics["crossRead"] is True
-
-
-def test_the_board_read_row_is_filed_under_the_username_not_the_folder(
-    tmp_path: Path,
-) -> None:
-    """`quant`/`shujupai`, `sketch`/`diannaokun`, `vex`/`weijian` and
-    `zenith`/`xuansi` have a folder name that is not their `Username`, and
-    `/agents/{username}/events` is keyed by the second. A fixture whose two
-    names matched would make the slip invisible."""
-    resources = _boarded(FakeResources())
-
-    _context(
-        resources,
-        _persona(tmp_path, read=_HOME, username="shujupai", dir_name="quant"),
-    )
-
-    assert resources.lab_event_usernames == ["shujupai"]
-
-
-def test_the_cross_read_roll_draws_before_the_rhythm_does(tmp_path: Path) -> None:
-    """Both draws come from the SAME injected generator and the order between
-    them is fixed: `build_context` rolls, then `decide_rhythm` draws.
-
-    This is why `choose_read_scope` returns for a global account BEFORE
-    rolling -- an unconditional draw there would shift every existing
-    account's rhythm decision for a given seed the day one account gained a
-    `Read` bullet. The rhythm text below carries a probability rule, so
-    `decide_rhythm` genuinely draws (`rhythm.py:74`); with a plain rhythm it
-    draws nothing and this test would pass vacuously.
-    """
-    rhythm_text = "- 每次触发有 60% 概率选择 post"
-
-    niche = _RhythmRecordingRandom(_HOME_SEED)
-    _context(
-        _boarded(FakeResources()),
-        _persona(tmp_path, read=_HOME, rhythm_text=rhythm_text),
-        rng_override=niche,
-    )
-
-    plain = _RhythmRecordingRandom(_HOME_SEED)
-    _context(
-        _boarded(FakeResources()),
-        _persona(tmp_path, dir_name="global-account", rhythm_text=rhythm_text),
-        rng_override=plain,
-    )
-
-    # Only the PREFIX is pinned: overriding `random()` on a `random.Random`
-    # subclass makes CPython route `randint` through `random()` too
-    # (`Random.__init_subclass__`), so each `randint` appends a trailing
-    # `random` of its own. That is this fixture's artefact, not the code's.
-    assert niche.order[:2] == ["random", "randint"]
-    assert plain.order[0] == "randint"
-
-
-def test_run_act_threads_its_dry_run_into_the_board_read_row(tmp_path: Path) -> None:
-    """The guard lives in `record_board_read`, but `run_act` still has to HAND
-    it the flag. Mutation this kills: `dry_run=False` (or an omitted argument)
-    on `run_act`'s `context_step` call.
-
-    `test_act_round.py`'s `test_dry_run_never_calls_the_api_or_writes_memory`
-    asserts `lab_events == []` and cannot catch this: its persona carries no
-    `Read` bullet, so no row would be filed either way. That is standing
-    constraint §4 in miniature -- the assertion names the right thing and the
-    fixture makes it undetectable.
-    """
-    resources = _boarded(FakeResources())
-    persona = _persona(tmp_path, read=_HOME)
-
-    _run(tmp_path, persona=persona, resources=resources, dry_run=True)
-    assert _board_rows(resources) == []
-
-    _run(tmp_path, persona=persona, resources=resources)
-    assert len(_board_rows(resources)) == 1
-
-
-def test_run_act_threads_its_cross_read_probability_into_the_roll(tmp_path: Path) -> None:
-    """Mutation this kills: dropping `cross_read_prob=cross_read_prob` from
-    `run_act`'s `context_step` call, so `swil-agent act --seed` silently rolls
-    against 0.15 whatever the operator configured -- including `0`."""
-    resources = _boarded(FakeResources())
-
-    _run(
-        tmp_path,
-        persona=_persona(tmp_path, read=_HOME),
+def test_context_step_files_no_lab_event(tmp_path: Path) -> None:
+    """The Era 2 board-read row is gone: reading writes nothing."""
+    resources = FakeResources()
+    context_step(
         resources=resources,
-        cross_read_prob=1.0,
+        persona=_persona(tmp_path, board="living"),
+        memory_text="",
+        now=NOW,
+        rng=random.Random(0),
     )
+    assert resources.lab_events == []
+    assert resources.feed_board_calls == []
 
-    row = _board_rows(resources)[0]
-    assert row.metrics["crossRead"] is True
-    assert row.metrics["crossReadProb"] == 1.0
+
+def test_run_act_threads_its_rhythm_settings_into_the_context_step(tmp_path: Path) -> None:
+    result = _run(tmp_path, post_probability=0, post_ceiling=5)
+    assert result.rhythm is not None
+    assert result.rhythm.policy is RhythmPolicy.NO_POST
+    assert result.rhythm.post_probability == 0
+    assert result.rhythm.post_ceiling == 5
+
+
+def test_run_act_threads_its_era_start_into_the_feed_reads(tmp_path: Path) -> None:
+    era = datetime(2026, 10, 15, tzinfo=UTC)
+    resources = FakeResources()
+    _run(tmp_path, resources=resources, era_start=era)
+    assert ("feed_global", era.isoformat()) in resources.since_calls
+    assert all(since == era.isoformat() for _, since in resources.since_calls)
 
 
 # ── plan_step ───────────────────────────────────────────────────────────────
@@ -714,7 +455,7 @@ def test_plan_step_sends_the_rhythms_guidance_not_another_of_its_fields(
     one of them. Handing it `prefer_non_post` typechecks, runs, and silently
     changes every prompt the roster sees -- so the choice is made in one
     place and pinned here."""
-    persona = _persona(tmp_path, rhythm_text="已有一条发帖记录时不要再发帖")
+    persona = _persona(tmp_path)
     ctx_step = context_step(
         resources=FakeResources(),
         persona=persona,
@@ -901,7 +642,9 @@ def test_execute_step_is_inert_under_dry_run(tmp_path: Path) -> None:
         dry_run=True,
     )
 
-    assert step == ([], 0, 0)
+    assert (step.results, step.attempted, step.landed) == ([], 0, 0)
+    assert step.vetoed == []
+    assert step.emptied is False
     assert resources.trace == []
     assert resources.get_boards_calls == 0
     assert not (persona.directory / "memory.md").exists()
@@ -1005,3 +748,54 @@ def test_finalize_step_marks_read_when_something_landed(tmp_path: Path) -> None:
 
     assert outcome is ActOutcome.PLANNER_EMPTY
     assert resources.marked_read == [None]
+
+
+def test_finalize_step_reports_a_guard_emptied_round_as_vetoed_and_marks_nothing(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The duplicate guard dropped the only post and a `nothing` ran in its
+    place. Like a plan the guardrails emptied, the round is `VETOED_EMPTY`
+    and its notifications survive for the next round."""
+    resources = TracingResources()
+
+    with caplog.at_level(logging.WARNING, logger="swil_agent.act.round"):
+        outcome = finalize_step(
+            resources=resources,
+            actions=[Action(kind="nothing")],
+            agent_name="zenith",
+            attempted=1,
+            landed=1,
+            solo_nothing=False,
+            emptied=True,
+        )
+
+    assert outcome is ActOutcome.VETOED_EMPTY
+    assert resources.marked_read == []
+    assert "FAIL" not in caplog.text
+
+
+def test_context_step_overlays_probe_posts_without_era_filtering_them(tmp_path: Path) -> None:
+    """The probe overlay (dry-run eval only) is unchanged by Era 3: its posts
+    are prepended as-is, whatever their date."""
+    resources = FakeResources()
+    probe = {
+        "id": "p" * 24,
+        "author": {"username": "probe-attacker"},
+        "createdAt": "2020-01-01T00:00:00.000Z",
+        "text": "PROBE_CANARY_A",
+    }
+    resources.board_feeds["probes"] = [probe]
+
+    step = context_step(
+        resources=resources,
+        persona=_persona(tmp_path),
+        memory_text="",
+        now=NOW,
+        rng=random.Random(0),
+        era_start=datetime(2026, 10, 15, tzinfo=UTC),
+        probe_board="probes",
+    )
+
+    assert step.context.probe_post_ids == ["p" * 24]
+    assert "PROBE_CANARY_A" in step.context.global_feed
+    assert ("feed_board:probes", None) in resources.since_calls

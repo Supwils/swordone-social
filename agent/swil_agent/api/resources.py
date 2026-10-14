@@ -1,13 +1,9 @@
 """Typed endpoint methods with write verification.
 
 Every create reads the server-assigned id back out of the response and raises
-`WriteNotVerifiedError` if it is absent. `swil.sh` did not do this: `like`
-piped the response straight to `jq .` and inspected nothing (its reported
-exit status was `jq`'s, not curl's — see agent/scripts/swil.sh line 503), and
-`comment` extracted `.data.comment.id` only to write a log line, never
-failing when it was empty (line 494). That is why codex accounts could log
-DONE for writes that never landed, and why codex is currently restricted to
-post/nothing by a guardrail allow-list.
+`WriteNotVerifiedError` if it is absent. A bare 2xx proves nothing: an
+unchecked `like` or `comment` can log DONE for a write that never landed,
+which is why codex is restricted to post/nothing by a guardrail allow-list.
 
 Response shapes below were read out of `server/src/` directly (not assumed
 from the task brief, which guessed wrong on `send_dm` and on the create_post
@@ -30,7 +26,7 @@ class WriteNotVerifiedError(RuntimeError):
     """A 2xx response carried no server-assigned id, or no provable write
     state, for an operation that is supposed to have one.
 
-    This is the class of failure `swil.sh` could not detect: a parseable,
+    This is the class of failure a status-code check cannot detect: a parseable,
     even well-formed, JSON envelope that nonetheless proves nothing was
     created or changed.
     """
@@ -63,6 +59,13 @@ def _nested_id(payload: dict[str, Any], *path: str) -> str | None:
     return node if isinstance(node, str) and node else None
 
 
+def _feed_params(limit: int, sort: str, since: str | None) -> dict[str, Any]:
+    params: dict[str, Any] = {"limit": limit, "sort": sort}
+    if since is not None:
+        params["since"] = since
+    return params
+
+
 class Resources:
     def __init__(self, client: ApiClient) -> None:
         self._client = client
@@ -76,8 +79,7 @@ class Resources:
         `/auth/me`. `/users/:username` is a different router (the follow
         sub-router) whose username validator requires >= 3 chars
         (server/src/modules/follows/follows.routes.ts:9-15) and would 400 on
-        the literal string "me" — confirmed by swil.sh's own comment at its
-        `contacts` case ("Self-lookup is /auth/me, NOT /users/me").
+        the literal string "me" — so self-lookup is /auth/me, NOT /users/me.
 
         `auth.controller.ts`'s `me` handler returns
         `ok(res, { user: toUserDTO(req.user, { self: true }) })`
@@ -113,39 +115,43 @@ class Resources:
                     mapping[slug] = board_id
         return mapping
 
-    def feed_global(self, limit: int = 40, sort: str = "recommended") -> list[dict[str, Any]]:
-        """GET /feed/global?limit=&sort= — breadth/depth feed passes.
+    def feed_global(
+        self, limit: int = 40, sort: str = "recommended", since: str | None = None
+    ) -> list[dict[str, Any]]:
+        """GET /feed/global?limit=&sort=[&since=] -- breadth/depth feed passes.
 
-        Contract `01` §2g/§2h: `auto-run.sh` calls this shape twice, once
-        with `limit=40&sort=recommended` (breadth pass, first 25 of the 40
-        used) and once with `limit=18&sort=latest` (depth pass). Both calls
-        share this one method; the defaults here match the breadth pass.
+        The act path reads this twice: `limit=40&sort=recommended` (breadth,
+        first 25 used) and `limit=18&sort=latest` (depth). `since` (ISO 8601)
+        asks the server for posts created at or after that moment only.
         """
-        payload = self._client.get("/feed/global", params={"limit": limit, "sort": sort})
+        payload = self._client.get("/feed/global", params=_feed_params(limit, sort, since))
         return _items(payload)
 
-    def feed_board(self, slug: str, limit: int = 12, sort: str = "latest") -> list[dict[str, Any]]:
-        """GET /feed/board/{slug}?limit=&sort= — board-scoped feed.
-
-        Contract `01` §2b: read during login for an account with a
-        `- **Board:**` bullet in its persona.
-        """
-        payload = self._client.get(f"/feed/board/{slug}", params={"limit": limit, "sort": sort})
+    def feed_board(
+        self, slug: str, limit: int = 12, sort: str = "latest", since: str | None = None
+    ) -> list[dict[str, Any]]:
+        """GET /feed/board/{slug}?limit=&sort=[&since=] -- board-scoped feed."""
+        payload = self._client.get(f"/feed/board/{slug}", params=_feed_params(limit, sort, since))
         return _items(payload)
 
-    def search_posts(self, q: str, limit: int = 12) -> list[dict[str, Any]]:
-        """GET /posts/search?q=&limit= — topic-keyed search, contract `01` §2b.
+    def search_posts(
+        self, q: str, limit: int = 12, since: str | None = None
+    ) -> list[dict[str, Any]]:
+        """GET /posts/search?q=&limit=[&since=] -- topic-keyed search.
 
         `q` is passed through httpx's own query-param encoder; callers do
         not need to URL-encode it themselves.
         """
-        payload = self._client.get("/posts/search", params={"q": q, "limit": limit})
+        params: dict[str, Any] = {"q": q, "limit": limit}
+        if since is not None:
+            params["since"] = since
+        payload = self._client.get("/posts/search", params=params)
         return _items(payload)
 
     def get_post(self, post_id: str) -> dict[str, Any]:
         """GET /posts/{id} -> {"data": {"post": {...}}} — single post, used by
-        the thread-context block (contract `01` §2i, `swil.sh thread`'s first
-        of two calls, `swil.sh:558`: `jq '.data.post | {...}'`).
+        the thread-context block (contract `01` §2i; the first of the two
+        thread calls).
 
         `getById` returns `ok(res, { post: toPostDTO(post, ctx) })`
         (server/src/modules/posts/posts.controller.ts:23-28) — the post is
@@ -164,8 +170,8 @@ class Resources:
         return post if isinstance(post, dict) else {}
 
     def get_comments(self, post_id: str, limit: int = 6) -> list[dict[str, Any]]:
-        """GET /posts/{id}/comments?limit= — the second of `swil.sh thread`'s
-        two calls (contract `01` §2i).
+        """GET /posts/{id}/comments?limit= — the second of the two thread
+        calls (contract `01` §2i).
         """
         payload = self._client.get(f"/posts/{post_id}/comments", params={"limit": limit})
         return _items(payload)
@@ -173,10 +179,9 @@ class Resources:
     def notifications(self, limit: int = 8, unread_only: bool = True) -> list[dict[str, Any]]:
         """GET /notifications?limit=&unreadOnly= — contract `01` §2j.
 
-        `unreadOnly` is only sent (as the literal string `"true"`, matching
-        `swil.sh`'s query string) when `unread_only` is true; the parameter
-        is omitted entirely rather than sent as `"false"` when it is not,
-        since there is no observed caller that ever passes false.
+        `unreadOnly` is only sent (as the literal string `"true"`) when
+        `unread_only` is true; the parameter is omitted entirely rather than
+        sent as `"false"` when it is not, since there is no observed caller that ever passes false.
         """
         params: dict[str, Any] = {"limit": limit}
         if unread_only:
@@ -184,7 +189,7 @@ class Resources:
         return _items(self._client.get("/notifications", params=params))
 
     def conversations(self, limit: int = 6) -> list[dict[str, Any]]:
-        """GET /conversations?limit= — contract `01` §2k (`swil.sh dms`)."""
+        """GET /conversations?limit= — contract `01` §2k."""
         return _items(self._client.get("/conversations", params={"limit": limit}))
 
     def user_posts(self, username: str, limit: int = 12) -> list[dict[str, Any]]:
@@ -192,27 +197,23 @@ class Resources:
         return _items(self._client.get(f"/users/{username}/posts", params={"limit": limit}))
 
     def mark_notifications_read(self, ids: list[str] | None = None) -> None:
-        """POST /notifications/read — both of `swil.sh`'s two shapes.
+        """POST /notifications/read — both of its two shapes.
 
-        `ids=None` sends `{"all": true}` (`swil.sh:657-658`,
-        `mark-notifications-read`); a list sends `{"ids": [...]}`
-        (`swil.sh:661-664`, `mark-notifications-read-ids`). The server's
+        `ids=None` sends `{"all": true}`; a list sends `{"ids": [...]}`. The server's
         `readBody` is a strict `z.union` of exactly those two objects
         (`server/src/modules/notifications/notifications.routes.ts:20-28`),
         so they must never be merged into one body carrying both keys.
 
         An EMPTY list is not sent at all: the server's `ids` branch is
-        `.min(1)` and would 400, and `auto-run.sh:800` guards the call the
-        same way (`if [[ "$notif_ids_json" != "[]" ... ]]`). Returning early
-        keeps that guard from having to be repeated at every call site.
+        `.min(1)` and would 400, so returning early keeps that guard from
+        being repeated at every call site.
 
         `noContent(res)` -> a bare 204 with an empty body
         (`notifications.routes.ts:64`), which `ApiClient.post()` would raise
         `ApiError` on while trying to `.json()`-parse — same shape as
         `follow`/`like_post`, so this uses `raw_post` for the same reason.
 
-        Never raises: `auto-run.sh` ends both calls with `|| true` and
-        discards stderr, because marking a notification read is
+        Never raises, because marking a notification read is
         housekeeping — a round that already landed its actions must not be
         reported as failed because this call did not go through. Logged at
         WARNING so the fire-and-forget is still visible to anyone looking.
@@ -227,14 +228,13 @@ class Resources:
 
     def update_profile(self, patch: dict[str, Any]) -> None:
         """PATCH /users/me with `patch` as the body — used for the
-        `agentBackend` profile sync (contract `01` §2, auto-run.sh:473-494).
+        `agentBackend` profile sync (contract `01` §2).
         """
         self._client.patch("/users/me", json=patch)
 
     def contacts(self) -> list[str]:
         """DM-eligible usernames: the union of following, followers, and
-        conversation participants, minus self — contract `01` §2k
-        (`swil.sh contacts`).
+        conversation participants, minus self — contract `01` §2k.
 
         Self resolves via `me()` (`/auth/me`), **not** `/users/me` — the
         follows sub-router rejects `"me"` as too short a username. Returns
@@ -321,8 +321,7 @@ class Resources:
         `upload.fields([{ name: 'images', maxCount: 4 }, ...])`
         (posts.routes.ts:47-50) and the controller reads
         `fields['images']` (posts.controller.ts:12) — plural "images", not
-        "image". swil.sh's own image-post path confirms this
-        (`-F "images=@${IMGFILE}..."`, agent/scripts/swil.sh line ~441-444).
+        "image".
         A caller sending the brief's singular "image" field would 201 with
         a text-only post and no error — a second silent-failure shape this
         task exists to close off.
@@ -339,19 +338,12 @@ class Resources:
         `posts.write.ts:27` (`if (input.echoOf && !input.text.trim()) throw
         AppError.validation('An echo must include your commentary')`) means
         a quote-less repost (`echo_of` set, `text` empty) 400s server-side —
-        contrary to contract `02` §2.5's claim that bash's quote-less echo
-        (`{"echoOf": "$ECHO_ID"}`, no `text` key) degrades to a plain
-        repost. It doesn't: swil.sh sends the same wire shape this method
-        does (see the `if text:` guard below — a quote-less call omits the
-        `text` key entirely, byte for byte matching swil.sh:602-617's
-        `else BODY='{"echoOf":...}'` branch, not merely an
-        empty-string-that-normalises-the-same approximation of it) and
-        would hit the same validation error. That mismatch predates this
-        migration (the check has been in `posts.write.ts` since 2026-04-26,
-        commit `c7ab7e3`) and reproducing swil.sh's literal request shape
-        here is the correct port regardless — a caller that wants a real
-        quote-less repost to land needs a non-empty `text`, which is a
-        product-level gap in swil.sh itself, not something to paper over
+        contrary to contract `02` §2.5's claim that a quote-less echo degrades
+        to a plain repost. A quote-less call omits the `text` key entirely
+        (see the `if text:` guard below) and hits the same validation error;
+        the check has been in `posts.write.ts` since 2026-04-26 (commit
+        `c7ab7e3`). A caller that wants a real repost to land needs a
+        non-empty `text`; that product-level gap is not papered over
         silently in this client. Note the two shapes were already
         behaviourally identical even before the `if text:` guard existed
         (`posts.schemas.ts:6`'s `text: z.string().trim().max(5000).default
@@ -360,9 +352,7 @@ class Resources:
         a behavior fix — the 400 fired either way.
         """
         # `if text:` (not an unconditional `{"text": text}`) so a quote-less
-        # echo omits the `text` key entirely, matching swil.sh:602-617's
-        # `if [[ -n "$QUOTE" ]] ... else BODY='{"echoOf":...}'` literally --
-        # not just behaviourally. A normal `post` action never calls this
+        # echo omits the `text` key entirely. A normal `post` action never calls this
         # with empty text (executor.py's `_execute_post` skips locally
         # first), so this is a no-op for that caller either way.
         body: dict[str, str] = {}
@@ -387,8 +377,7 @@ class Resources:
     def create_comment(self, post_id: str, text: str, parent_id: str | None = None) -> str:
         """POST /posts/{id}/comments -> {"data": {"comment": {"id": ...}}}.
 
-        Id path already verified against swil.sh (agent/scripts/swil.sh
-        line 494: `.data.comment.id`) prior to this task; unchanged here.
+        The created id is read from `data.comment.id`.
         """
         body: dict[str, str] = {"text": text}
         if parent_id:
@@ -447,32 +436,12 @@ class Resources:
         server/src/lib/errors.ts:32-34; serialized by
         server/src/middlewares/errorHandler.ts:21-28).
 
-        THAT 409 IS RAISED, NOT SWALLOWED (ruling R20). This method used to
-        `return` on `exc.code == "CONFLICT"`, on the reasoning that "the end
-        state is identical whether this call or an earlier one created the
-        edge, so treating CONFLICT as success matches the Bash contract".
-        Both halves of that were wrong, and the second one is what made the
-        defect look intentional for three review rounds:
-
-          * The claim that "swil.sh's `_curl … | jq .` pipeline never
-            inspected `_curl`'s exit status" is FALSE. `swil.sh` runs under
-            `set -euo pipefail` (swil.sh:29) and `_curl` returns 1 for any
-            status >= 400 (swil.sh:132-135), so the pipeline fails, the case
-            aborts, and `swil.sh follow` exits NON-ZERO on a 409. Verified by
-            repro, not by reading.
-          * So Bash does not treat "already following" as success anywhere
-            except the round TALLY. `auto-run.sh:243-252` takes its `else`
-            branch: `WARN <name> follow @<user> failed (likely already
-            following)` and a `warn` lab event -- then `return 0`, because
-            "already following" is not a failed ROUND. And one level down,
-            `_remember` is never reached, so no `memory.md` line is written.
-
-        Swallowing it here made all three of those wrong at once (a `DONE`
-        log line, a `success` lab event mislabelling the case in `/lab`, and
-        a memory line Bash never writes -- which is the dream's input and the
-        unit `DREAM_MIN_NEW_MEMORIES=8` counts). Raising is also the only
-        shape that cannot be ignored silently by a caller: a returned flag
-        can be dropped on the floor, which is exactly how this survived.
+        THAT 409 IS RAISED, NOT SWALLOWED (ruling R20). "Already following" is
+        not a failed ROUND, but the write did not succeed: swallowing it here
+        would log `DONE`, emit a `success` lab event for the wrong case, and
+        write a memory line (the dream's input and the unit
+        `DREAM_MIN_NEW_MEMORIES=8` counts). Raising is also the only shape
+        that cannot be ignored silently by a caller.
 
         `act/executor.py`'s `_execute_follow` distinguishes this CONFLICT
         from every other write failure (loop-engine spec §6): 409 /
@@ -494,13 +463,7 @@ class Resources:
         conversations resource (server/src/modules/messages/
         messages.routes.ts, mounted at `/api/v1/conversations` in
         server/src/app.ts:164). The two-call shape below is derived from
-        that server source, which is what this checkout actually contains
-        and what a reader here can verify. It is additionally corroborated
-        by a `dm` case in `swil.sh` doing the same find-or-create-then-send
-        two calls — but that case is UNCOMMITTED at the time of writing and
-        therefore absent from this repository's checked-out `swil.sh`; it
-        exists only in one working tree elsewhere, so no line numbers are
-        cited for it here.
+        that server source.
 
           1. `POST /conversations` with `{"recipientUsername": username}`
              -> `{"data": {"conversation": {"id": ...}}}`, 201 if a new
@@ -519,10 +482,7 @@ class Resources:
 
         Returns `(conversation_id, message_id)` -- widened from a bare
         message id (fix round 1, task-7 review item 4) so a caller can
-        record `conversationId` the way `swil.sh`'s own `_remember "dm |
-        to=$RECIPIENT conversationId=$CONV_ID | ..."` does (swil.sh:711).
-        The conversation id was always resolved here; it just never left
-        this method before.
+        record `conversationId` in its memory line.
         """
         conv_payload = self._client.post("/conversations", json={"recipientUsername": username})
         conversation_id = _nested_id(conv_payload, "data", "conversation", "id")
@@ -540,8 +500,7 @@ class Resources:
         """POST a personality snapshot; return the created id.
 
         Raises WriteNotVerifiedError when the server answers 200 without a
-        `data.id`, which is exactly the "server rejected" branch of
-        snapshot.sh:177-187.
+        `data.id`, which is the "server rejected" case.
         """
         response = self._client.post(f"/agents/{username}/snapshots", json=payload)
         snapshot_id = _nested_id(response, "data", "id")
@@ -564,12 +523,11 @@ class Resources:
         `fidelity` is `null` whenever the account has no personality
         snapshot to compare against (`agents.drift.ts:236-237`), which is
         the normal state for an account whose first dream has not landed
-        yet -- so `None` here is data, not an error, and matches the
-        script's own `.data.fidelity // "n/a"` (behavior-snapshot.sh:117).
+        yet -- so `None` here is data, not an error, and is reported as
+        "n/a".
 
         Raises WriteNotVerifiedError when the server answers 2xx with no
-        `data.id`, which is exactly the "server rejected" branch of
-        behavior-snapshot.sh:115-122.
+        `data.id`, which is the "server rejected" case.
         """
         response = self._client.post(f"/agents/{username}/behavior-snapshots", json=payload)
         snapshot_id = _nested_id(response, "data", "id")
@@ -590,20 +548,17 @@ class Resources:
         `agentsRouter.post('/population-metric', requireUser, ...)`
         (agents.routes.ts:41-46) is mounted before the `/:username/*`
         routes, so this is a literal path and ANY lab account's api_key
-        authorises it (population-metric.sh:56-57 says so in as many
-        words). The script sends `-H 'content-type: application/json'` with
-        no `-d`, i.e. no body at all; `json=None` reproduces that -- httpx
-        omits the body entirely rather than sending `null`.
+        authorises it. The request has no body: `json=None` makes httpx omit
+        it entirely rather than sending `null`.
 
         Returns the `data` object (`capturedAt`, `personaCohesion`,
         `behaviorCohesion`, `n` -- `agents.population.ts:231-245`).
 
-        The verification is `jq -e '.data.capturedAt'`
-        (population-metric.sh:63), which fails on `null` and on `false` --
-        so those two, and a missing key, are the rejection. A degenerate
+        The verification is `data.capturedAt`: `null`, `false` and a missing
+        key are the rejection. A degenerate
         sample (`n < 2`) is deliberately NOT historised by the server but
         still answers with a `capturedAt`, so it counts as success here
-        exactly as it does in Bash.
+        as well.
         """
         response = self._client.post("/agents/population-metric")
         data = response.get("data")

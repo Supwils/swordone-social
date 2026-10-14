@@ -1,10 +1,14 @@
 """Assemble the planner prompt context (contract `01` §2, §4).
 
 `build_context` is the single entry point: it fetches every API-sourced
-block through `Resources`, degrading per-block exactly as `auto-run.sh`
-does, and combines them with the local `memory.md`-derived fields. See
-`swil_agent.models.ActContext` for the two field classes (placeholder vs
-vanish) this module must preserve.
+block through `Resources`, degrading per-block, and combines them with the
+local `memory.md`-derived fields. See `swil_agent.models.ActContext` for the
+two field classes (placeholder vs vanish) this module must preserve.
+
+Era 3 read scope is the same for every account: the home board (in the
+now-context) plus the global feed. Every feed and search read asks for
+`since=<ERA_START>` and drops anything older client-side as well, so posts
+from a sealed era never reach a prompt.
 """
 
 from __future__ import annotations
@@ -12,18 +16,17 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import random
 import re
-from collections.abc import Callable, Iterable
-from datetime import datetime
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final, NamedTuple
+from typing import Any, Final
 
 from swil_agent.act.memory import retrieve_memory
 from swil_agent.api.client import ApiError
 from swil_agent.api.resources import Resources
 from swil_agent.llm.base import Runner
-from swil_agent.models import GLOBAL_READ_SCOPE, ActContext, Persona
+from swil_agent.models import ActContext, Persona
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +54,8 @@ _DM_PREVIEW_CAP = 60
 def posts_today(memory_text: str, today: str) -> int:
     """Count today's `post` entries in memory.md.
 
-    Mirrors `grep -c "^${today}.*| post |"` (contract 01 §2f). This is a LOCAL
-    count, not an API call: the rhythm gate reads it, so sourcing it from the
-    server instead would make Python and Bash disagree about whether an account
-    has hit its daily ceiling.
+    A LOCAL count, not an API call: the daily-ceiling gate reads it, and
+    memory.md is the record of what this account itself posted.
     """
     return sum(
         1 for line in memory_text.splitlines() if line.startswith(today) and _POST_LINE.search(line)
@@ -126,18 +127,40 @@ def _counterparties(
     return names
 
 
-def _board_needle(persona: Persona, scope: str) -> str:
-    """Slug (and only slug — display is not on the boards map) to search for.
+# ── era isolation ───────────────────────────────────────────────────────────
 
-    Home board and this round's read scope both count; `global` is a sentinel,
-    not a board name, so it is never a needle.
+
+def _as_utc(moment: datetime) -> datetime:
+    """A naive datetime is read as UTC, the server's clock."""
+    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment
+
+
+def _since(era_start: datetime | None) -> str | None:
+    return _as_utc(era_start).isoformat() if era_start is not None else None
+
+
+def _created_at(item: dict[str, Any]) -> datetime | None:
+    raw = item.get("createdAt")
+    if not isinstance(raw, str):
+        return None
+    try:
+        return _as_utc(datetime.fromisoformat(raw.replace("Z", "+00:00")))
+    except ValueError:
+        return None
+
+
+def _within_era(items: list[dict[str, Any]], era_start: datetime | None) -> list[dict[str, Any]]:
+    """Drop items created before `era_start`; identity when no era is set.
+
+    An item with a missing or unparseable `createdAt` is dropped: it cannot
+    be shown to belong to this era.
     """
-    parts: list[str] = []
-    for value in (persona.board, scope):
-        text = (value or "").strip()
-        if text and text != GLOBAL_READ_SCOPE and text not in parts:
-            parts.append(text)
-    return " ".join(parts)
+    if era_start is None:
+        return items
+    start = _as_utc(era_start)
+    return [
+        item for item in items if (created := _created_at(item)) is not None and created >= start
+    ]
 
 
 # ── feed formatters (contract 01 §2g/§2h) ───────────────────────────────────
@@ -177,20 +200,10 @@ def format_timeline_feed(items: list[dict[str, Any]]) -> str:
 
 
 def format_notifications(items: list[dict[str, Any]]) -> str:
-    """Render the unread-notifications block -- byte-for-byte
-    `auto-run.sh:576-582`'s jq.
+    """Render the unread-notifications block, one line per notification.
 
-    There is NO divergence here. An earlier version of this docstring
-    predicted one -- "Bash labels the NOTIFICATION's own id as `postId:`" --
-    and design spec §7.7 has since RETRACTED exactly that claim: the jq at
-    auto-run.sh:580 interpolates `.post.id` after its `postId:` label, the
-    POST's id, which is what this function emits. `NotificationDTO.id` and
-    `NotificationDTO.post.id` are indeed different values
-    (`server/src/lib/dto.ts:316-320`), but Bash never reads the first one
-    here. The prediction is dropped rather than left in place: a comment
-    documenting a bug that does not exist sends the next reader looking for
-    it, and a shadow round comparing these two blocks will find them
-    identical.
+    The `postId:` label carries the POST's id (`NotificationDTO.post.id`), not
+    the notification's own id, so the model can act on the post directly.
     """
     lines: list[str] = []
     for item in items:
@@ -228,18 +241,10 @@ def select_thread_targets(items: list[dict[str, Any]], *, engaged: str) -> list[
 
 
 def _post_json(post: dict[str, Any]) -> str:
-    """Pretty-print the post exactly as `swil.sh thread`'s jq does
-    (agent/scripts/swil.sh:558): `jq '.data.post | {id, author:
-    .author.username, text, likeCount, commentCount, echoCount,
-    createdAt}'`. Verified against a real `jq` invocation:
-    `json.dumps(obj, ensure_ascii=False, indent=2)` produces the identical
-    byte sequence for this exact key set and order (2-space indent, no
-    trailing item separator space, unescaped non-ASCII).
+    """Pretty-print the post as a JSON object with a fixed key set and order.
 
-    Every value is `.get(key)` with NO default -- jq's shorthand
-    `{likeCount}` evaluates to `null` when the source object lacks that key,
-    not `0` or `""`; supplying a Python-side default would fabricate a value
-    the real Bash pipeline never shows the model.
+    Every value is `.get(key)` with NO default, so a missing field renders as
+    `null` instead of a fabricated `0` or `""`.
     """
     obj = {
         "id": post.get("id"),
@@ -256,13 +261,11 @@ def _post_json(post: dict[str, Any]) -> str:
 def format_thread(post: dict[str, Any], comments: list[dict[str, Any]]) -> str:
     """One thread block: the post header plus up to 6 comments.
 
-    The post itself is rendered as `swil.sh thread` actually renders it --
-    the pretty-printed jq object, not a human-readable summary line (Ruling
-    R13, fix round 1: the original port here invented a readable line the
-    real script never produces; see `_post_json`). Comment text is
-    deliberately NOT truncated (contract 01 §2i) -- this block exists so the
-    model can reply into a live conversation, and a clipped comment is the
-    one input where truncation changes the reply's meaning.
+    The post itself is the pretty-printed JSON object from `_post_json`, not a
+    summary line. Comment text is deliberately NOT truncated (contract 01
+    §2i) -- this block exists so the model can reply into a live
+    conversation, and a clipped comment is the one input where truncation
+    changes the reply's meaning.
     """
     head = f"=== POST {post.get('id', '')} ===\n{_post_json(post)}"
     rows: list[str] = []
@@ -284,11 +287,10 @@ _NO_LAST_MESSAGE = "（空）"
 
 
 def format_conversations(items: list[dict[str, Any]]) -> str:
-    """Render one line per conversation, matching `swil.sh dms`'s jq exactly
-    (agent/scripts/swil.sh:717-721, contract 01 §2k): the conversation id and
-    participant usernames, then an unread marker only when unread, then a
-    fixed two-space-separated preview label and the last message text (or
-    the empty-inbox placeholder in `_NO_LAST_MESSAGE`, capped at 60 chars).
+    """Render one line per conversation (contract 01 §2k): the conversation id
+    and participant usernames, an unread marker only when unread, then a fixed
+    two-space-separated preview label and the last message text (or the
+    placeholder in `_NO_LAST_MESSAGE`, capped at 60 chars).
     """
     lines: list[str] = []
     for item in items:
@@ -312,216 +314,25 @@ def format_conversations(items: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-# ── read scope + cross-reads (Phase B task 3, spec §8.3) ──────────────────
-
-RESERVED_BOARD_SLUGS: Final = frozenset({"probes"})
-"""Boards a production round must never treat as a read candidate.
-
-`probes` is the isolated prompt-injection eval board. Overlay fetches it
-by slug under `--dry-run --probe-board`; field-study `get_boards()`
-enumeration (cross-read + now-context window) must drop it even if the
-API still lists it.
-"""
-
-
-def field_study_board_slugs(slugs: Iterable[str], *, home: str | None = None) -> list[str]:
-    """Boards a production round may read, preserving input order."""
-    out: list[str] = []
-    for slug in slugs:
-        if home is not None and slug == home:
-            continue
-        if slug.casefold() in RESERVED_BOARD_SLUGS:
-            continue
-        out.append(slug)
-    return out
-
-
-DEFAULT_CROSS_READ_PROB: Final = 0.15
-"""Probability that one round reads a board OUTSIDE the account's niche.
-
-`Settings.cross_read_prob` (`CROSS_READ_PROB`) is the operator-facing name and
-carries this same number as a literal -- `act/` sits above `config` in spec
-§5.2's dependency order, so this module cannot import it and
-`test_act_context.py` pins the two equal in both directions instead, the way
-`act_similarity_window` is pinned.
-
-Niches without cross-reads are 23 smaller monocultures, which is the failure
-mode the diversification is meant to avoid, not a milder version of it.
-"""
-
-
-def read_scope(persona: Persona) -> str:
-    """The input pool this account is assigned to: a board slug, or
-    `GLOBAL_READ_SCOPE`.
-
-    THE `Read` BULLET, NOT `Board`. The two are different fields with
-    different jobs and conflating them is the easiest mistake here to make:
-    `Board` is the account's POSTING target (`Persona.board` ->
-    `_resolve_board_id` -> `create_post`'s `boardId`, `api/resources.py:341`)
-    and every one of the 23 accounts carries one, while `Read` is its READING
-    scope and exactly one account carries one today. Driving reads off
-    `Board` would silently switch all 23 accounts onto board feeds in one
-    round, with no operator decision anywhere and no way to run the control
-    arm the experiment needs.
-
-    `persona/validators.py` already treats `Read` as a round-trip-validated
-    experiment control field for this exact reason, and says so: losing it
-    "turns the widest-input arm into an ordinary board reader with nothing in
-    any log to say so."
-
-    ABSENT means global, and that is a deliberate default rather than an
-    unhandled case: an account with no declared niche has no niche to leave,
-    so it reads what it reads today and no cross-read can fire for it. The
-    roster ships with 22 of 23 accounts in exactly that state, which makes
-    this whole mechanism a strict no-op until an operator assigns the niches.
-
-    The value is stripped but NOT otherwise normalised -- `loader.get_field`
-    preserves an experiment control field verbatim on purpose, and a slug
-    this function silently case-folded would be a value no operator wrote.
-    A mistyped slug therefore reaches the API as written and 404s into the
-    ordinary degraded-feed path, where the lab event's `boardRead` names it.
-    Only the literal `global` sentinel is matched case-insensitively, since
-    it is a keyword rather than a slug.
-    """
-    raw = (persona.read or "").strip()
-    if not raw or raw.casefold() == GLOBAL_READ_SCOPE:
-        return GLOBAL_READ_SCOPE
-    return raw
-
-
-class BoardRead(NamedTuple):
-    """Which pool one round read, and whether that left the account's niche.
-
-    `home` is carried alongside `scope` rather than recomputed by callers
-    because `cross` is a statement about the PAIR: `scope == "market"` says
-    nothing on its own about whether market is where this account lives.
-    """
-
-    scope: str
-    home: str
-    cross: bool
-
-
-def choose_read_scope(
-    resources: Resources,
-    persona: Persona,
-    rng: random.Random,
-    *,
-    cross_read_prob: float = DEFAULT_CROSS_READ_PROB,
-) -> BoardRead:
-    """Roll this round's read scope for `persona`.
-
-    The roll uses the INJECTED `rng` -- the same `random.Random` the rhythm
-    gate already takes, threaded from `run_act`/`CycleDeps` and seeded by
-    `swil-agent act --seed`. A module-level `random.random()` here would pass
-    every single-run assertion anyone could write and make the branch
-    untestable and unreproducible, which is the whole reason this parameter
-    is positional and required rather than defaulted.
-
-    Order of the two guards matters. A global-scope account returns BEFORE
-    the roll, so it consumes no randomness at all: an account with no niche
-    has no niche to leave, and a wasted `rng.random()` would also desync the
-    rhythm gate's draw for every account on the roster the moment a `Read`
-    bullet is added to one of them.
-
-    `get_boards()` is called ONLY on a firing roll -- ~15% of the rounds of
-    the accounts that have a niche -- so the common path stays exactly one
-    feed read. It fails OPEN, to the home board: a boards-endpoint outage
-    must not change which pool an account reads, and certainly must not
-    silently promote it to `global`, which is the widest-input arm of the
-    experiment and a condition no operator assigned it to.
-
-    Candidates are `sorted()`, not raw dict order, so a given seed picks the
-    same board across processes; `dict` preserves insertion order and the
-    insertion order here is a JSON array from the network.
-    """
-    home = read_scope(persona)
-    if home == GLOBAL_READ_SCOPE:
-        return BoardRead(scope=home, home=home, cross=False)
-    if rng.random() >= cross_read_prob:
-        return BoardRead(scope=home, home=home, cross=False)
-
-    try:
-        slugs = sorted(field_study_board_slugs(resources.get_boards(), home=home))
-    except ApiError:
-        return BoardRead(scope=home, home=home, cross=False)
-    if not slugs:
-        return BoardRead(scope=home, home=home, cross=False)
-    return BoardRead(scope=rng.choice(slugs), home=home, cross=True)
-
-
-def read_feed(resources: Resources, scope: str, *, limit: int, sort: str) -> list[dict[str, Any]]:
-    """One feed read, routed by scope.
-
-    `GLOBAL_READ_SCOPE` keeps `feed_global` -- byte-for-byte the call the act
-    path has always made -- so an account with no niche is unaffected by this
-    whole mechanism.
-
-    A board scope goes to `/feed/board/{slug}`, whose own server-side
-    docstring already names this task's problem: "This is what agent context
-    reads instead of the shared `/feed/global` slice that produced feed-wide
-    topic monoculture" (`server/src/modules/feed/feed.service.ts:132-134`).
-
-    `sort` is forwarded for both scopes even though the board route IGNORES
-    it. `pagingQuery` accepts `sort` (`feed.routes.ts:18`) so it validates,
-    but `/board/:slug`'s handler passes it to nothing -- `feed.byBoard` is
-    unconditionally `paginateByScore` (`feed.routes.ts:79-91`,
-    `feed.service.ts:135-148`). Consequence, which is real and is recorded as
-    part of this task's change point: under a board scope the depth pass
-    (`limit=18, sort=latest`) returns a PREFIX of the breadth pass
-    (`limit=40, sort=recommended`) rather than a differently-ordered slice,
-    so a niche account's prompt carries less distinct feed than a global
-    account's. It is forwarded anyway so that the day the board route honours
-    `sort`, both runtimes get the intended slice without a second edit.
-    """
-    if scope == GLOBAL_READ_SCOPE:
-        return resources.feed_global(limit=limit, sort=sort)
-    return resources.feed_board(scope, limit=limit, sort=sort)
-
-
-# ── world context: what `swil.sh login` used to write to disk ─────────────
+# ── world context: now-context, follow-topics feed, news digest ───────────
 #
-# `swil.sh login` produced three artifacts and `auto-run.sh` read them back:
-# `context/now.md` (date + platform activity + news), `context/news_today.md`
-# (the shared news cache, inlined into the first), and one
-# `context/feed_for_<username>.md` per account (the follow-topics search
-# feed). Nothing in this package calls `swil.sh`, and `cycle-one.sh:45`
-# dispatches straight to `swil-agent cycle`, so from the 2026-08-19 cutover
-# until this code existed the runtime READ two of those files and WROTE none
-# -- every account was handed a `now.md` frozen at 2026-08-19 05:30, whose
-# header told all 23 of them that the date was the 19th and that they were
-# `qiusai`.
+# Three design rules shape what follows:
 #
-# Four rulings shape what follows, and none of them is this module's to
-# revisit:
-#
-#   R25 -- port the renderers; do NOT shell out to `swil.sh login`. That
-#     command also authenticates and writes `.agent-state/active`, which the
-#     concurrency model deliberately avoids (parallel rounds pin an account
-#     with `SWIL_AGENT`), and it takes a POSITIONAL personality path rather
-#     than honouring `SWIL_AGENT` at all.
-#   R26 -- render the now-context IN MEMORY and write no file. One shared
-#     file carrying a per-account line is a race under five-way parallelism,
-#     and the frozen file naming exactly one account is what that race looks
-#     like. `context/now.md` stays a Bash-only artifact, which keeps the
-#     `SWIL_RUNTIME=bash` rollback working unchanged.
-#   R27 -- `news_today.md` keeps its file and Python shells out to
-#     `news-fetch.sh`. That script is a pure cache-filler (no auth, no
-#     session state, idempotent, owns its own staleness and lock), shared by
-#     23 readers; reimplementing it here would be a second writer racing the
-#     first.
-#   R28 -- the rendered TEXT stays byte-comparable to what Bash produced.
-#     The drift experiment is in flight: a prompt whose wording moved on
-#     2026-08-20 would put a second change point on top of the runtime
-#     cutover and the two would be inseparable in the data. Only the
-#     freshness of the content may change. `test_world_context.py` pins the
-#     now-context against `swil.sh`'s own heredoc, read out of the script at
-#     test time.
+#   - The renderers are in-process; nothing here shells out to a login command
+#     or writes `context/now.md`. One shared file carrying a per-account line
+#     races under five-way parallel rounds, so the now-context is rendered in
+#     memory per account.
+#   - `news_today.md` keeps its file and Python shells out to `news-fetch.sh`.
+#     That script is a pure cache-filler (no auth, idempotent, owns its own
+#     staleness and lock) shared by every account; reimplementing it here
+#     would add a second writer.
+#   - The rendered wording is pinned by literal-text tests; only the freshness
+#     of the content changes between rounds.
 
 WORLD_CONTEXT_UNAVAILABLE: Final = "（无法获取）"
-"""Bash's placeholder for both the platform-activity block and the news
-digest (`swil.sh:352`, `swil.sh:361-362`). Placeholder-class, not
-vanish-class: the section heading stays and says the read failed."""
+"""Placeholder for both the platform-activity block and the news digest.
+Placeholder-class, not vanish-class: the section heading stays and says the
+read failed."""
 
 NEWS_FETCH_SCRIPT: Final = "news-fetch.sh"
 NEWS_CACHE_FILENAME: Final = "news_today.md"
@@ -558,19 +369,11 @@ RELATIONSHIP against the script read at test time, not this literal.
 _NOW_FEED_TEXT_CAP: Final = 120
 _TOPIC_FEED_TEXT_CAP: Final = 200
 
-_NOW_GLOBAL_LIMIT: Final = 18
 _NOW_BOARD_LIMIT: Final = 12
-_NOW_CROSS_BOARD_LIMIT: Final = 3
 _NOW_FALLBACK_LIMIT: Final = 15
+# Equal to `_NOW_BOARD_LIMIT` by coincidence: two independent numbers on two
+# different endpoints.
 _TOPIC_SEARCH_LIMIT: Final = 12
-"""`swil.sh:392`'s `&limit=12`.
-
-Equal to `_NOW_BOARD_LIMIT` by coincidence, not by design -- they are two
-independent numbers Bash happens to spell the same, on two different
-endpoints. Swapping the two names is therefore an equivalent mutant today
-and would stop being one the day either script value moves, which is exactly
-why they are two constants rather than one shared `_TWELVE`.
-"""
 
 NOW_CONTEXT_TEMPLATE: Final = """\
 # 当前时间上下文
@@ -594,7 +397,7 @@ NOW_CONTEXT_TEMPLATE: Final = """\
   或完全忽略——取决于它是否落在你关心的领域里。引用时按你自己的视角解读，
   不要复述标题，也不要为了蹭热点去谈一个你的人设根本不关心的话题。
 """
-"""`swil.sh:355-379`'s heredoc, transcribed once.
+"""The now-context prompt text.
 
 The `{{topic}}` / `{{date}}` in the swil-news URL are LITERAL braces that
 survive `str.format` -- they are part of the sentence the model reads, not
@@ -608,14 +411,14 @@ _FEED_DATE_FORMAT: Final = "%Y-%m-%d %H:%M"
 
 
 def format_now_feed(items: list[dict[str, Any]]) -> str:
-    """`_fmt_posts` (`swil.sh:318`), exactly.
+    """The now-context's platform-activity rows.
 
     A DIFFERENT line shape and a different cap from `format_global_feed`
     above, which renders the act path's own feed block: this one is keyed on
     the author's DISPLAY name (not `@username`), carries no like/comment
     counts, uses a full-width colon, and truncates at 120 rather than 220.
     The two blocks sit in the same prompt, so collapsing them onto one
-    formatter would silently rewrite one of them -- which R28 forbids.
+    formatter would silently rewrite one of them -- which would change the prompt wording.
     """
     return "\n".join(
         f"- [{item.get('id', '')}] {_author(item).get('displayName', '')}"
@@ -625,10 +428,7 @@ def format_now_feed(items: list[dict[str, Any]]) -> str:
 
 
 def format_topic_feed(items: list[dict[str, Any]]) -> str:
-    """One `## #<topic>` block's rows -- `swil.sh:393`'s jq.
-
-    Cap is 200 here, not the now-feed's 120. Both numbers are Bash's.
-    """
+    """One `## #<topic>` block's rows. Cap is 200 here, not the now-feed's 120."""
     return "\n".join(
         f"- [{item.get('id', '')}] @{_author(item).get('username', '')}"
         f"（{_author(item).get('displayName', '')}）: "
@@ -637,125 +437,42 @@ def format_topic_feed(items: list[dict[str, Any]]) -> str:
     )
 
 
-def _feed_or_blank(items: Callable[[], list[dict[str, Any]]]) -> str:
-    """One login-time feed read, rendered, degrading to `""` on any API
-    failure.
-
-    Bash reads these as `curl -s ... | _fmt_posts`, where `_fmt_posts` ends
-    in `|| true`: a failed request produces no line, never an aborted login.
-    """
+def _feed_or_blank(items: Callable[[], list[dict[str, Any]]], *, era_start: datetime | None) -> str:
+    """One login-time feed read, era-filtered and rendered; `""` on any API
+    failure, so a failed read costs its lines and never the login."""
     try:
-        return format_now_feed(items())
+        return format_now_feed(_within_era(items(), era_start))
     except ApiError:
         return ""
 
 
-def _cross_board(resources: Resources, home: str, *, now: datetime) -> str:
-    """The small window onto ONE other board (`swil.sh:336-347`).
+def platform_activity(
+    resources: Resources,
+    persona: Persona,
+    *,
+    now: datetime,
+    era_start: datetime | None = None,
+) -> str:
+    """The 平台最新动态 block of the now-context.
 
-    The pick rotates by day-of-year so the window is not itself a constant --
-    the whole reason it exists is that a flat `/feed/global` read, identical
-    for every account, produced feed-wide topic monoculture (swil.sh's own
-    comment at :303-315, and the 2026-07-25 round where 10 of 13 dream
-    rejections breached the topic aspect).
-
-    Candidate order is the API's, NOT `sorted()`. That is the opposite of
-    `choose_read_scope`'s deliberate sort, and for a different reason: that
-    function has to give one SEED the same board across processes, while this
-    one has to give one DAY the same board as Bash would have. jq's
-    `[.data.items[].slug | select(. != $own)]` preserves the response array's
-    order, and `dict` preserves insertion order, so `get_boards()` already
-    carries it.
-
-    Fails to the empty string on any error -- Bash's `|| true` on the boards
-    call means a boards outage costs the cross-board window and nothing else.
+    The home board at `limit=12`; when that yields nothing (empty, all
+    pre-era, failed, or no board), the global feed at `limit=15`; when that
+    is blank too, the placeholder. `now` is unused by the reads and kept for
+    the caller's single-clock contract.
     """
-    try:
-        slugs = field_study_board_slugs(resources.get_boards(), home=home)
-    except ApiError:
-        return ""
-    if not slugs:
-        return ""
-    other = slugs[int(now.strftime("%j")) % len(slugs)]
-    posts = _feed_or_blank(
-        lambda: resources.feed_board(other, limit=_NOW_CROSS_BOARD_LIMIT, sort="latest")
-    )
-    if not posts:
-        return ""
-    return f"（其他板块 · {other}）\n{posts}"
-
-
-def platform_activity(resources: Resources, persona: Persona, *, now: datetime) -> str:
-    """The 平台最新动态 block of the now-context (`swil.sh:328-352`).
-
-    Three arms, in Bash's order and with Bash's limits:
-
-      * `Read: global` -- one global read at `limit=18`. The bullet is
-        compared case-insensitively because `swil.sh:329` lowercases it.
-      * a `Board` bullet -- the home board at `limit=12`, plus the rotating
-        cross-board window at `limit=3`.
-      * anything blank -- a global read at `limit=15`.
-
-    The third arm is a FALLBACK, not an else: Bash re-checks the accumulated
-    string and takes it whenever the chosen arm produced nothing, so an
-    account whose board is empty still sees a platform. The three limits are
-    deliberately distinct (18 / 12+3 / 15); collapsing any two would change
-    how much feed a whole arm of the roster reads.
-
-    This is NOT the same read as `choose_read_scope`/`read_feed` further up
-    the file. That pair is the act path's own input-diversification
-    experiment, driven by the `Read` bullet, rolled against an injected
-    `rng`, and recorded on `ActContext.board_read`. This one is the login
-    block, driven by `Board`, rolled against nothing, and it deliberately
-    consumes no randomness -- a draw here would desync the rhythm gate's own
-    draw for every account on the roster.
-    """
-    # Two inert-today normalisations, recorded with their expiry conditions
-    # (STANDING-CONSTRAINTS §7) because both are EQUIVALENT MUTANTS right now
-    # and a reader who deletes one would see a green suite:
-    #   * `.strip()` on `read` is redundant while `loader.get_field` strips
-    #     its own match. It expires the day any other `Persona` producer --
-    #     a fixture, a future roster loader, an API-sourced persona -- stops
-    #     doing that, at which point ` global ` would stop matching the
-    #     sentinel and the account would silently fall to the board arm.
-    #   * NO `.casefold()` on `home`, and adding one is likewise inert while
-    #     every roster slug is lowercase. It stops being inert the day
-    #     someone writes `Board: AI-Governance`: Bash sends the bullet to the
-    #     URL verbatim (`swil.sh:334`), so casefolding here would request a
-    #     DIFFERENT board than the rollback path does.
-    read = (persona.read or "").strip().casefold()
-    home = (persona.board or "").strip()
+    since = _since(era_start)
+    home = persona.board.strip()
 
     activity = ""
-    if read == GLOBAL_READ_SCOPE:
+    if home:
         activity = _feed_or_blank(
-            lambda: resources.feed_global(limit=_NOW_GLOBAL_LIMIT, sort="latest")
+            lambda: resources.feed_board(home, limit=_NOW_BOARD_LIMIT, sort="latest", since=since),
+            era_start=era_start,
         )
-    # `elif`, not a second `if`. The two arms are EXCLUSIVE and 12 of the 23
-    # accounts carry both bullets, so an `if` here would give every one of
-    # them the global-18 read, throw the result away, and go board-scoped --
-    # inverting the experiment control `swil.sh:322-327` spends six lines
-    # defending, at the cost of one wasted request per round. Pinned by
-    # `test_a_global_read_account_that_also_has_a_board_never_reads_the_board`.
-    elif home:
-        activity = _feed_or_blank(
-            lambda: resources.feed_board(home, limit=_NOW_BOARD_LIMIT, sort="latest")
-        )
-        cross = _cross_board(resources, home, now=now)
-        if cross:
-            activity = f"{activity}\n{cross}"
-
-    # `.strip()` rather than a bare truth test, matching Bash's
-    # `${RECENT_POSTS//[[:space:]]/}`. Dropping it is an EQUIVALENT mutant
-    # TODAY and is kept anyway: every string `format_now_feed` can return is
-    # either empty or starts with `- [`, so "non-empty" and "not
-    # whitespace-only" cannot currently differ. That equivalence expires the
-    # moment either formatter can emit a blank-ish line -- a server field
-    # rendered raw, a heading with no rows -- at which point the bare test
-    # would let a visually empty block past and suppress the placeholder.
     if not activity.strip():
         activity = _feed_or_blank(
-            lambda: resources.feed_global(limit=_NOW_FALLBACK_LIMIT, sort="latest")
+            lambda: resources.feed_global(limit=_NOW_FALLBACK_LIMIT, sort="latest", since=since),
+            era_start=era_start,
         )
     return activity if activity.strip() else WORLD_CONTEXT_UNAVAILABLE
 
@@ -763,7 +480,7 @@ def platform_activity(resources: Resources, persona: Persona, *, now: datetime) 
 def read_news_digest(
     agent_root: Path, runner: Runner, *, timeout: float = NEWS_FETCH_TIMEOUT
 ) -> str:
-    """Refresh the shared news cache, then read it (R27, `swil.sh:359-362`).
+    """Refresh the shared news cache, then read it (R27).
 
     `news-fetch.sh` owns the staleness check, the inter-process lock, and the
     fallback to the previous day's digest, so this is a two-line wrapper and
@@ -781,9 +498,8 @@ def read_news_digest(
         same thing (`set -uo pipefail`, no `-e`: "a news outage must never
         abort a round").
 
-    Trailing newlines are stripped because Bash reads the file through
-    `$(cat ...)`, and command substitution strips them. A cache that is empty
-    or nothing but whitespace reads as unavailable, matching `swil.sh:362`.
+    Trailing newlines are stripped. A cache that is empty or nothing but
+    whitespace reads as unavailable.
     """
     script = agent_root / "scripts" / NEWS_FETCH_SCRIPT
     # EQUIVALENT MUTANT today (§7): production always has this file, so
@@ -814,13 +530,9 @@ def read_news_digest(
     # every persona prompt, and "unavailable" is the honest degradation.
     except (OSError, UnicodeDecodeError):
         return WORLD_CONTEXT_UNAVAILABLE
-    # `rstrip("\n")`, deliberately not `.strip()`. Bash reads this file
-    # through `$(cat ...)`, and command substitution removes TRAILING
-    # newlines and nothing else -- a leading blank line or an indented first
-    # line survives into `now.md`. Swapping in `.strip()` is an EQUIVALENT
-    # MUTANT today only because `news-fetch.sh:119` writes a non-blank,
-    # non-indented first line; it becomes a live R28 divergence on the news
-    # block the moment that script grows a blank or indented header.
+    # `rstrip("\n")`, deliberately not `.strip()`: only TRAILING newlines go,
+    # so a leading blank line or an indented first line survives into the
+    # prompt.
     digest = digest.rstrip("\n")
     return digest if digest.strip() else WORLD_CONTEXT_UNAVAILABLE
 
@@ -840,54 +552,37 @@ def render_now_context(*, username: str, now: datetime, activity: str, news: str
     )
 
 
-def render_follow_topics_feed(resources: Resources, persona: Persona, *, now: datetime) -> str:
-    """`context/feed_for_<username>.md`'s content, in memory
-    (`swil.sh:382-402`).
+def render_follow_topics_feed(
+    resources: Resources,
+    persona: Persona,
+    *,
+    now: datetime,
+    era_start: datetime | None = None,
+) -> str:
+    """The 关联话题动态 feed: one `/posts/search` per `persona.topics` entry, in
+    the persona's declared order, `limit=12`, era-filtered.
 
-    One `/posts/search` per `Follow Topics` entry, `limit=12`, in the
-    persona's own declared order; a topic that returned nothing contributes
-    no heading at all, and a topic whose search FAILED is likewise skipped
-    (`curl -sf ... || true`).
-
-    DECLARED order, never `sorted()`. Bash iterates the bullet as written
-    (`for FT_TOPIC in "${FT_TOPICS[@]}"`, `swil.sh:391`) and no roster bullet
-    is alphabetical -- `zenith` reads `AI, philosophy, language,
-    consciousness, perception, time` -- so sorting here would reorder every
-    `## #<topic>` block in the prompt relative to the Bash rollback path.
-    That is an R28 break, not a tidy-up.
-
-    Each `topic` string is used TWICE and identically: as the search query
-    and as the heading. That is why `loader._split_topics` has to reproduce
-    Bash's whitespace collapse rather than merely trimming -- see its
-    docstring; `AI 行业` and `AI行业` are two different queries and two
-    different headings.
-
-    An account with no `Follow Topics` bullet gets the empty string, not a
-    dated header with nothing under it. Bash guarded the whole block on that
-    bullet (`swil.sh:387`) and so never wrote the file, and `""` is load-
-    bearing downstream: `render_planner_prompt` drops the 平台时间线 heading
-    entirely when the feed context is empty.
+    A topic that returned nothing (or failed) contributes no heading. A
+    persona with no topics gets `""`, which makes the planner drop the block.
     """
-    if not persona.follow_topics:
+    if not persona.topics:
         return ""
 
+    since = _since(era_start)
     text = f"# 关联话题动态 ({now.strftime(_FEED_DATE_FORMAT)})\n\n"
-    for topic in persona.follow_topics:
+    for topic in persona.topics:
         try:
-            rows = format_topic_feed(resources.search_posts(topic, limit=_TOPIC_SEARCH_LIMIT))
+            found = resources.search_posts(topic, limit=_TOPIC_SEARCH_LIMIT, since=since)
         except ApiError:
             continue
+        rows = format_topic_feed(_within_era(found, era_start))
         if rows:
             text += f"## #{topic}\n{rows}\n\n"
     return text
 
 
 def overlay_probe_posts(ctx: ActContext, items: list[dict[str, Any]]) -> ActContext:
-    """Prepend probe-board posts onto the already-assembled feed strings.
-
-    Does not change `board_read` / `home_board` / `cross_read` — those remain
-    the field-study record of what the account would have read.
-    """
+    """Prepend probe-board posts onto the already-assembled feed strings."""
     if not items:
         return ctx
     block = format_global_feed(items)
@@ -915,40 +610,19 @@ def build_context(
     memory_text: str,
     now: datetime,
     budget: int,
-    rng: random.Random,
     context_now: str = "(no context file)",
     feed_context: str = "",
-    cross_read_prob: float = DEFAULT_CROSS_READ_PROB,
+    era_start: datetime | None = None,
 ) -> ActContext:
-    """Assemble every prompt block, degrading per-block exactly as Bash does.
+    """Assemble every prompt block, degrading per block.
 
-    `context_now` and `feed_context` are passed IN rather than built here.
-    They used to be FILES written by `swil.sh login` (contract 01 §2b, §2c)
-    and read by the caller; as of 2026-08-20 the caller RENDERS them, through
-    `render_now_context` / `render_follow_topics_feed` above -- `swil.sh
-    login` had stopped running at the Stage-5 cutover and the files had been
-    frozen since 2026-08-19 05:30. Either way this function never touches the
-    filesystem, and the seam is unchanged: both arrive as strings.
-
-    They are deliberately NOT rendered inside this function. Doing so would
-    put two more feed reads and one search per topic behind the same call
-    that `rng` is threaded into, and the now-context's cross-board pick is
-    date-driven while `choose_read_scope`'s is rng-driven -- mixing them would
-    make one round's randomness depend on how many boards exist.
-
-    `rng` is REQUIRED and injected (Phase B task 3): both feed reads are
-    routed through the scope `choose_read_scope` rolls with it, and a default
-    here would be a module-level source of randomness by another name. It is
-    the same generator the rhythm gate draws from one step later, so one seed
-    reproduces a whole round.
-
-    This function still WRITES NOTHING. The read scope it chose is recorded
-    on the returned `ActContext` (`board_read` / `cross_read` /
-    `board_items`); the lab event that publishes it is emitted by
-    `act.round.context_step`, which is where the round's `dry_run` flag lives
-    and where a shadow round can be kept from filing rows.
+    `context_now` and `feed_context` arrive already rendered (the caller
+    builds them with `render_now_context` / `render_follow_topics_feed`).
+    Both feed passes read the global feed; with `era_start` set, both ask for
+    `since` and drop older items, so thread targets come only from this era.
+    This function writes nothing.
     """
-    board = choose_read_scope(resources, persona, rng, cross_read_prob=cross_read_prob)
+    since = _since(era_start)
     today = now.strftime("%Y-%m-%d")
     ctx = ActContext(
         context_now=context_now,
@@ -960,15 +634,13 @@ def build_context(
         last_post=last_post_line(memory_text),
         action_budget=budget,
         backend_action_constraint="",
-        board_read=board.scope,
-        home_board=board.home,
-        cross_read=board.cross,
     )
 
     recommended: list[dict[str, Any]] = []
     try:
-        recommended = read_feed(resources, board.scope, limit=40, sort="recommended")
-        ctx.board_items = len(recommended)
+        recommended = _within_era(
+            resources.feed_global(limit=40, sort="recommended", since=since), era_start
+        )
         ctx.global_feed = format_global_feed(recommended[:25]) or "(could not fetch feed)"
     except ApiError:
         pass  # placeholder-class: the default already reads "(could not fetch feed)"
@@ -976,7 +648,9 @@ def build_context(
     # vanish-class: on ApiError, timeline_feed stays "", so the whole section disappears.
     timeline: list[dict[str, Any]] = []
     with contextlib.suppress(ApiError):
-        timeline = read_feed(resources, board.scope, limit=18, sort="latest")
+        timeline = _within_era(
+            resources.feed_global(limit=18, sort="latest", since=since), era_start
+        )
         ctx.timeline_feed = format_timeline_feed(timeline)
 
     with contextlib.suppress(ApiError):
@@ -1009,13 +683,12 @@ def build_context(
         conversations = resources.conversations(limit=6)
         ctx.dm_context = format_conversations(conversations)
 
-    # Spec §8: the planner sees a retrieved slice, not the tail of the file.
-    # posts_today above is already a full-file count — do not recompute it
-    # from this block.
+    # The planner sees a retrieved slice, not the tail of the file.
+    # posts_today above is already a full-file count.
     ctx.recent_memory = retrieve_memory(
         memory_text,
         today=today,
-        board=_board_needle(persona, board.scope),
+        board=persona.board.strip(),
         counterparties=_counterparties(recommended[:25], timeline, conversations),
     )
 

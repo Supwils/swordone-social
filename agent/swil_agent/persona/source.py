@@ -13,11 +13,20 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Sequence
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
 from swil_agent.models import Persona
+from swil_agent.persona.format import (
+    MAX_FILE_BYTES,
+    PersonaFormatError,
+    clamp_recent,
+    parse_persona,
+    render_persona,
+)
 from swil_agent.persona.loader import load_persona, resolve_agent_dir
 
 ARCHIVE_HEADER = "---\n# 旧版 personality（归档于 {stamp}）\n---\n"
@@ -27,18 +36,10 @@ _STAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 def _atomic_write(path: Path, content: str) -> None:
     """Write `content` to `path` without ever truncating a live file in place.
 
-    `dream.sh` writes both the archive and the new `personality.md` via a
-    temp-file-then-`mv`, which is atomic. Plain `Path.write_text()` opens the
-    target with truncation *before* writing a single byte, so a process that
-    dies mid-write leaves a corrupted (empty or partial) file behind -- and
-    for these files there is no other copy to restore from. This reproduces
-    the Bash behaviour: write to a fresh sibling file in the SAME directory
-    (a rename across filesystems would not be atomic), then swap it onto
-    `path` with `os.replace`, which is atomic on POSIX and overwrites an
-    existing target in one step. `path` itself is never opened for writing,
-    so it cannot end up truncated. If anything raises before the swap, the
-    temp file is removed so a crash cannot leave `.tmp` litter beside a live
-    persona.
+    Writes a sibling temp file in the same directory, then `os.replace`s it
+    onto `path` (atomic on POSIX). `path` is never opened for writing, so a
+    crash mid-write cannot leave it empty or partial; the temp file is removed
+    if anything raises before the swap.
     """
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     os.close(fd)
@@ -53,7 +54,7 @@ def _atomic_write(path: Path, content: str) -> None:
 
 class PersonaSource(Protocol):
     def load(self, name: str) -> Persona: ...
-    def archive_and_write(self, name: str, candidate: str, when: datetime) -> None: ...
+    def write_recent(self, name: str, recent: Sequence[str], when: datetime) -> str: ...
     def read_memory(self, name: str) -> str: ...
     def append_memory(self, name: str, line: str) -> None: ...
 
@@ -68,20 +69,34 @@ class GitPersonaSource:
     def load(self, name: str) -> Persona:
         return load_persona(self._dir(name))
 
-    def archive_and_write(self, name: str, candidate: str, when: datetime) -> None:
+    def write_recent(self, name: str, recent: Sequence[str], when: datetime) -> str:
+        """Replace the persona's 最近 list and return the new file text.
+
+        Only 最近 changes: frontmatter and card are re-rendered from the file as
+        it is now. The old file is prepended to `personality.archive.md` first,
+        so a failure there leaves `personality.md` untouched. Raises
+        `PersonaFormatError` (writing nothing) when the current file is not a
+        valid persona or the result would exceed the file size limit.
+        """
         directory = self._dir(name)
         personality = directory / "personality.md"
         archive = directory / "personality.archive.md"
 
-        old = personality.read_text(encoding="utf-8")
+        current = load_persona(directory)
+        doc = replace(parse_persona(current.raw), recent=clamp_recent(recent))
+        new_text = render_persona(doc)
+        size = len(new_text.encode("utf-8"))
+        if size > MAX_FILE_BYTES:
+            raise PersonaFormatError(
+                f"{personality}: new file would be {size} bytes (max {MAX_FILE_BYTES})"
+            )
+
         header = ARCHIVE_HEADER.format(stamp=when.strftime(_STAMP_FORMAT))
         previous = archive.read_text(encoding="utf-8") if archive.is_file() else ""
-        # Prepend: newest first, so the archive reads reverse-chronologically.
-        # Archive the OLD content before personality.md is ever touched, so a
-        # failure here leaves personality.md completely untouched too.
-        _atomic_write(archive, header + old + "\n" + previous)
-
-        _atomic_write(personality, candidate)
+        # Newest first, so the archive reads reverse-chronologically.
+        _atomic_write(archive, header + current.raw + "\n" + previous)
+        _atomic_write(personality, new_text)
+        return new_text
 
     def read_memory(self, name: str) -> str:
         path = self._dir(name) / "memory.md"

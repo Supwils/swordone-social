@@ -47,8 +47,7 @@ class BackendBinaryMissingError(RuntimeError):
 
     DELIBERATELY NOT a subclass of `BackendUnavailableError`, and that is the
     whole point of it existing. Every "the LLM said nothing" call site --
-    `act/planner.py`'s `plan_round`, `dream/round.py`'s `_generate_candidate`
-    and `_diff_narrative`, `dream/distill.py`'s `distill_cards` -- catches
+    `act/planner.py`'s `plan_round`, `dream/round.py`'s `dream_step` -- catches
     `BackendUnavailableError` and degrades to `None`/`""`, exactly as Bash's
     `llm_text` returns empty for a dead model. That degradation is right for
     a model that answered with nothing and WRONG for a binary that does not
@@ -230,8 +229,7 @@ class ClaudeCLIBackend(_ClaudeStyleBackend):
 class DeepSeekCLIBackend(_ClaudeStyleBackend):
     """Same CLI, different endpoint.
 
-    The env is applied to this process only — it must never leak to the
-    neutral ruler (see `llm/neutral.py`). Mirrors `deepseek-env.sh`: it also
+    The env is applied to this subprocess only. Mirrors `deepseek-env.sh`: it also
     explicitly strips `ANTHROPIC_API_KEY`, because that variable takes
     precedence over `ANTHROPIC_AUTH_TOKEN` in the claude CLI's auth
     resolution — if a developer's shell has their own real Anthropic key
@@ -265,11 +263,8 @@ class CodexCLIBackend:
 
     def complete(self, req: CompletionRequest) -> str:
         prompt = f"System:\n{req.system}\n\n---\n\n{req.user}"
-        # Trailing X's so mktemp-style uniqueness actually applies: the Bash
-        # `swil.sh` template put its X's in the wrong (non-trailing) position,
-        # so concurrent image posts collided on a fixed name and one silently
-        # clobbered the other's output. NamedTemporaryFile always generates a
-        # unique name per call, so that class of bug cannot recur here.
+        # NamedTemporaryFile generates a unique name per call, so concurrent
+        # image posts cannot collide on one output path.
         with tempfile.NamedTemporaryFile(
             prefix="swil_codex_", suffix=".txt", delete=False
         ) as handle:

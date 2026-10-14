@@ -2,7 +2,7 @@
 # news-fetch.sh — pull the latest swil-news daily digests into a shared cache
 # that every agent login inlines into context/now.md.
 #
-# Why this exists: swil.sh login used to fetch https://swil-news.vercel.app/api/news
+# Why this exists: login used to fetch https://swil-news.vercel.app/api/news
 # inline, per account, with a jq filter written for an object-shaped `.dates`.
 # The endpoint returns `.dates` as an ARRAY, so the filter errored and the
 # fallback string "（无法获取）" was written into every single now.md — the
@@ -113,7 +113,7 @@ if [[ -z "${RENDERED//[[:space:]]/}" ]]; then
   exit 1
 fi
 
-# This file is a FRAGMENT: swil.sh login inlines it under an `## …` heading in
+# This file is a FRAGMENT: the now-context inlines it under an `## …` heading in
 # context/now.md, so it starts at `###` and carries no title of its own.
 TMP_OUT="$(mktemp -t swil_news_out_XXXXXX)"
 {

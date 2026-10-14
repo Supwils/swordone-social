@@ -36,9 +36,6 @@ from swil_agent.locks import (
 
 _NOW = 1_700_000_000.0
 
-# `agent/scripts/` -- the frozen Bash runtime, read-only, source of truth.
-_SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
-
 _INSERT = (
     "INSERT INTO run_leases "
     "(tenant, agent, kind, run_id, pid, acquired_at, heartbeat_at) "
@@ -191,22 +188,13 @@ def test_the_ttl_matches_the_bash_staleness_window() -> None:
     assert float(STALE_AFTER_SECONDS) == LEASE_TTL_SECONDS
 
 
-def test_the_lock_path_matches_what_auto_run_sh_computes(tmp_path: Path) -> None:
+def test_the_act_lock_file_is_named_after_the_persona_directory(tmp_path: Path) -> None:
     """`agent_dir_name` is the persona DIRECTORY name, not the username.
 
-    auto-run.sh:407 derives the lock name with `basename "$agent_dir"` and
-    builds the path from it at :408. Folder name and registered username
-    diverge for several accounts on this roster, and a lease built from the
-    username would compute a different lock path than the Bash round it is
-    meant to exclude -- with every other test in this file still green,
-    because both runtimes would be locking files nobody else looks at.
-    Pinned against the script's own text so the contract cannot drift on
-    either side.
+    Folder name and registered username can differ, and the round driver's
+    stale-lock sweep looks for `.agent-state/lock_<dir name>`; a lease built
+    from the username would hold a lock file nobody else looks at.
     """
-    source = (_SCRIPTS / "auto-run.sh").read_text(encoding="utf-8")
-    assert 'agent_name="$(basename "$agent_dir")"' in source
-    assert 'lock_file="$ROOT_DIR/.agent-state/lock_${agent_name}"' in source
-
     persona_dir = tmp_path / "agents" / "zenith"
     persona_dir.mkdir(parents=True)
     bash_lock = tmp_path / ".agent-state" / f"lock_{persona_dir.name}"
@@ -217,16 +205,9 @@ def test_the_lock_path_matches_what_auto_run_sh_computes(tmp_path: Path) -> None
     assert act_lock_path(tmp_path, persona_dir.name) == bash_lock
 
 
-def test_the_dream_lock_path_matches_what_dream_sh_computes(tmp_path: Path) -> None:
-    """Same contract on the dream side: dream.sh:37 sets
-    `STATE_DIR="$ROOT_DIR/.agent-state"` and :460 builds
-    `dream_lock_${name}` from the name `_find_dir` resolved to a directory
-    under `agents/` or `humans/`."""
-    source = (_SCRIPTS / "dream.sh").read_text(encoding="utf-8")
-    assert 'STATE_DIR="$ROOT_DIR/.agent-state"' in source
-    assert 'lock_file="$STATE_DIR/dream_lock_${name}"' in source
-
-    persona_dir = tmp_path / "humans" / "mangniu"
+def test_the_dream_lock_file_is_named_after_the_persona_directory(tmp_path: Path) -> None:
+    """Same contract on the dream side: `.agent-state/dream_lock_<dir name>`."""
+    persona_dir = tmp_path / "agents" / "mangniu"
     persona_dir.mkdir(parents=True)
     bash_lock = tmp_path / ".agent-state" / f"dream_lock_{persona_dir.name}"
 

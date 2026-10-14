@@ -9,16 +9,14 @@ be computed from the slice.
 
 from __future__ import annotations
 
-import random
 from datetime import datetime
-from pathlib import Path
 
 from swil_agent.act.context import build_context, posts_today
 from swil_agent.act.memory import retrieve_memory
 from swil_agent.act.planner import render_planner_prompt
 from swil_agent.models import ActContext, Persona
 
-from ._runners import FakeResources
+from ._runners import FakeResources, make_persona
 
 TODAY = "2026-08-21"
 NOW = datetime(2026, 8, 21, 10, 0, 0)
@@ -75,8 +73,8 @@ def _retrieve(
     )
 
 
-def _persona(*, board: str | None = None) -> Persona:
-    return Persona(username="zenith", directory=Path("/tmp/zenith"), backend="claude", board=board)
+def _persona(*, board: str = "") -> Persona:
+    return make_persona(board=board)
 
 
 # ── retrieve_memory (spec §8) ───────────────────────────────────────────────
@@ -185,7 +183,6 @@ def test_act_context_does_not_carry_a_200_line_memory_file() -> None:
         memory_text=memory,
         now=NOW,
         budget=5,
-        rng=random.Random(0),
     )
     assert len(ctx.recent_memory.splitlines()) <= LIMIT
     assert len(memory.splitlines()) == 200
@@ -213,7 +210,6 @@ def test_a_feed_author_mention_is_preferentially_kept_in_act_context() -> None:
         memory_text=memory,
         now=NOW,
         budget=5,
-        rng=random.Random(0),
     )
     assert f"@{COUNTERPARTY}" in ctx.recent_memory
     for marker in _recency_markers():
@@ -239,7 +235,6 @@ def test_a_dm_partner_mention_is_kept_in_act_context() -> None:
         memory_text=memory,
         now=NOW,
         budget=5,
-        rng=random.Random(0),
     )
     assert f"@{COUNTERPARTY}" in ctx.recent_memory
 
@@ -257,7 +252,6 @@ def test_act_context_posts_today_still_sees_a_post_retrieval_dropped() -> None:
         memory_text=memory,
         now=NOW,
         budget=5,
-        rng=random.Random(0),
     )
     assert ctx.today_post_count == 17
     assert "DROPPED-TODAY-POST" not in ctx.recent_memory

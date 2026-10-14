@@ -2,7 +2,7 @@
 
 Every failure surfaces as EmbedderUnavailable. The FAIL-OPEN decision is the
 CALLER's: `dream/gate.py` catches this and skips the drift check with a WARN,
-exactly as dream.sh:804 does. This module never decides to fail open on its
+so a dream never blocks on the embedder. This module never decides to fail open on its
 own, because a silent 1.0 similarity is indistinguishable from a real one --
 that conflation is what made the echo-variance bug invisible for months.
 """

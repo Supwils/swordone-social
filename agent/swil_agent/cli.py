@@ -1,38 +1,29 @@
 """CLI entrypoints, argument-compatible with the Bash scripts where they overlap.
 
-Exit codes are deliberately the Bash ones (66 = no such account, 75 = no
-action ran) so `cycle-one.sh` and the heartbeat can invoke either runtime
-during the canary without knowing which they got. `ActOutcome`/`DreamResult`
-are the internal representation; the process exit code is the external
-contract (task-13-brief.md).
+Exit codes: 66 = no such account, 75 = no action ran or a setup failure, so
+`cycle-one.sh` can branch on them. `ActOutcome`/`DreamResult` are the
+internal representation; the process exit code is the external contract.
 
 Mapping, by command:
 
   * `act`  -- `ActResult.grants_dream` (design spec §7.1) IS the exit-code
     decision: `True` (landed, partial, vetoed-empty, planner-empty -- every
     outcome except a dead backend or an unreachable platform) exits 0,
-    `False` exits 75. This is deliberate and NOT a byte-for-byte replay of
-    Bash's own rc=75, which also fires on a rhythm-vetoed or deliberately
-    empty plan (`auto-run.sh`'s own comment: "节律否决" is one of the
-    non-zero causes) -- that conflation is exactly the bug `grants_dream`
-    exists to fix (CLAUDE.md, "Empty plan counts as failure"). A caller that
-    branches on this exit code to decide whether to run `dream` next
-    (mirroring `cycle-one.sh`'s own `if auto-run.sh; then dream.sh; fi`)
-    gets the CORRECTED decision, which is the point of shipping the fix at
-    all.
+    `False` exits 75. A rhythm-vetoed or deliberately empty plan is NOT a
+    failure: conflating them is exactly the bug `grants_dream` exists to fix
+    (CLAUDE.md, "Empty plan counts as failure"). A caller that branches on
+    this exit code to decide whether to run `dream` next gets that decision.
   * `dream` -- `DreamResult.proceeded` is the exit-code decision:
     `False` (a cooldown SKIP -- the LLM was never even called) exits 75,
-    matching "no action ran"; `True` (the dream ran to a verdict, whether
-    accepted, structurally rejected, or drift-rejected) exits 0, matching
-    "something ran". `dream.sh` itself has no consumer of its own exit code
-    (`cycle-one.sh` calls it unconditionally, without an `if`), so this
-    mapping is this module's own decision, chosen to mirror `act`'s
-    "attempted vs never-attempted" shape rather than invent a third scheme.
+    matching "no action ran"; `True` (the dream ran, whether its list was
+    written or the reply was unusable) exits 0, matching
+    "something ran". This mirrors `act`'s "attempted vs never-attempted" shape
+    rather than inventing a third scheme.
   * Everything else -- ANY exception, not an enumerated list of them --
     also exits 75, via ONE broad guard wrapping composition-plus-run in each
     command (fix round 2, task-13-report.md). The invariant is "no setup
     failure may leave the 0/66/75 contract", not "these particular
-    exceptions": `cycle-one.sh` and the heartbeat branch on those three
+    exceptions": `cycle-one.sh` and the round driver branch on those three
     codes, and a raw traceback/exit 1 is a fourth code neither knows how to
     read. `_skip_for_exception` draws exactly one distinction inside that
     guard, because collapsing it away would be worse than the bug it fixes:
@@ -48,7 +39,7 @@ Mapping, by command:
       - Anything else is, by definition, NOT one of those -- a genuine
         programming error. Logged as `UNEXPECTED <ExceptionType>: <message>`
         (never disguised as a setup problem someone could fix by running
-        `create-api-key`) with its traceback at DEBUG, so it is recoverable
+        `swil-agent register`) with its traceback at DEBUG, so it is recoverable
         by whoever is looking without being the operator's primary output.
 
 This module is the ONLY composition root in the package: the one place
@@ -105,19 +96,17 @@ from swil_agent.analysis.intervention import (
     run_intervention,
 )
 from swil_agent.analysis.population_metric import (
+    ACCOUNTS_DIR,
     API_KEY_FILENAME,
-    COHORTS,
     find_account_with_api_key,
 )
 from swil_agent.analysis.population_metric import run_population_metric as run_metric
-from swil_agent.analysis.rule_check import run_rule_check
 from swil_agent.analysis.summary import local_today, run_summary
 from swil_agent.api.auth import ApiKeyAuth, PasswordAuth, resolve_auth
-from swil_agent.api.client import ApiClient
+from swil_agent.api.client import ApiClient, ApiError
 from swil_agent.api.resources import Resources
 from swil_agent.config import Settings, load_settings
 from swil_agent.dream.candidate import DreamState, FilesystemDreamState
-from swil_agent.dream.drift import pairwise_variance
 from swil_agent.dream.round import run_dream
 from swil_agent.embedder.client import EmbedderClient, EmbedderUnavailable
 from swil_agent.embedder.guard import EmbedderGuard
@@ -136,6 +125,7 @@ from swil_agent.llm.base import (
     BackendBinaryMissingError,
     BackendConfigurationError,
     BackendUnavailableError,
+    CompletionRequest,
     Runner,
     SubprocessRunner,
 )
@@ -148,7 +138,10 @@ from swil_agent.llm.selection import (
 )
 from swil_agent.locks import LockBusy
 from swil_agent.models import ActResult, DreamResult, Persona
+from swil_agent.persona.format import PersonaFormatError
+from swil_agent.persona.loader import load_persona
 from swil_agent.persona.source import GitPersonaSource, PersonaSource
+from swil_agent.register import RegisterError, register_account
 
 logger = logging.getLogger(__name__)
 
@@ -172,11 +165,9 @@ _HEARTBEAT_LABEL: Final = "com.swil.heartbeat"
 _HEALTH_TIMEOUT = 10.0
 
 _EMBEDDER_DOWN_AFTER_GUARD_UP = (
-    "embedder unreachable after guard up -- the drift gate is OFF for every "
-    "dream this invocation runs (embedder_url=%s); each will fail open with "
-    "its own quieter per-dream WARN. A live embedder, not a scattered WARN "
-    "trail, is what actually gates a round -- this is the 2026-08-13 "
-    "embedder-OOM incident's signature."
+    "embedder unreachable after guard up (embedder_url=%s) -- every dream "
+    "snapshot this invocation uploads will fail with its own per-dream WARN, "
+    "and the duplicate guard fails open."
 )
 
 
@@ -234,16 +225,9 @@ DREAM_LOG_FILENAME: Final = "dream.log"
 # round-level embedder-down ERROR, which `swil-agent dream` already writes to
 # `dream.log` and which must not change file just because the same probe ran
 # inside a cycle.
-# `swil_agent.analysis.*` is deliberately ABSENT, so both cycle-wired
-# samplers land in `auto-run.log`. Bash gives neither a home of its own --
-# `auto-run.sh:806` sends `behavior-snapshot.sh` to `/dev/null` outright, and
-# `cycle-one.sh:45` lets `rule-check.sh` write to whatever stdout the caller
-# had -- so this is a choice rather than a reproduction, and it goes with the
-# ACT log because that is what both measure: the behaviour snapshot embeds the
-# posts this round's act phase produced, and the rule check scores those same
-# posts against the ruleset that was in force while they were written. Putting
-# them in `dream.log` would file the act phase's measurements under the phase
-# that happens to run next.
+# `swil_agent.analysis.*` is deliberately ABSENT, so the cycle-wired samplers
+# land in `auto-run.log`: the behaviour snapshot embeds the posts this round's
+# act phase produced, so it belongs with the act log.
 _DREAM_LOG_SOURCES: Final[tuple[str, ...]] = (
     "swil_agent.dream",
     "swil_agent.embedder",
@@ -276,31 +260,20 @@ class _PhaseFilter(logging.Filter):
 
 def _attach_round_log(settings: Settings, filename: str) -> logging.Handler | None:
     """Mirror every `swil_agent` log record into `agent/logs/<filename>`, in
-    the Bash runtime's `_log` format.
+    the act/dream log format.
 
-    **The filename is PER COMMAND, and getting it wrong is silent.** The two
-    scripts write to two different files and always have:
-    `auto-run.sh:31-34` sets `LOG_FILE="$LOG_DIR/auto-run.log"`, while
-    `dream.sh:36-40` sets `LOG_FILE="$LOG_DIR/dream.log"` -- both live, both
-    written on the same day in the main checkout (auto-run.log 1.0MB,
-    dream.log 234KB). An earlier version of this function hardcoded
-    `auto-run.log` for BOTH commands (ruling R20), so Python dreams appended
-    dream verdicts into the act log while `dream.log` stayed empty: anyone
-    grepping `dream.log` for a Python round's verdict found nothing, and
-    anyone counting act lines in `auto-run.log` counted dream lines too.
-    Hence `ACT_LOG_FILENAME`/`DREAM_LOG_FILENAME` as named constants passed
-    explicitly, rather than a default this function could quietly apply to
-    the wrong caller.
+    **The filename is PER COMMAND, and getting it wrong is silent.** Act
+    records go to `auto-run.log` and dream records to `dream.log`
+    (`ACT_LOG_FILENAME`/`DREAM_LOG_FILENAME`, passed explicitly rather than
+    defaulted). Sending both to one file leaves the other empty: anyone
+    grepping `dream.log` for a round's verdict finds nothing, and anyone
+    counting act lines in `auto-run.log` counts dream lines too.
 
-    `_log` itself (auto-run.sh:41-45, byte-identical in dream.sh) is
-    `msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"`, echoed to stdout AND appended
-    to `$LOG_FILE`, with `LOG_DIR="$ROOT_DIR/logs"` and `ROOT_DIR` = `agent/`
-    (both scripts `mkdir -p` it). Same path, same timestamp format, same
-    append semantics, and the formatter carries NO level name -- so a Python
-    round's line is byte-comparable with the Bash one that a straggler
-    reconciliation or a post-run QA pass greps for. Without this, 17 computed
-    `ExecutionOutcome.log_line` values went nowhere and a Python round left
-    both files untouched, which reads exactly like a round that never ran.
+    Each line is `[YYYY-MM-DD HH:MM:SS] <message>`, echoed to stdout AND
+    appended to the file under `agent/logs/`, with NO level name, so a
+    straggler reconciliation or a post-run QA pass can grep for it. Without
+    this a round leaves both files untouched, which reads exactly like a
+    round that never ran.
 
     `basicConfig`'s stderr stream is untouched and keeps its
     `%(levelname)s %(message)s` shape. The one cosmetic difference from Bash
@@ -460,13 +433,11 @@ def _resources_for_key(
     else -- the shape `population-metric` needs.
 
     `POST /agents/population-metric` is a global route: picking an account
-    here is picking a CREDENTIAL, never a subject (`population-metric.sh:56-57`
-    says so, and `:53` computes a `USERNAME` it then never uses). So this
+    here is picking a CREDENTIAL, never a subject. So this
     deliberately does NOT go through `_resources_for`, which would need a
     `Persona` -- i.e. a parseable `personality.md` the call does not consult.
-    Reproducing that requirement would resurrect an accident of the script's
-    `set -euo pipefail`, where an account with a key but a broken personality
-    aborts the run (task-2-3-report.md §3.3).
+    Requiring one would make an account with a key but a broken personality
+    abort the run.
 
     There is no `PasswordAuth` fallback for the same reason: `find_account_
     with_api_key` has already established the file exists, and falling back to
@@ -481,7 +452,7 @@ def _resources_for_key(
         # sends the reader to the file rather than to the server.
         raise AccountSetupError(
             f"{directory.name}: no usable {API_KEY_FILENAME} ({exc}) -- run "
-            f"`SWIL_AGENT={directory.name}/personality.md agent/scripts/swil.sh create-api-key`"
+            f"`uv run --project agent swil-agent register {directory.name}`"
         ) from exc
     return Resources(ApiClient(settings.swil_url, auth, transport=transport))
 
@@ -493,16 +464,12 @@ def _auth_setup_remedy(persona: Persona, settings: Settings) -> str:
     through -- AND no `SWIL_PASS`), named so the CLI's SKIP line sends
     whoever reads it to the fix rather than to a stack trace.
 
-    `swil.sh create-api-key`'s account selector is `SWIL_AGENT=<relative
-    personality path>`, NOT a positional argument -- its own
-    `"${2:-default}"` is a label for the created key, not the account
-    (confirmed by reading `_personality_file` in `swil.sh` directly, not
-    assumed from the usage banner alone).
+    The fix is `swil-agent register <account-dir-name>`.
     """
     rel = persona.directory.relative_to(settings.agent_root)
     return (
         f"no api_key.txt and no SWIL_PASS for {persona.username} ({rel}) -- "
-        f"run `SWIL_AGENT={rel}/personality.md agent/scripts/swil.sh create-api-key`, "
+        f"run `uv run --project agent swil-agent register {rel.name}`, "
         "or set SWIL_PASS in agent/.env"
     )
 
@@ -671,8 +638,8 @@ class _Guard(Protocol):
 class _DryRunGuard:
     """The embedder guard a shadow round gets: nothing at all.
 
-    A dry cycle is routed away from the dream phase entirely, so it reaches no
-    `gate` node and needs no vectors. Running the real guard is not merely
+    A dry cycle is routed away from the dream phase entirely, so it needs no
+    vectors. Running the real guard is not merely
     redundant -- `embedder-guard.sh` writes `.agent-state/embedder_guard/*`
     and `logs/embedder.log`, and boots the bge-m3 daemon (up to 150s of
     startup) if nothing is serving. Spec §10 stage 3's exit criterion is
@@ -716,18 +683,9 @@ def _context_now_for(
 ) -> str:
     """The world-context block, RENDERED for this account (rulings R25/R26).
 
-    This used to read `context/now.md` off disk. `swil.sh login` wrote that
-    file, nothing in Python calls `swil.sh`, and `cycle-one.sh:45` has
-    dispatched straight to `swil-agent cycle` since 2026-08-19 -- so from the
-    cutover until this function existed, every round of every account was
-    handed the same file, frozen at 2026-08-19 05:30, telling all 23 of them
-    that the date was the 19th and that they were `qiusai`.
-
-    Nothing is written back (R26). `context/now.md` stays a Bash-only
-    artifact: the `SWIL_RUNTIME=bash` rollback still runs `swil.sh login`,
-    which still writes it for `auto-run.sh:500` to read, and the file's
-    single per-account `当前 Agent` line stops being something five parallel
-    rounds race on.
+    Nothing is written back (R26): there is no shared `context/now.md`, so
+    the per-account `当前 Agent` line is not something five parallel rounds
+    race on.
 
     `now` is threaded in rather than taken here so the whole round -- this
     block, `run_act`'s `today`, the memory line it writes -- agrees on one
@@ -736,37 +694,30 @@ def _context_now_for(
     return render_now_context(
         username=persona.username,
         now=now,
-        activity=platform_activity(resources, persona, now=now),
+        activity=platform_activity(resources, persona, now=now, era_start=settings.era_start),
         news=read_news_digest(settings.agent_root, runner),
     )
 
 
-def _feed_context_for(resources: Resources, persona: Persona, *, now: datetime) -> str:
-    """The follow-topics feed, RENDERED for this account.
-
-    Same defect, same fix: this read `context/feed_for_<username>.md`, whose
-    freshest copy on the roster was 12 hours old at the time this was found
-    and several of which dated from three days earlier.
-
-    Keyed on the persona's own `Follow Topics`, and the search results are
-    fetched through `Resources` -- the same layering the live board feed in
-    `act/context.py` already uses. The account is identified by the
-    `Username` bullet carried on `Persona`, never by the directory name; the
-    two differ on this roster.
-    """
-    return render_follow_topics_feed(resources, persona, now=now)
+def _feed_context_for(
+    resources: Resources,
+    persona: Persona,
+    *,
+    now: datetime,
+    era_start: datetime | None = None,
+) -> str:
+    """The follow-topics feed, RENDERED for this account from `persona.topics`
+    (never read from a stale `context/feed_for_*.md`), era-filtered."""
+    return render_follow_topics_feed(resources, persona, now=now, era_start=era_start)
 
 
 def _probe_embedder(embedder: EmbedderClient, settings: Settings) -> None:
     """R10 (progress.md, forwarded from Tasks 2 and 12): `EmbedderGuard.up()`
     cannot fail loudly -- `embedder-guard.sh` always exits 0 by design (its
     own comment: "a guard must never abort its caller"). Left unchecked, a
-    dead daemon surfaces only as a per-dream WARN inside
-    `evaluate_candidate`'s fail-open path (`dream/gate.py`), which reads
+    dead daemon surfaces only as a per-dream snapshot WARN, which reads
     identically whether ONE dream's embed call happened to fail or the
-    embedder has been down for the whole round -- exactly the 2026-08-13
-    embedder-OOM incident's signature: a scattered WARN trail with nothing
-    to show the gate was off entirely.
+    embedder has been down for the whole round.
 
     This probe runs exactly once per CLI invocation of `dream` (right after
     `guard.up()`, before any account-specific work), at ERROR -- the loud,
@@ -801,7 +752,6 @@ def _do_dream(
         persona_source=persona_source,
         resources=_resources_for(persona, settings),
         backend=backend,
-        runner=_runner_for(settings),
         embedder=embedder,
         state=_state_for(settings),
         settings=settings,
@@ -905,17 +855,16 @@ def _cycle_deps_for(
     seed: int | None,
     backend: Backend,
 ) -> CycleDeps:
-    """Everything the nine nodes need, built once per cycle.
+    """Everything the ten nodes need, built once per cycle.
 
     Deliberately the SAME collaborators, read from the same places, that
-    `act` hands `run_act` and `dream` hands `run_dream` -- that is what makes
-    the parity oracle (`test_cycle_parity.py`) a comparison of the two paths
-    rather than of two compositions.
+    `act` hands `run_act` and `dream` hands `run_dream`, so the two paths
+    cannot drift into two compositions.
 
     One real difference, recorded on `CycleDeps` itself: `now` and
     `captured_at` are frozen ONCE here, where `act` and `dream` are two
     processes taking a fresh `datetime.now()` each. Within one cycle that is
-    minutes in an archive stamp.
+    minutes in a memory-line date.
 
     The backend is the one exception to "built once per cycle, here": it is
     resolved and built by the command body and passed in, because `run_cycle`
@@ -927,11 +876,8 @@ def _cycle_deps_for(
     `_probe_embedder` runs here for the same reason `_do_dream` runs it: once
     per invocation, right after `guard.up()`, before any account work --
     `EmbedderGuard.up()` cannot fail loudly (R10). **Except under `dry_run`**:
-    a shadow round never reaches the gate, so the drift check it would warn
-    about was never going to happen. Probing anyway emits one ERROR per
-    account -- 23 "the drift gate is OFF for every dream this invocation runs"
-    lines into `dream.log`, for dreams that do not run, in the very log stage 3
-    is read from.
+    a shadow round never dreams or uploads a snapshot, so probing would only
+    emit one ERROR per account into `dream.log` for work that does not run.
     """
     embedder = _embedder_for(settings)
     if not dry_run:
@@ -947,7 +893,6 @@ def _cycle_deps_for(
         resources=resources,
         backend=backend,
         persona_source=persona_source,
-        runner=runner,
         embedder=embedder,
         dream_state=_state_for(settings),
         settings=settings,
@@ -955,7 +900,7 @@ def _cycle_deps_for(
         health_check=lambda: _health_check(settings),
         memory_text=persona_source.read_memory(agent_dir_name(persona)),
         context_now=_context_now_for(resources, persona, settings, now=now, runner=runner),
-        feed_context=_feed_context_for(resources, persona, now=now),
+        feed_context=_feed_context_for(resources, persona, now=now, era_start=settings.era_start),
         budget=budget,
         access_key=settings.unsplash_access_key,
         dry_run=dry_run,
@@ -1027,9 +972,9 @@ def _report_dream_result(name: str, result: DreamResult) -> None:
     if not result.proceeded:
         typer.echo(f"SKIP {name} -- {result.reason}")
     elif result.accepted:
-        typer.echo(f"{name}: dream accepted -- personality updated ({result.reason})")
+        typer.echo(f"{name}: dream written -- 最近 updated ({len(result.recent or [])} items)")
     else:
-        typer.echo(f"{name}: dream rejected -- {result.reason}")
+        typer.echo(f"{name}: dream failed -- {result.reason}")
 
 
 def _act_result_of(state: CycleState) -> ActResult | None:
@@ -1060,33 +1005,13 @@ def _act_result_of(state: CycleState) -> ActResult | None:
 
 
 def _dream_result_of(state: CycleState) -> DreamResult:
-    """The dream half, same idea.
-
-    `accepted` is `written` -- the flag that answers "did `personality.md`
-    actually change" -- never `verdict.accepted`, which is a claim about the
-    gate and not about the file (`dream/round.py`'s `WriteStep`). The reason
-    prefers `dream_reason` (a cooldown SKIP, an empty rewrite, a blown
-    deadline: the reasons a dream never reached the gate) and falls back to
-    the verdict's, which is the only place a REJECTION's reason lives.
-
-    `narrative` and `snapshot_reason` are projected for completeness and have
-    NO reader: `_report_dream_result` prints neither. That is deliberate and
-    is recorded rather than pinned — the load-bearing hand-off those fields
-    belong to is `write` -> `snapshot` INSIDE the graph, which
-    `test_graph_nodes.py` already pins at both ends (a dropped `narrative`
-    empties `diffNarrative` on every uploaded snapshot). A test asserting
-    that this projection copies a field nothing reads would defend the copy,
-    not the property; if a future reporter starts printing the narrative, its
-    own test is what should pin it.
-    """
-    verdict = state.get("verdict")
-    reason = state.get("dream_reason") or (verdict.reason if verdict is not None else "")
+    """The dream half, same idea. `accepted` is `written` -- the flag that
+    answers "did `personality.md` actually change"."""
     return DreamResult(
         proceeded=state.get("proceeded", False),
         accepted=state.get("written", False),
-        reason=reason,
-        verdict=verdict,
-        narrative=state.get("narrative", ""),
+        reason=state.get("dream_reason", ""),
+        recent=state.get("recent"),
         snapshot_ok=state.get("snapshot_ok", False),
         snapshot_reason=state.get("snapshot_reason"),
     )
@@ -1126,8 +1051,9 @@ def _report_cycle_result(name: str, state: CycleState, *, dry_run: bool) -> None
 
 def _load_persona_or_raise_setup_error(persona_source: PersonaSource, name: str) -> Persona:
     """`persona_source.load(name)`, converting a malformed-but-PRESENT
-    persona's `ValueError` (`persona/loader.py`'s `load_persona` -- e.g. no
-    `- **Username:**` bullet) into `AccountSetupError`.
+    persona's `ValueError` (`persona/loader.py`'s `load_persona` -- e.g.
+    missing frontmatter or a card over the size limit) into
+    `AccountSetupError`.
 
     Deliberately does NOT catch `FileNotFoundError`: that means "no such
     account" (exit 66), a different question from "this account exists but
@@ -1140,8 +1066,8 @@ def _load_persona_or_raise_setup_error(persona_source: PersonaSource, name: str)
     except ValueError as exc:
         raise AccountSetupError(
             f"{name}: personality.md exists but could not be parsed ({exc}) "
-            "-- fix the account's `- **Username:** ...` bullet (and check "
-            "every other `- **Field:**` line) in personality.md"
+            "-- fix its YAML frontmatter, the card, or the `## 最近` list "
+            "(see persona/format.py)"
         ) from exc
 
 
@@ -1202,6 +1128,21 @@ def _refuse_production_writes(settings: Settings, *, i_mean_production: bool) ->
         "at staging.",
         err=True,
     )
+    raise typer.Exit(EXIT_NO_ACTION)
+
+
+ERA_START_REMEDY: Final = (
+    "ERA_START is unset: every Era 3 round reads since=<ERA_START>. "
+    "Set ERA_START=<ISO 8601 launch instant> in agent/.env (see agent/.env.example)."
+)
+
+
+def _require_era_start(settings: Settings) -> None:
+    """Exit 75 when no era is open: an unset ERA_START would feed Era 2 posts
+    into an Era 3 prompt, and every runnable persona is Era 3."""
+    if settings.era_start is not None:
+        return
+    typer.echo(ERA_START_REMEDY, err=True)
     raise typer.Exit(EXIT_NO_ACTION)
 
 
@@ -1306,15 +1247,12 @@ def _runtime_totals(payload: dict[str, Any], *, since: date) -> tuple[int, int, 
 
 
 def _roster_count(agent_root: Path) -> int:
-    n = 0
-    for cohort in COHORTS:
-        root = agent_root / cohort
-        if not root.is_dir():
-            continue
-        for child in root.iterdir():
-            if child.is_dir() and (child / "personality.md").is_file():
-                n += 1
-    return n
+    root = agent_root / ACCOUNTS_DIR
+    if not root.is_dir():
+        return 0
+    return sum(
+        1 for child in root.iterdir() if child.is_dir() and (child / "personality.md").is_file()
+    )
 
 
 # ── commands ─────────────────────────────────────────────────────────────
@@ -1347,7 +1285,7 @@ def act(
         help="Overlay this board's latest posts into the planner feed. Requires --dry-run.",
     ),
 ) -> None:
-    """Python port of `auto-run.sh`'s act path, for one account.
+    """Run the act phase for one account.
 
     `--dry-run` is the shadow-round mode (design spec §9.4): it builds
     context and produces a plan but executes nothing, writes nothing, and --
@@ -1359,8 +1297,8 @@ def act(
     An `EmbedderClient` is handed to `run_act` for the shadow act-path
     self-similarity sample (Phase B task 2). NO `_probe_embedder` call and no
     `EmbedderGuard` bracket go with it, unlike `dream`/`cycle`: that ERROR
-    and that daemon boot exist for the drift GATE, which decides something,
-    and this sample decides nothing. A daemon that is down costs one WARN and
+    and that daemon boot exist for the dream's snapshot upload, and this
+    sample decides nothing. A daemon that is down costs one WARN and
     one `outcome="skip"` lab row per posting round, and the round proceeds
     exactly as it would have.
 
@@ -1387,6 +1325,7 @@ def act(
     except Exception as exc:
         _skip_for_exception(name, exc)
         raise typer.Exit(EXIT_NO_ACTION) from exc
+    _require_era_start(settings)
 
     try:
         with _backend_setup_guard(persona):
@@ -1411,12 +1350,17 @@ def act(
                 health_check=lambda: _health_check(settings),
                 budget=budget,
                 context_now=_context_now_for(resources, persona, settings, now=now, runner=runner),
-                feed_context=_feed_context_for(resources, persona, now=now),
+                feed_context=_feed_context_for(
+                    resources, persona, now=now, era_start=settings.era_start
+                ),
                 dry_run=dry_run,
                 access_key=settings.unsplash_access_key,
                 embedder=_embedder_for(settings),
-                similarity_window=settings.act_similarity_window,
-                cross_read_prob=settings.cross_read_prob,
+                era_start=settings.era_start,
+                post_probability=settings.post_probability,
+                post_ceiling=settings.post_ceiling_per_day,
+                duplicate_window=settings.post_duplicate_window,
+                duplicate_threshold=settings.post_duplicate_threshold,
                 probe_board=probe_board,
             )
     except Exception as exc:
@@ -1461,9 +1405,9 @@ def dream(
         None, "--model", help="Override the model id. Outranks personality.md."
     ),
 ) -> None:
-    """Python port of `dream.sh`, for one account.
+    """Run the dream phase for one account.
 
-    Brackets the embedder daemon the way `cycle-one.sh` does for a real
+    Brackets the embedder daemon for a real
     round (`up` before, `down` after), because the guard bracket belongs at
     the caller composing multiple accounts' dreams -- i.e. here -- and not
     inside a single `run_dream` call (`dream/round.py`'s own module docstring
@@ -1475,7 +1419,7 @@ def dream(
     sample through an injected embedder (Phase B task 2). The conclusion is
     unchanged and the reason is now a different one -- that sample is
     fail-open and decides nothing, so it wants no daemon booted on its
-    behalf, where a dream's drift GATE does.
+    behalf, where a dream's snapshot upload does.
     """
     settings = load_settings()
     _attach_round_log(settings, DREAM_LOG_FILENAME)
@@ -1537,26 +1481,22 @@ def cycle(
         help="Allow writes against the production host when SWIL_REQUIRE_NON_PROD=1.",
     ),
 ) -> None:
-    """Python port of `cycle-one.sh`: login -> act -> dream -> logout, for one
-    account, as ONE LangGraph run.
+    """Run login -> act -> dream -> logout for one account as ONE LangGraph run.
 
     Exit codes are `act`'s and `dream`'s (ruling R17), because `cycle-one.sh`
-    and the heartbeat branch on exactly those three: `0` the cycle ran, `66`
-    no such account, `75` a setup failure or a busy lease. `0` vs `75` is
-    `ActResult.grants_dream` over the final state's outcome -- the same
-    decision `act` exits on and the same one `cycle-one.sh` propagates when it
-    forwards `auto-run.sh`'s rc.
+    and the round driver branch on exactly those three: `0` the cycle ran,
+    `66` no such account, `75` a setup failure or a busy lease. `0` vs `75`
+    is `ActResult.grants_dream` over the final state's outcome -- the same
+    decision `act` exits on.
 
-    **`--auto` defaults to OFF, which is NOT `cycle-one.sh`'s default.** That
-    script calls `dream.sh --auto "$NAME"` unless `FORCE_DREAM=1`, so a
-    canary invocation that wants Bash's scheduling must pass `--auto` here
-    too. The flag is spelled and defaulted exactly like `swil-agent dream`'s,
-    so the CLI has one meaning for `--auto` rather than two; the difference is
-    stated here instead of being absorbed silently.
+    **`--auto` defaults to OFF.** `cycle-one.sh` always passes it, which
+    honours the dream cooldown; without it the account dreams every round
+    regardless of `DREAM_COOLDOWN_HOURS`. The flag is spelled and defaulted
+    exactly like `swil-agent dream`'s, so the CLI has one meaning for it.
 
     **`--dry-run` takes NO lease and NO checkpoint.** A shadow round executes
     nothing and writes nothing, so it needs no mutual exclusion -- and taking
-    the lock costs a concurrent real Bash round its whole turn (F4). It also
+    the lock costs a concurrent real round its whole turn (F4). It also
     does not dream: `write_step`/`snapshot_step` have no `dry_run` to be inert
     under, so `graph/cycle.py` routes a dry cycle from the act phase straight
     to logout (design spec §9.4, "executes nothing and writes nothing").
@@ -1578,8 +1518,9 @@ def cycle(
     except Exception as exc:
         _skip_for_exception(name, exc)
         raise typer.Exit(EXIT_NO_ACTION) from exc
+    _require_era_start(settings)
 
-    # A shadow round never reaches the `gate` node, so it needs no embedder --
+    # A shadow round never reaches the dream phase, so it needs no embedder --
     # and starting one is not free: `EmbedderGuard.up()` writes
     # `.agent-state/embedder_guard/*` and `logs/embedder.log`, and can `nohup`
     # the bge-m3 daemon for up to 150s. `_dry_run_guard` is the no-op that
@@ -1628,79 +1569,25 @@ def cycle(
 
 # ── analysis / QA commands ───────────────────────────────────────────────
 #
-# The four SAMPLERS -- `rule-check`, `behavior-snapshot`, `population-metric`,
-# `summary` -- are OBSERVABILITY, never the main flow, and their exit codes
-# say so: `0` whenever the command ran, whatever it found. Bash swallows every
-# one of these at its call site (`auto-run.sh:806`, `cycle-one.sh:45`) or
-# runs it as a standalone daily job, and a measurement outage -- no api_key,
-# no parseable rule, a dead embedder, an unreachable platform -- is never a
+# The three SAMPLERS -- `behavior-snapshot`, `population-metric`, `summary`
+# -- are OBSERVABILITY, never the main flow, and their exit codes say so:
+# `0` whenever the command ran, whatever it found, and a measurement
+# outage -- no api_key, no parseable rule, a dead embedder, an unreachable
+# platform -- is never a
 # round failure. `75` is reserved for the SETUP failures that mean nothing
 # was measured at all, and `66` for an account that does not exist.
 #
-# `intervention` (`:1533`) lives in this section and does NOT follow that
+# `intervention` lives in this section and does NOT follow that
 # rule, deliberately. It is a WRITE that nothing retries and nothing else
 # notices, so it exits 75 on a server rejection rather than 0. Do not
 # "correct" it to match its neighbours: the swallowed 400 is the exact
 # six-week defect this command was written to end.
 #
-# `rule-check`, `behavior-snapshot` and `population-metric` are ALSO wired
-# into `cycle` (`graph/nodes.py`); these commands exist for the same reason
-# `dream.sh`
-# exists next to `cycle-one.sh` -- re-sampling one account by hand without
-# spending a round on it, and covering anyone still driving the act phase
-# with `swil-agent act`, which (like the frozen `run_act` it wraps) does not
+# `behavior-snapshot` and `population-metric` are ALSO wired into `cycle`
+# (`graph/nodes.py`); these commands exist for re-sampling one account by
+# hand without spending a round on it, and for anyone driving the act phase
+# with `swil-agent act`, which does not
 # sample.
-
-
-@app.command("rule-check")
-def rule_check(
-    name: str,
-    limit: int | None = typer.Option(
-        None, "--limit", help="Recent posts to score (default: RULE_CHECK_POST_LIMIT)."
-    ),
-) -> None:
-    """Python port of `rule-check.sh`, for one account.
-
-    Scores the account's recent posts against the machine-checkable rules its
-    own `personality.md` states, and files one `rule_check` lab event per
-    rule -- the only thing `/lab`'s F4 adherence panel reads.
-
-    Exits 0 even when nothing was emitted. "No api_key.txt", "no parseable
-    rule" and "the platform was unreachable" are all normal, and Bash ends
-    the call with `|| true` at every call site. The number of events emitted
-    is printed, so a caller that wants to know still can.
-
-    **Run this BEFORE a dream, never after** -- it parses the rules out of
-    `personality.md`, and a dream rewrites that file, so afterwards it
-    measures the new rules against the old posts (`cycle-one.sh:39-41`).
-    `swil-agent cycle` gets that ordering by construction; a hand-driven
-    sequence does not.
-    """
-    settings = load_settings()
-    _attach_round_log(settings, ACT_LOG_FILENAME)
-    persona_source = _persona_source_for(settings)
-    try:
-        persona = _load_persona_or_raise_setup_error(persona_source, name)
-    except FileNotFoundError as exc:
-        typer.echo(f"no such account: {name}", err=True)
-        raise typer.Exit(EXIT_NO_SUCH_ACCOUNT) from exc
-    except Exception as exc:
-        _skip_for_exception(name, exc)
-        raise typer.Exit(EXIT_NO_ACTION) from exc
-
-    try:
-        events = run_rule_check(
-            _resources_for(persona, settings),
-            directory=persona.directory,
-            username=persona.username,
-            limit=limit if limit is not None else settings.rule_check_post_limit,
-        )
-    except Exception as exc:
-        _skip_for_exception(name, exc)
-        raise typer.Exit(EXIT_NO_ACTION) from exc
-
-    typer.echo(f"rule-check {name} -- {len(events)} event(s) emitted")
-    raise typer.Exit(EXIT_OK)
 
 
 @app.command("behavior-snapshot")
@@ -1710,7 +1597,7 @@ def behavior_snapshot(
         None, "--limit", help="Recent posts to embed (default: BEHAVIOR_POST_LIMIT)."
     ),
 ) -> None:
-    """Python port of `behavior-snapshot.sh`, for one account.
+    """Sample one account's behaviour snapshot.
 
     Embeds the account's recent posts as ONE document and ships the vector;
     the server computes persona fidelity = cosine(personality, behavior).
@@ -1718,15 +1605,12 @@ def behavior_snapshot(
     own snapshot supplies the *stated self*, and neither is derivable from
     the other.
 
-    **The embedder daemon is NOT started for this**, matching Bash: neither
-    `behavior-snapshot.sh` nor `auto-run.sh:806` brackets
-    `embedder-guard.sh` (only `cycle-one.sh` does, and only for the dream).
-    A daemon that is down means this fails open with a WARN and exits 0 --
-    the same no-op Bash produces, including on every heartbeat round. Start
-    it yourself (`agent/scripts/embedder/start.sh`) if you want the sample
-    to land.
+    **The embedder daemon is NOT started for this**: only `cycle` brackets
+    the embedder guard. A daemon that is down means this fails open with a
+    WARN and exits 0. Start it yourself (`agent/scripts/embedder/start.sh`)
+    if you want the sample to land.
 
-    Exits 0 on every outcome the script exits 0 on, which is all of them: no
+    Exits 0 on every outcome: no
     api_key, no recent posts, a dead embedder, a server rejection.
     """
     settings = load_settings()
@@ -1771,25 +1655,22 @@ def population_metric(
         None, help="Account whose api_key.txt authorises the call. Any keyed account works."
     ),
 ) -> None:
-    """Python port of `population-metric.sh`.
+    """Trigger one population-cohesion sample.
 
     Triggers ONE population-cohesion sample. The route
     (`POST /agents/population-metric`) is global and the server does the
     maths; this only triggers and timestamps it -- which is why `name` picks
     a CREDENTIAL rather than a subject, and why omitting it is normal: the
-    first keyed account under `agents/` then `humans/` is used, in the same
-    order `dream.sh::_find_dir` searches.
+    first keyed account under `agents/` (sorted) is used.
 
-    Exit codes, where Bash has only `exit 1`:
+    Exit codes:
 
       * `66` -- a NAME was given and no such account directory exists.
       * `75` -- an account exists but has no usable `api_key.txt`, no keyed
         account exists at all, or the server rejected the call. Nothing was
         measured, which is what 75 means everywhere else in this CLI.
 
-    Bash conflates those two (`population-metric.sh:25-34` tests
-    `-f .../api_key.txt` and never `-d .../<name>`), and they have different
-    fixes: one is a typo, the other is a missing key.
+    Those two have different fixes: one is a typo, the other is a missing key.
 
     `n < 2` is a SUCCESS. The server declines to historise a degenerate
     sample but still answers with a `capturedAt`, so a first run against a
@@ -1827,8 +1708,8 @@ def _population_metric_account(settings: Settings, name: str | None) -> Path:
 
     `find_account_with_api_key` answers `None` for BOTH "no such account" and
     "that account has no key", because the script it ports cannot tell them
-    apart. This CLI's `66` means exactly the first of those, so the cohort
-    directories are probed separately when -- and only when -- a name was
+    apart. This CLI's `66` means exactly the first of those, so the account
+    directory is probed separately when -- and only when -- a name was
     given.
 
     An EMPTY name is a name, not an absent one: bash's `$# -ge 1` makes
@@ -1846,12 +1727,12 @@ def _population_metric_account(settings: Settings, name: str | None) -> Path:
     raise AccountSetupError(
         f"no usable {API_KEY_FILENAME} for {who} under {settings.agent_root} -- "
         "any lab account's key authorises this global route, so create one with "
-        "`SWIL_AGENT=<cohort>/<name>/personality.md agent/scripts/swil.sh create-api-key`"
+        "`uv run --project agent swil-agent register <name>`"
     )
 
 
 def _account_directory_exists(agent_root: Path, name: str) -> bool:
-    """Is there an `agents/<name>` or `humans/<name>` directory at all?
+    """Is there an `agents/<name>` directory at all?
 
     `bool(name)` first, and it is load-bearing rather than defensive:
     `Path("agents") / ""` is `Path("agents")`, which IS a directory, so an
@@ -1861,7 +1742,7 @@ def _account_directory_exists(agent_root: Path, name: str) -> bool:
     `test_an_empty_name_is_a_name_not_an_absent_one`, which is the same empty
     -name case `find_account_with_api_key` already had to spell out.
     """
-    return bool(name) and any((agent_root / cohort / name).is_dir() for cohort in COHORTS)
+    return bool(name) and (agent_root / ACCOUNTS_DIR / name).is_dir()
 
 
 # `Annotated` rather than this module's prevailing `x: T = typer.Option(...)`
@@ -1916,8 +1797,8 @@ def intervention(
     """Record ONE human intervention as an `anomaly` lab event on `/lab`.
 
     A manual edit to an account's `personality.md` or `memory.md` bypasses
-    every mechanism that would otherwise leave a trace -- the archive, the
-    drift gate, the snapshot upload -- so the `/lab` series that covers it
+    every mechanism that would otherwise leave a trace -- the archive and
+    the snapshot upload -- so the `/lab` series that covers it
     goes on looking normal while being wrong. This is how that stops being
     invisible.
 
@@ -2019,8 +1900,7 @@ def _intervention_instant(raw: str, flag: str) -> datetime:
     the flag.
 
     A NAIVE value is resolved as LOCAL time, because that is what every
-    source an operator copies from is written in: `dream.sh:838`'s archive
-    header is `date '+%Y-%m-%d %H:%M:%S'`, `memory.md`'s note lines are
+    source an operator copies from is written in: `memory.md`'s note lines are
     `date +%Y-%m-%d`, and `git log`'s default is the committer's local zone.
     Assuming UTC instead would shift every backfilled marker by the machine's
     offset -- seven hours here, small enough to still look plausible.
@@ -2043,17 +1923,15 @@ def _intervention_instant(raw: str, flag: str) -> datetime:
 def summary(
     date: str | None = typer.Argument(None, help="YYYY-MM-DD. Defaults to today, LOCAL time."),
 ) -> None:
-    """Python port of `agent-summary.sh`: the daily activity dashboard.
+    """The daily activity dashboard.
 
     LOCAL only -- it reads each account's `memory.md` and touches no API, so
     it needs no credentials, no server and no account to exist. There is
     therefore no `66` and no `75` here: an empty roster prints an empty
     table, which is the honest answer.
 
-    The default date is LOCAL, not UTC (`agent-summary.sh:18` is
-    `date '+%Y-%m-%d'`), and printing uses `nl=False` because
-    `run_summary`'s string already ends in a newline -- `print()` would add a
-    second and shift every diff against the script's own output.
+    The default date is LOCAL, not UTC, and printing uses `nl=False` because
+    `run_summary`'s string already ends in a newline.
     """
     settings = load_settings()
     typer.echo(
@@ -2072,8 +1950,99 @@ def version() -> None:
     typer.echo(f"swil-agent {__version__}")
 
 
+_SINCE_FUTURE: Final = "2999-01-01T00:00:00Z"
+_SMOKE_PROMPT: Final = "回复 ok"
+
+
+def _since_probe(
+    settings: Settings, *, transport: httpx.BaseTransport | None = None
+) -> tuple[bool, str]:
+    """A server that ignores `since` returns posts for a date in 2999.
+
+    Unauthenticated: `/feed/global` is a public read.
+    """
+    try:
+        with httpx.Client(transport=transport, timeout=_HEALTH_TIMEOUT) as client:
+            response = client.get(
+                f"{settings.swil_url}/api/v1/feed/global",
+                params={"since": _SINCE_FUTURE, "limit": 1},
+            )
+    except httpx.HTTPError as exc:
+        return False, f"unreachable ({exc})"
+    if response.status_code != 200:
+        return False, f"HTTP {response.status_code}"
+    try:
+        items = response.json()["data"]["items"]
+    except (ValueError, KeyError, TypeError):
+        return False, "unexpected response shape"
+    if items:
+        return False, "server ignores `since` -- deploy the backend first"
+    return True, "ok"
+
+
+def _era3_arms(agent_root: Path) -> dict[str, Persona]:
+    """One persona per distinct `backend:model` among valid Era 3 files."""
+    arms: dict[str, Persona] = {}
+    for path in sorted((agent_root / "agents").glob("*/personality.md")):
+        try:
+            persona = load_persona(path.parent)
+        except (PersonaFormatError, OSError):
+            continue
+        label = f"{persona.backend}:{persona.model}" if persona.model else persona.backend
+        arms.setdefault(label, persona)
+    return arms
+
+
+# The CLI each Era 3 backend shells out to (`llm/base.py`).
+_BACKEND_BINARIES: Final = {
+    "claude": "claude",
+    "codex": "codex",
+    "grok": "grok",
+    "cursor": "cursor-agent",
+}
+
+
+def _doctor_binaries(agent_root: Path) -> list[str]:
+    """`claude` and `uv`, then each roster backend's CLI, deduplicated."""
+    binaries = ["claude", "uv"]
+    for persona in _era3_arms(agent_root).values():
+        binary = _BACKEND_BINARIES.get(persona.backend)
+        if binary is not None and binary not in binaries:
+            binaries.append(binary)
+    return binaries
+
+
+def _smoke_arms(settings: Settings) -> bool:
+    """Send one tiny prompt through each distinct arm; True when all pass."""
+    arms = _era3_arms(settings.agent_root)
+    if not arms:
+        typer.echo("smoke: no Era 3 accounts")
+        return True
+    ok = True
+    for label, persona in arms.items():
+        try:
+            reply = _backend_for(persona, settings).complete(
+                CompletionRequest(system="", user=_SMOKE_PROMPT, model=persona.model)
+            )
+        except Exception as exc:  # any backend failure is a FAIL line
+            typer.echo(f"smoke {label}: FAIL ({exc})")
+            ok = False
+            continue
+        if reply.strip():
+            typer.echo(f"smoke {label}: OK")
+        else:
+            typer.echo(f"smoke {label}: FAIL (empty reply)")
+            ok = False
+    return ok
+
+
 @app.command()
-def doctor() -> None:
+def doctor(
+    smoke: Annotated[
+        bool,
+        typer.Option("--smoke", help="Send one tiny prompt through each roster backend:model."),
+    ] = False,
+) -> None:
     """Print operator readiness: URL, production-host warning, PATH, embedder,
     lock dir, heartbeat launchctl (spec §11). Exit 0 ready, 75 not.
 
@@ -2097,7 +2066,18 @@ def doctor() -> None:
     else:
         typer.echo("  ok (not production)")
 
-    for binary in ("claude", "uv"):
+    if settings.era_start is None:
+        typer.echo("ERA_START: FAIL (unset)")
+        typer.echo(f"  {ERA_START_REMEDY}")
+        ready = False
+    else:
+        start = settings.era_start
+        start = start.replace(tzinfo=UTC) if start.tzinfo is None else start
+        typer.echo(f"ERA_START: {start.isoformat()}")
+        if start > datetime.now(UTC):
+            typer.echo("  WARN: ERA_START is in the future -- every era read is empty until then")
+
+    for binary in _doctor_binaries(settings.agent_root):
         if _on_path(binary):
             found = shutil.which(binary) or binary
             typer.echo(f"{binary}: {found}")
@@ -2112,9 +2092,18 @@ def doctor() -> None:
         typer.echo(f"embedder: FAIL ({exc})")
         ready = False
 
+    if url.strip():
+        since_ok, since_msg = _since_probe(settings)
+        typer.echo(f"since probe: {'ok' if since_ok else 'FAIL'} ({since_msg})")
+        if not since_ok:
+            ready = False
+
     writable, lock_msg = _lock_dir_writable(settings.agent_root)
     typer.echo(f"lock dir: {lock_msg}")
     if not writable:
+        ready = False
+
+    if smoke and not _smoke_arms(settings):
         ready = False
 
     typer.echo(f"{_HEARTBEAT_LABEL}: {_heartbeat_launchctl_status()}")
@@ -2124,6 +2113,43 @@ def doctor() -> None:
         raise typer.Exit(EXIT_OK)
     typer.echo("doctor: not ready")
     raise typer.Exit(EXIT_NO_ACTION)
+
+
+@app.command()
+def register(
+    username: Annotated[str, typer.Argument(help="Account directory under agents/.")],
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Print each request; send none.")
+    ] = False,
+    adopt: Annotated[
+        bool,
+        typer.Option(
+            "--adopt", help="Continue on a user that already exists without a local api_key.txt."
+        ),
+    ] = False,
+) -> None:
+    """Register an Era 3 account: user, API key, profile, backend, anchor snapshot.
+
+    Safe to re-run once the key file exists. An existing user without one is
+    refused unless `--adopt`.
+    """
+    settings = load_settings()
+    try:
+        register_account(
+            settings,
+            _persona_source_for(settings),
+            username,
+            embedder=None if dry_run else _embedder_for(settings),
+            dry_run=dry_run,
+            adopt=adopt,
+            emit=typer.echo,
+        )
+    except FileNotFoundError as exc:
+        typer.echo(f"register: {exc}")
+        raise typer.Exit(EXIT_NO_SUCH_ACCOUNT) from exc
+    except (PersonaFormatError, RegisterError, ApiError) as exc:
+        typer.echo(f"register: FAIL {exc}")
+        raise typer.Exit(EXIT_NO_ACTION) from exc
 
 
 @app.command("measure-status")
@@ -2157,68 +2183,4 @@ def measure_status(
     typer.echo(f"  landed actions: {landed}")
     typer.echo(f"  accounts run: {accounts}")
     typer.echo(f"  roster: {roster}")
-    raise typer.Exit(EXIT_OK)
-
-
-@app.command("echo-calibrate")
-def echo_calibrate(
-    name: str,
-    limit: int = typer.Option(12, "--limit", help="Recent posts to embed. Default 12."),
-) -> None:
-    """Embed last N posts, print pairwise variance vs ECHO_VARIANCE_THRESHOLD.
-
-    Never writes ECHO_DETECT (spec §11). Exit 75 if the embedder is down.
-    """
-    settings = load_settings()
-    persona_source = _persona_source_for(settings)
-    try:
-        persona = _load_persona_or_raise_setup_error(persona_source, name)
-    except FileNotFoundError as exc:
-        typer.echo(f"no such account: {name}", err=True)
-        raise typer.Exit(EXIT_NO_SUCH_ACCOUNT) from exc
-    except Exception as exc:
-        _skip_for_exception(name, exc)
-        raise typer.Exit(EXIT_NO_ACTION) from exc
-
-    embedder = _embedder_for(settings)
-    try:
-        embedder.health()
-    except EmbedderUnavailable as exc:
-        typer.echo(f"echo-calibrate {name}: embedder down ({exc})", err=True)
-        raise typer.Exit(EXIT_NO_ACTION) from exc
-
-    try:
-        posts = _resources_for(persona, settings).user_posts(persona.username, limit=limit)
-    except Exception as exc:
-        _skip_for_exception(name, exc)
-        raise typer.Exit(EXIT_NO_ACTION) from exc
-
-    texts: list[str] = []
-    for post in posts:
-        # No `isinstance(post, dict)` guard: `_items` (api/resources.py) already
-        # drops non-dict entries, so `user_posts` is typed `list[dict[str, Any]]`
-        # and the guard was provably dead -- which `mypy --strict`'s
-        # `warn_unreachable` reports as an error, failing ci:check step 12.
-        text = post.get("text")
-        if isinstance(text, str) and text.strip():
-            texts.append(text)
-    try:
-        vectors = embedder.embed(texts) if texts else []
-    except EmbedderUnavailable as exc:
-        typer.echo(f"echo-calibrate {name}: embedder down ({exc})", err=True)
-        raise typer.Exit(EXIT_NO_ACTION) from exc
-
-    variance = pairwise_variance(vectors)
-    threshold = settings.echo_variance_threshold
-    if variance < threshold:
-        rec = "would FLAG this account; do not enable ECHO_DETECT until the threshold is calibrated"
-    else:
-        rec = "would NOT flag this account at the current threshold"
-    typer.echo(
-        f"echo-calibrate {name} posts={len(texts)} "
-        f"pairwise_variance={variance:.6f} "
-        f"ECHO_VARIANCE_THRESHOLD={threshold} "
-        f"ECHO_DETECT={settings.echo_detect} (not written)"
-    )
-    typer.echo(f"  recommendation: {rec}")
     raise typer.Exit(EXIT_OK)

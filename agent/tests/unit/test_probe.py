@@ -7,9 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from swil_agent.act.context import _cross_board, field_study_board_slugs, overlay_probe_posts
+from swil_agent.act.context import overlay_probe_posts
 from swil_agent.act.probe import ProbeScore, load_probe_battery, score_probe_plan
-from swil_agent.cli import act, cycle
 from swil_agent.models import ActContext, Action, Plan
 
 AGENT_ROOT = Path(__file__).resolve().parents[2]
@@ -26,13 +25,10 @@ def _item(post_id: str, text: str, username: str = "probe-attacker") -> dict:
     }
 
 
-def test_overlay_prepends_without_rewriting_board_read() -> None:
+def test_overlay_prepends_without_rewriting_the_rest_of_the_context() -> None:
     ctx = ActContext(
         global_feed="organic",
         timeline_feed="old",
-        board_read="market",
-        home_board="market",
-        cross_read=False,
         context_now="NOW",
         recent_memory="MEM",
     )
@@ -43,16 +39,13 @@ def test_overlay_prepends_without_rewriting_board_read() -> None:
     assert "PROBE_CANARY_A" in out.global_feed
     assert out.timeline_feed.startswith("postId:p1")
     assert out.timeline_feed.endswith("old")
-    assert out.board_read == "market"
-    assert out.home_board == "market"
-    assert out.cross_read is False
     assert out.context_now == "NOW"
     assert out.recent_memory == "MEM"
     assert out.probe_post_ids == ["p1"]
 
 
 def test_overlay_empty_is_noop() -> None:
-    ctx = ActContext(global_feed="organic", board_read="living")
+    ctx = ActContext(global_feed="organic")
     out = overlay_probe_posts(ctx, [])
     assert out.global_feed == "organic"
     assert out.probe_post_ids == []
@@ -132,9 +125,9 @@ def test_roster_never_reads_probes() -> None:
                 continue
             text = path.read_text(encoding="utf-8")
             for line in text.splitlines():
-                lowered = line.lower()
-                if lowered.startswith("- **board:**") or lowered.startswith("- **read:**"):
-                    value = line.split(":", 1)[1].strip().lower()
+                lowered = line.strip().lower()
+                if lowered.startswith(("board:", "- **board:**", "- **read:**")):
+                    value = line.split(":", 1)[1].strip().strip("*").strip().lower()
                     if value == "probes":
                         hits.append(f"{persona.name}: {line.strip()}")
     assert hits == []
@@ -145,12 +138,11 @@ def test_run_act_refuses_probe_board_without_dry_run(tmp_path: Path) -> None:
     from datetime import datetime
 
     from swil_agent.act.round import run_act
-    from swil_agent.models import Persona
-    from tests.unit._runners import FakeResources, SilentBackend
+    from tests.unit._runners import FakeResources, SilentBackend, make_persona
 
     directory = tmp_path / "agents" / "zenith"
     directory.mkdir(parents=True)
-    persona = Persona(username="zenith", directory=directory, raw="PERSONA")
+    persona = make_persona(directory=directory)
     with pytest.raises(ValueError, match="--probe-board requires --dry-run"):
         run_act(
             persona=persona,
@@ -166,45 +158,9 @@ def test_run_act_refuses_probe_board_without_dry_run(tmp_path: Path) -> None:
         )
 
 
-def test_field_study_board_slugs_drop_probes() -> None:
-    assert field_study_board_slugs(["market", "probes", "living"], home="market") == ["living"]
-    assert field_study_board_slugs(["probes"], home="market") == []
-    assert field_study_board_slugs(["Probes", "living"]) == ["living"]
-
-
-def test_choose_read_scope_never_crosses_into_probes() -> None:
-    import random
-
-    from swil_agent.act.context import choose_read_scope
-    from swil_agent.models import Persona
-    from tests.unit._runners import FakeResources
-
-    resources = FakeResources()
-    resources.board_lookup = {"market": "1", "probes": "99", "living": "2"}
-    persona = Persona(username="zenith", directory=Path("/tmp/zenith"), read="market")
-    for seed in range(40):
-        got = choose_read_scope(resources, persona, random.Random(seed), cross_read_prob=1.0)
-        assert got.scope != "probes"
-        assert got.scope in {"market", "living"}
-
-
-def test_now_context_cross_board_never_names_probes() -> None:
-    from datetime import datetime, timedelta
-
-    from tests.unit._runners import FakeResources
-
-    resources = FakeResources()
-    resources.board_lookup = {"market": "1", "probes": "99", "living": "2"}
-    resources.board_feeds["living"] = [_item("p-live", "a plant on the sill")]
-    resources.board_feeds["probes"] = [_item("p-probe", "PROBE_CANARY_A")]
-    for day in range(1, 40):
-        now = datetime(2026, 1, 1) + timedelta(days=day - 1)
-        text = _cross_board(resources, "market", now=now)
-        assert "probes" not in text.lower()
-        assert "PROBE_CANARY_A" not in text
-
-
 def test_cycle_cli_never_grows_probe_board() -> None:
+    from swil_agent.cli import act, cycle
+
     assert "probe_board" in inspect.signature(act).parameters
     assert "probe_board" not in inspect.signature(cycle).parameters
     scripts = [

@@ -10,7 +10,7 @@ The first two were embedded Python heredocs inside llm.sh and could not be
 unit-tested; the echo-variance defect survived for months for exactly that
 reason.
 
-`normalize_plan` ports the jq pipeline at auto-run.sh:82. (An earlier version
+`normalize_plan` normalises a planner reply into an action list. (An earlier version
 of this docstring said that function did not exist in the committed tree —
 true when written, since the multi-action pipeline was then uncommitted work
 in the main checkout, and false since it landed in 9b9d3a7. Corrected rather

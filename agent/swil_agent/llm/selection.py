@@ -101,7 +101,7 @@ PROVIDERS: Final[dict[str, Provider]] = {
 # logs a WARN and carries on (`act/round.py`), by design, because a profile
 # sync must not be able to fail a round. The two behaviours compose badly: a
 # too-long label loses the experiment's independent variable for that account,
-# every round, with nothing louder than one line in auto-run.log to say so.
+# every round, with nothing louder than one line in the act log to say so.
 # Checked here instead, where the operator is still holding the config that
 # caused it.
 WIRE_LABEL_MAX_LENGTH: Final = 40
@@ -136,7 +136,7 @@ class BackendChoice:
     def wire_label(self) -> str:
         """The full `agentBackend` value: `<wire_name>[:<model>]`.
 
-        Same shape `auto-run.sh:492` has always produced
+        Same shape as always
         (`"${ai_backend}${ai_model:+:$ai_model}"`), so existing rows and new
         ones stay comparable and `/lab` needs no migration.
         """

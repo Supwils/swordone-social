@@ -1,5 +1,4 @@
-"""The act-path guardrails -- `auto-run.sh`'s `apply_plan_guardrails` jq
-program (contract `02` §1.2) as typed Python.
+"""The act-path plan guardrails (contract `02` §1.2) as typed Python.
 
 Six stages, run in this exact order (reordering changes outcomes):
 
@@ -19,9 +18,8 @@ Two things this adds over Bash, which filters silently:
   2026-08-16. Every drop below carries a distinct reason string.
 - It is a pure function over already-typed `Plan`/`Action` objects, so the
   golden fixtures in `tests/golden/guardrail_cases.json` can pin every rule
-  independently. Bash's jq program falls back to `[]` on any parse error
-  (auto-run.sh:145) because it is parsing raw JSON text; this function has no
-  equivalent fallback because it never sees raw JSON -- `Plan`/`Action`
+  independently. This function has no parse-error fallback because it never
+  sees raw JSON -- `Plan`/`Action`
   validation (and its own "malformed input" degradation) already happened
   upstream in `swil_agent.llm.extract.normalize_plan`. Reproducing a
   "parse-error" fallback here would be reproducing a concern that has already

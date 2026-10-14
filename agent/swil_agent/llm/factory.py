@@ -7,10 +7,7 @@ wants to assert "this config resolves to grok on xAI" should not have to
 construct anything that could dial out.
 
 Every act/dream/cycle path reaches a backend through `get_backend`. Nothing
-below the composition root spawns `claude` or `codex` on its own; the one
-sanctioned exception is `llm/neutral.py`, the model-neutral ruler, which builds
-its own argv precisely so it can never be routed through backend selection
-(see that module, and `tests/unit/test_architecture.py`).
+below the composition root spawns `claude` or `codex` on its own.
 """
 
 from __future__ import annotations
@@ -46,14 +43,10 @@ def get_backend(
 
     Note what is NOT passed to the CLI backends: the resolved model. Their
     `default_model` stays as it was, and the model reaches them through
-    `CompletionRequest.model`. `_diff_narrative` still passes `model=None`
-    for claude/codex/deepseek (Bash's empty-model "use the CLI default").
-    Cursor and grok have no unrecorded-safe default (`auto` / a moving CLI
-    default), so those calls thread the persona model on the *request*, not
-    as a backend default.
-    Injecting the resolved model as `default_model` would silently promote
-    every claude narrative to opus. `ApiBackend` has no CLI default, so it
-    does carry the model -- the asymmetry is the point, not an oversight.
+    `CompletionRequest.model`, so a request that passes `model=None` gets
+    the CLI's own default rather than a silently promoted one. `ApiBackend`
+    has no CLI default, so it does carry the model -- the asymmetry is the
+    point, not an oversight.
     """
     if choice.kind in _CLI_KINDS:
         return build_backend(choice.wire_name, runner, settings, deepseek_api_key=deepseek_api_key)

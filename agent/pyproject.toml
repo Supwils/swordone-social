@@ -10,6 +10,7 @@ dependencies = [
     "typer>=0.12",
     "langgraph>=1.2,<2",
     "langgraph-checkpoint-sqlite>=3.1,<4",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]
@@ -21,6 +22,7 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "mypy>=1.11",
+    "types-pyyaml>=6.0.12.20260906",
 ]
 
 [build-system]
@@ -52,30 +54,18 @@ ignore = ["RUF001"]
 [tool.ruff.lint.per-file-ignores]
 # test_planner.py pins two full prompts (`_EXPECTED_EMPTY` / `_EXPECTED_POPULATED`)
 # as triple-quoted string constants whose physical lines are the literal, real
-# newline-delimited lines of auto-run.sh's own rendered output (contract 01 §4)
+# newline-delimited lines of the rendered prompt (contract 01 §4)
 # -- several of those source lines already exceed 100 columns. Wrapping them
 # would insert a newline that is not in the real prompt, silently turning the
 # byte-for-byte pin into a paraphrase of its own expected value. Every other
 # line in this file is subject to the normal E501 limit.
 "tests/unit/test_planner.py" = ["E501"]
 # Same reasoning as test_planner.py above: `_EXPECTED_EMPTY_USER` /
-# `_EXPECTED_POPULATED_USER` are triple-quoted pins of dream.sh's own
-# rendered heredoc output (contract 03 §2.4) -- some of its real lines (the
+# `_EXPECTED_POPULATED_USER` are triple-quoted pins of the rendered
+# dream prompt (contract 03 §2.4) -- some of its real lines (the
 # echo-chamber sentence, the closing paragraph) exceed 100 columns on their
 # own. Wrapping them would insert a newline the real prompt never contains.
 "tests/unit/test_dream_candidate.py" = ["E501"]
-# Same family as the repo-wide RUF001 ignore above, scoped to the two files
-# that need the docstring/comment variants. `rule_check.py` quotes rule-check.sh's
-# own tag regex (`[#＃]`, where the full-width form is half the point of the
-# character class) and the verbatim production memory line whose full-width
-# comma sits inside the text that once mis-parsed as a hashtag range. Rewriting
-# either into ASCII would turn a quotation of the frozen script into a
-# paraphrase of it.
-"swil_agent/analysis/rule_check.py" = ["RUF002", "RUF003"]
-# As above, plus N802: four test names embed the CJK term they are about (标签,
-# 感叹号) so a failure line names the rule that broke. A CJK identifier has no
-# case, which ruff reports as "should be lowercase"; there is nothing to fix.
-"tests/unit/test_rule_check.py" = ["RUF002", "N802"]
 # Same family as the repo-wide RUF001 ignore. This module's docstring quotes
 # the ONE surviving trace of the 2026-08-05 hand rollback verbatim -- the
 # archive header `归档于 ... ，手工干预：短语固着回滚`, full-width comma and

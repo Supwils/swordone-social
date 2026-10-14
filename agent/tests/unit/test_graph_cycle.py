@@ -1,22 +1,21 @@
 """The assembled cycle graph (Plan 3 Task 8, spec §5.4).
 
-`graph/nodes.py` is nine adapters; this is the wiring BETWEEN them, plus the
+`graph/nodes.py` is ten adapters; this is the wiring BETWEEN them, plus the
 two things that wrap the whole run -- the lease and the checkpointer. So what
 these tests can see, and no earlier suite can, is:
 
   * **Which nodes a round actually visits.** The node tests drive one node at
-    a time; only here can an edge route a rejected dream around `write_step`
-    (deleting the constitution layer with every node test green), or route an
-    offline probe into `plan` and spend an LLM call on an unreachable
-    platform.
+    a time; only here can an edge route a failed dream into `write_step`, or
+    route an offline probe into `plan` and spend an LLM call on an
+    unreachable platform.
   * **The retry policies.** A `timeout=` reintroduced on any node either
     breaks `compile()` or resurrects the orphan-subprocess class; a
     `retry_on` widened to bare `Exception` re-runs `execute_step` from the
     top after a 404, and `execute_step` is not idempotent -- every action
     that already landed lands again.
-  * **The loops.** Loops 2 and 3 are OFF by default. A graph that loops by
-    default doubles every account's LLM spend, and nothing in the node layer
-    can tell.
+  * **The loop.** Loop 3 (multi-round) is OFF by default. A graph that loops
+    by default doubles every account's LLM spend, and nothing in the node
+    layer can tell.
   * **The lease and its heartbeat.** The lease keyed on the wrong name locks
     a path no Bash round reads, and an unbeaten lease is reclaimed at 1800s
     by a Bash round while this cycle still holds it -- both invisible unless
@@ -52,13 +51,11 @@ from swil_agent.graph.cycle import (
     BEHAVIOR_SNAPSHOT,
     DREAM,
     EXECUTE,
-    GATE,
     GUARDRAIL,
     LOGIN,
     LOGOUT,
     PLAN,
     POPULATION_METRIC,
-    RULE_CHECK,
     SNAPSHOT,
     WRITE,
     CycleConfig,
@@ -77,34 +74,40 @@ from ._runners import (
     FakePersonaSource,
     FakeResources,
     FakeState,
-    RecordingRunner,
+    make_persona,
 )
 
 NOW = datetime(2026, 8, 17, 10, 0, 0)
 # Deliberately a different instant from `NOW` -- see test_graph_nodes.py.
 CAPTURED_AT = datetime(2026, 8, 17, 2, 0, 0, tzinfo=UTC)
 
-# Directory name and `Username` bullet differ on purpose everywhere in this
-# file: the lease, the lock file and every log line take the DIRECTORY name
-# (`auto-run.sh:407`'s `basename`), and a fixture where the two coincide
-# cannot tell a correct lease path from one that locks a file nobody reads.
+# Directory name and username differ on purpose everywhere in this file (the
+# persona is built directly, not through the loader that requires them to
+# match): the lease, the lock file and every log line take the DIRECTORY
+# name, and a fixture where the two coincide cannot tell a correct lease path
+# from one that locks a file nobody reads.
 DIR_NAME = "zenith_dir"
 USERNAME = "zenith"
 
-PERSONALITY = """# 测试
+PERSONALITY = """---
+username: zenith
+display_name: 测试
+model: claude:opus
+board: ai
+topics: [alpha, beta]
+era: 3
+---
+# 测试
 
-## 身份
-- **Username:** zenith
-- **Display Name:** 测试
-- **Headline:** AI Agent
-- **Bio:** 一句话
-- **Follow Topics:** alpha,beta,gamma
+一个测试用的账号。
 
-- **AI Backend:** claude
-
-## 发帖节律
-- 每次触发有 60% 概率选择 post
+## 最近
+- 一件旧事
 """
+
+DREAM_REPLY = '{"recent": ["一件新事"]}'
+# Parses as no list at all: the dream fails and nothing is written.
+BAD_DREAM_REPLY = "我今天不想写。"
 
 # Every step `graph/nodes.py` calls, in the order a complete cycle calls them.
 # Spying on these module globals is how this file observes WHICH nodes ran:
@@ -122,32 +125,16 @@ _ACT_STEPS = (
 _DREAM_STEPS = (
     "cooldown_step",
     "dream_step",
-    "gate_step",
     "write_step",
     "snapshot_step",
 )
 
 
-def _valid_candidate(bio: str = "改写过的一句话") -> str:
-    return PERSONALITY.replace("一句话", bio)
-
-
-def _rejected_candidate() -> str:
-    """Fails Follow Topics after spec §12 identity copy-back restores
-    Username / AI Backend. A mangled Username is no longer a structural
-    reject on the dream write path."""
-    return PERSONALITY.replace(
-        "- **Follow Topics:** alpha,beta,gamma", "- **Follow Topics:** alpha"
-    )
-
-
 class ScriptedBackend:
     """Answers each `complete` call from a script, in order.
 
-    A whole cycle spends up to three backend calls on ONE backend object:
-    the plan, the dream's rewrite candidate, and the accepted dream's diff
-    narrative. `TwoCallBackend` splits only the last two, so it cannot drive
-    a cycle that plans first.
+    A whole cycle spends two backend calls on ONE backend object: the plan,
+    then the dream's new 最近 list.
     """
 
     name = "scripted"
@@ -173,12 +160,10 @@ def _account(root: Path, *, dir_name: str = DIR_NAME) -> Path:
 
 
 def _persona(root: Path, *, dir_name: str = DIR_NAME, username: str = USERNAME) -> Persona:
-    return Persona(
+    return make_persona(
         username=username,
         directory=_account(root, dir_name=dir_name),
         backend="claude",
-        model=None,
-        rhythm_text="",
         raw=PERSONALITY,
     )
 
@@ -207,12 +192,11 @@ def _deps(tmp_path: Path, **overrides: Any) -> CycleDeps:
     frozen, and a backend scripted for a full accepted cycle."""
     defaults: dict[str, Any] = {
         "resources": FakeResources(),
-        "backend": ScriptedBackend(_plan_json(), _valid_candidate(), "叙述"),
+        "backend": ScriptedBackend(_plan_json(), DREAM_REPLY),
         "persona_source": FakePersonaSource(),
-        "runner": RecordingRunner(),
         "embedder": FakeEmbedder(vectors=[[1.0], [1.0]]),
         "dream_state": FakeState(),
-        "settings": Settings(drift_mode="scalar"),
+        "settings": Settings(),
         "agent_root": _agent_root(tmp_path),
         "health_check": lambda: True,
         "memory_text": "",
@@ -305,10 +289,11 @@ def test_no_node_declares_a_timeout() -> None:
 
 
 def test_the_topology_matches_the_spec(tmp_path: Path) -> None:
-    """§5.4's nine nodes plus Plan 4's two, and the edges between them, read
-    back off the compiled graph. A route deleted or re-pointed shows up here
-    before any behavioural test has to reproduce the round that would have
-    taken it."""
+    """Era 3's ten nodes -- login → plan → guardrail → execute →
+    behavior_snapshot → dream → write → snapshot → logout → population_metric
+    -- and the edges between them, read back off the compiled graph. A route
+    deleted or re-pointed shows up here before any behavioural test has to
+    reproduce the round that would have taken it."""
     drawn = build_cycle().compile().get_graph()
     assert {node.id for node in drawn.nodes.values()} == {
         "__start__",
@@ -318,9 +303,7 @@ def test_the_topology_matches_the_spec(tmp_path: Path) -> None:
         GUARDRAIL,
         EXECUTE,
         BEHAVIOR_SNAPSHOT,
-        RULE_CHECK,
         DREAM,
-        GATE,
         WRITE,
         SNAPSHOT,
         LOGOUT,
@@ -334,15 +317,14 @@ def test_the_topology_matches_the_spec(tmp_path: Path) -> None:
         (PLAN, GUARDRAIL),
         (PLAN, LOGOUT),
         (GUARDRAIL, EXECUTE),
-        (GUARDRAIL, RULE_CHECK),
+        (GUARDRAIL, DREAM),
+        (GUARDRAIL, LOGOUT),
         (EXECUTE, BEHAVIOR_SNAPSHOT),
-        (BEHAVIOR_SNAPSHOT, RULE_CHECK),
+        (BEHAVIOR_SNAPSHOT, DREAM),
         (BEHAVIOR_SNAPSHOT, LOGIN),
-        (RULE_CHECK, DREAM),
-        (DREAM, GATE),
+        (BEHAVIOR_SNAPSHOT, LOGOUT),
+        (DREAM, WRITE),
         (DREAM, LOGOUT),
-        (GATE, WRITE),
-        (GATE, DREAM),
         (WRITE, SNAPSHOT),
         (SNAPSHOT, LOGOUT),
         # The cycle's tail. `logout -> population_metric` is UNCONDITIONAL and
@@ -356,26 +338,15 @@ def test_the_topology_matches_the_spec(tmp_path: Path) -> None:
         assert (source, target) in edges, f"missing edge {source} -> {target}"
 
 
-def test_the_act_phase_cannot_reach_the_dream_without_passing_rule_check(
-    tmp_path: Path,
-) -> None:
-    """The ordering constraint of `cycle-one.sh:39-45`, as a TOPOLOGICAL fact.
-
-    Every edge into `dream` is enumerated: exactly two exist, `rule_check ->
-    dream` (the act phase's only way in) and `gate -> dream` (loop 2, whose
-    whole point is that a RETRIED dream must not re-sample the same posts
-    against the same rules). So no act-phase router can be re-pointed at
-    `dream` without this failing -- which is the mutation "swap rule_check to
-    after the dream" in its cheapest form, one edge.
-    """
+def test_only_the_act_phase_enters_the_dream_and_only_the_dream_enters_write() -> None:
+    """There is no gate and no rule check any more: the act phase's two exits
+    lead straight into `dream`, and `write` is entered from `dream` alone (a
+    failed dream routes to `logout` instead)."""
     drawn = build_cycle().compile().get_graph()
     into_dream = {edge.source for edge in drawn.edges if edge.target == DREAM}
-    assert into_dream == {RULE_CHECK, GATE}
-
-    # ...and `rule_check` is entered ONLY from the act phase, never from the
-    # dream phase -- the same claim from the other side.
-    into_rule_check = {edge.source for edge in drawn.edges if edge.target == RULE_CHECK}
-    assert into_rule_check == {GUARDRAIL, BEHAVIOR_SNAPSHOT}
+    assert into_dream == {GUARDRAIL, BEHAVIOR_SNAPSHOT}
+    into_write = {edge.source for edge in drawn.edges if edge.target == WRITE}
+    assert into_write == {DREAM}
 
 
 def test_the_retry_policies_match_the_corrected_node_table() -> None:
@@ -391,10 +362,10 @@ def test_the_retry_policies_match_the_corrected_node_table() -> None:
     permanent. A second attempt would only pay for a second LLM call before
     failing identically -- see `test_the_plan_node_is_attempted_exactly_once`.
 
-    `behavior_snapshot` and `rule_check` carry none for a third reason again:
-    both swallow every `Exception` internally (Bash's `|| true`), so nothing
-    can reach the boundary for a policy to act on -- and a retry that DID
-    fire would double-file the measurement it exists to record once.
+    `behavior_snapshot` carries none for a third reason again: it swallows
+    every `Exception` internally, so nothing can reach the boundary for a
+    policy to act on -- and a retry that DID fire would double-file the
+    measurement it exists to record once.
     """
     nodes = build_cycle().compile().nodes
     attempts = {
@@ -402,14 +373,13 @@ def test_the_retry_policies_match_the_corrected_node_table() -> None:
         PLAN: 1,
         EXECUTE: 2,
         DREAM: 1,
-        GATE: 1,
         SNAPSHOT: 2,
     }
     for name, expected in attempts.items():
         policies = nodes[name].retry_policy
         assert policies is not None, f"{name} has no retry policy"
         assert [policy.max_attempts for policy in policies] == [expected]
-    for name in (GUARDRAIL, BEHAVIOR_SNAPSHOT, RULE_CHECK, WRITE, LOGOUT, POPULATION_METRIC):
+    for name in (GUARDRAIL, BEHAVIOR_SNAPSHOT, WRITE, LOGOUT, POPULATION_METRIC):
         assert nodes[name].retry_policy is None, f"{name} must carry no retry policy"
 
 
@@ -428,7 +398,7 @@ def test_every_retrying_node_names_what_it_retries() -> None:
         policies = nodes[name].retry_policy
         assert policies is not None
         assert policies[0].retry_on == (TransportError,), f"{name} kept the default predicate"
-    for name in (PLAN, DREAM, GATE):
+    for name in (PLAN, DREAM):
         policies = nodes[name].retry_policy
         assert policies is not None
         assert policies[0].max_attempts == 1, f"{name} must not retry at all"
@@ -649,7 +619,7 @@ def test_a_failure_after_an_action_landed_does_not_re_execute_it(
         real_write(directory, action, result, **kwargs)
 
     monkeypatch.setattr(act_round, "_write_memory_line", failing_write)
-    backend = ScriptedBackend(_TWO_LIKES, _valid_candidate(), "叙述")
+    backend = ScriptedBackend(_TWO_LIKES, DREAM_REPLY)
     with pytest.raises(OSError, match="No space left"):
         _run(tmp_path, persona=persona, deps=_deps(tmp_path, backend=backend, resources=resources))
 
@@ -671,7 +641,7 @@ def test_a_transport_failure_mid_loop_is_absorbed_and_never_reaches_the_boundary
     """
     root = _agent_root(tmp_path)
     resources = FakeResources(like_raises=TransportError(httpx.ConnectError("refused")))
-    backend = ScriptedBackend(_TWO_LIKES, _valid_candidate(), "叙述")
+    backend = ScriptedBackend(_TWO_LIKES, DREAM_REPLY)
     trace = _trace_steps(monkeypatch)
     final = _run(
         tmp_path,
@@ -684,26 +654,22 @@ def test_a_transport_failure_mid_loop_is_absorbed_and_never_reaches_the_boundary
     assert final["outcome"] is ActOutcome.LANDED_PARTIAL
 
 
-# ── the loops, both OFF by default ──────────────────────────────────────────
+# ── the loop, OFF by default ────────────────────────────────────────────────
 
 
-def test_the_default_configuration_takes_neither_loop(
+def test_the_default_configuration_does_not_loop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`MAX_ROUNDS=1` and dream retry OFF are the defaults; a graph that
-    loops by default doubles every account's LLM spend.
-
-    The dream is REJECTED here on purpose -- that is the state loop 2 tests,
-    so a default that had it on would be visible as a second `dream_step`.
-    """
-    backend = ScriptedBackend(_plan_json(), _rejected_candidate(), "叙述")
+    """`MAX_ROUNDS=1` is the default; a graph that loops by default doubles
+    every account's LLM spend. A FAILED dream is not retried either."""
+    backend = ScriptedBackend(_plan_json(), BAD_DREAM_REPLY)
     trace = _trace_steps(monkeypatch)
     _run(tmp_path, deps=_deps(tmp_path, backend=backend))
     assert trace.count("login_step") == 1
     assert trace.count("plan_step") == 1
     assert trace.count("execute_step") == 1
     assert trace.count("dream_step") == 1
-    assert trace.count("gate_step") == 1
+    assert len(backend.calls) == 2
 
 
 def test_loop_three_reruns_the_act_phase_against_rebuilt_deps(
@@ -754,42 +720,11 @@ def test_loop_three_refuses_to_run_against_frozen_deps(tmp_path: Path) -> None:
         _run(tmp_path, config=CycleConfig(max_rounds=2))
 
 
-def test_loop_two_retries_a_rejected_dream_once_and_then_writes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Loop 2, enabled: a rejected candidate earns exactly one more attempt,
-    and the retry's own verdict is final whichever way it goes."""
-    backend = ScriptedBackend(_plan_json(), _rejected_candidate(), _rejected_candidate(), "叙述")
-    trace = _trace_steps(monkeypatch)
-    _run(
-        tmp_path,
-        deps=_deps(tmp_path, backend=backend),
-        config=CycleConfig(max_dream_attempts=2),
-    )
-    assert trace.count("dream_step") == 2
-    assert trace.count("gate_step") == 2
-    assert trace.count("write_step") == 1
-
-
-def test_loop_two_does_not_retry_a_dream_that_was_accepted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The retry is keyed on the REJECTION, not on the attempt count -- an
-    accepted dream with budget left over must not be dreamt again."""
-    trace = _trace_steps(monkeypatch)
-    _run(tmp_path, config=CycleConfig(max_dream_attempts=2))
-    assert trace.count("dream_step") == 1
-    assert trace.count("write_step") == 1
-
-
-def test_the_dream_retry_ceiling_is_one_retry() -> None:
-    """Spec §5.4: "loop 2 (default OFF, max 1 retry)". Two attempts is the
-    ceiling; a config asking for more is refused rather than quietly
-    tripling an account's dream spend."""
-    with pytest.raises(ValueError, match="retry"):
-        CycleConfig(max_dream_attempts=3)
-    with pytest.raises(ValueError, match="at least one"):
-        CycleConfig(max_dream_attempts=0)
+def test_the_dream_retry_loop_is_gone() -> None:
+    """Era 2's loop 2 retried a gate-rejected dream. There is no gate, so
+    there is nothing to retry and no knob for it."""
+    with pytest.raises(TypeError):
+        CycleConfig(max_dream_attempts=2)  # type: ignore[call-arg]
 
 
 def test_a_cycle_must_run_at_least_one_round() -> None:
@@ -856,7 +791,7 @@ def test_an_empty_plan_skips_execute_but_still_dreams(
     `plan` rather than on the post-guardrail survivors) survived the trace
     assertions alone.
     """
-    backend = ScriptedBackend('{"plan":[]}', _valid_candidate(), "叙述")
+    backend = ScriptedBackend('{"plan":[]}', DREAM_REPLY)
     trace = _trace_steps(monkeypatch)
     final = _run(tmp_path, deps=_deps(tmp_path, backend=backend))
     assert final["outcome"] is ActOutcome.PLANNER_EMPTY
@@ -866,53 +801,48 @@ def test_an_empty_plan_skips_execute_but_still_dreams(
     assert final["round_index"] == 0
 
 
-def test_a_rejected_dream_still_reaches_write_and_snapshot(
+def test_a_failed_dream_skips_write_and_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The gate's rejection is NOT an edge that routes around the write.
-    `verdict` and `written` are THREADED into the two steps that write, and
-    each guards internally -- so deleting a guard turns red, where a graph
-    that branched instead could lose both guards with every test green.
-
-    "keep original" in §5.4's diagram IS `write_step` under a rejecting
-    verdict.
-    """
-    backend = ScriptedBackend(_plan_json(), _rejected_candidate(), "叙述")
+    """An unparseable reply leaves `recent` unset, so the router sends the
+    cycle to `logout`: nothing is written and no snapshot is published."""
+    backend = ScriptedBackend(_plan_json(), BAD_DREAM_REPLY)
     source = FakePersonaSource()
     trace = _trace_steps(monkeypatch)
     final = _run(tmp_path, deps=_deps(tmp_path, backend=backend, persona_source=source))
-    assert trace.count("write_step") == 1
-    assert trace.count("snapshot_step") == 1
-    assert final["written"] is False
-    assert source.archived == []
+    assert final["proceeded"] is True
+    assert final["dream_reason"] == "unparseable dream output"
+    assert "write_step" not in trace
+    assert "snapshot_step" not in trace
+    assert final.get("written") is None
+    assert source.written == []
 
 
-def test_a_dream_that_produced_no_candidate_skips_the_gate(
+def test_a_cooldown_skip_never_reaches_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A cooldown SKIP, an empty rewrite and a blown deadline all leave
-    `candidate` unset. The gate node `_require`s it, so an unconditional
-    edge would turn every one of those quiet rounds into a `NodeStateError`."""
+    """A cooldown SKIP, an empty reply and a blown deadline all leave
+    `recent` unset, and none of them may reach `write`."""
     state = FakeState()
-    state.record_dream(DIR_NAME, at=int(NOW.timestamp()) - 3600, memlines=0)
+    state.record_dream(DIR_NAME, at=int(NOW.timestamp()) - 3600)
     trace = _trace_steps(monkeypatch)
     final = _run(tmp_path, deps=_deps(tmp_path, dream_state=state, auto=True))
     assert final["proceeded"] is False
-    assert "gate_step" not in trace
+    assert "dream_step" not in trace
     assert "write_step" not in trace
 
 
 def test_a_full_cycle_runs_every_step_in_the_order_the_scripts_do(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """login → plan → guardrail → execute → dream → gate → write → snapshot
-    → logout, expanded to the twelve steps the nine nodes call.
+    """login → plan → guardrail → execute → dream → write → snapshot →
+    logout, expanded to the eleven steps the nodes call.
 
     Asserted on EFFECTS as well as on the trace: the post reached the API,
     the `memory.md` line landed in this persona's own directory, and every
-    lab event was filed under the `Username` bullet -- which is the half of
-    the identity that is NOT the directory name, and the only way to tell
-    that the persona the caller passed is the persona the nodes ran.
+    snapshot was filed under the username -- the half of the identity that
+    is NOT the directory name, and the only way to tell that the persona the
+    caller passed is the persona the nodes ran.
     """
     root = _agent_root(tmp_path)
     persona = _persona(root)
@@ -932,28 +862,25 @@ def test_a_full_cycle_runs_every_step_in_the_order_the_scripts_do(
         "finalize_step",
         "cooldown_step",
         "dream_step",
-        "gate_step",
         "write_step",
         "snapshot_step",
     ]
     assert final["outcome"] is ActOutcome.LANDED_ALL
     assert final["written"] is True
+    assert final["recent"] == ["一件新事"]
 
 
-def test_an_empty_rewrite_skips_the_gate_although_the_dream_proceeded(
+def test_an_empty_reply_skips_write_although_the_dream_proceeded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The OTHER no-candidate shape, and the one that separates "did this
-    account dream at all" from "did the dream produce anything": the cooldown
-    let it through, the backend returned nothing, and `candidate` is still
-    unset. Routing on `proceeded` instead of on the candidate passes the
-    cooldown test and dies here with a `NodeStateError` out of the gate."""
+    """The cooldown let the dream through, the backend returned nothing, and
+    `recent` is still unset. Routing on `proceeded` instead of on `recent`
+    would send this into `write`."""
     backend = ScriptedBackend(_plan_json(), "")
     trace = _trace_steps(monkeypatch)
     final = _run(tmp_path, deps=_deps(tmp_path, backend=backend))
     assert final["proceeded"] is True
-    assert final.get("candidate") is None
-    assert "gate_step" not in trace
+    assert final.get("recent") is None
     assert "write_step" not in trace
 
 
@@ -967,8 +894,8 @@ def test_a_many_round_configuration_does_not_hit_the_recursion_limit(
     per_round = {index: _deps(tmp_path) for index in range(5)}
     # Index 5 is the DREAM phase's deps -- resolved after the last act round,
     # exactly as `CycleContext.deps_for_round` documents -- so its backend is
-    # scripted for the rewrite, not for a plan.
-    per_round[5] = _deps(tmp_path, backend=ScriptedBackend(_valid_candidate(), "叙述"))
+    # scripted for the dream, not for a plan.
+    per_round[5] = _deps(tmp_path, backend=ScriptedBackend(DREAM_REPLY))
     trace = _trace_steps(monkeypatch)
     final = _run(
         tmp_path,
@@ -990,7 +917,7 @@ def test_the_final_state_is_the_whole_cycles_state(tmp_path: Path) -> None:
     assert final["run_id"] == "run-abc"
     assert final["thread_id"] == f"builtin:{DIR_NAME}:r1"
     assert final["outcome"] is ActOutcome.LANDED_ALL
-    assert final["verdict"] is not None
+    assert final["recent"] == ["一件新事"]
     assert final["snapshot_ok"] is True
 
 
@@ -1018,11 +945,10 @@ class _Probe:
 def test_the_cycle_holds_both_bash_visible_lock_files_while_it_runs(
     tmp_path: Path,
 ) -> None:
-    """Stages 3-4 run Bash and Python over the same 23 accounts. Bash reads
-    `.agent-state/lock_<name>` (auto-run.sh:407) and
-    `.agent-state/dream_lock_<name>` (dream.sh:460) and nothing else -- a
-    cycle that acts AND dreams must hold both, or a concurrent `dream.sh`
-    rewrites `personality.md` underneath this one."""
+    """`.agent-state/lock_<name>` and `.agent-state/dream_lock_<name>` are
+    what every other runner checks -- a cycle that acts AND dreams must hold
+    both, or a concurrent `swil-agent dream` rewrites `personality.md`
+    underneath this one."""
     db = _lease_db(tmp_path)
     root = _agent_root(tmp_path)
     probe = _Probe(db, root)
@@ -1034,11 +960,10 @@ def test_the_cycle_holds_both_bash_visible_lock_files_while_it_runs(
 def test_the_lease_is_keyed_on_the_directory_name_not_the_username(
     tmp_path: Path,
 ) -> None:
-    """`auto-run.sh:407` derives the lock name with `basename "$agent_dir"`,
-    and folder name and `Username` bullet diverge on this roster. A lease
-    built from the username computes a DIFFERENT lock path than the Bash
-    round it is meant to exclude -- with every test still green, because
-    both runtimes would simply be locking files nobody else looks at."""
+    """The lock name is the persona DIRECTORY name. A lease built from the
+    username computes a DIFFERENT lock path than every other holder -- with
+    every test still green, because each would lock a file nobody else
+    looks at."""
     db = _lease_db(tmp_path)
     root = _agent_root(tmp_path)
     probe = _Probe(db, root)
@@ -1070,7 +995,7 @@ def test_a_cycle_that_dies_mid_round_still_releases_both_leases(
     def explode(**_kwargs: Any) -> Any:
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(nodes_module, "gate_step", explode)
+    monkeypatch.setattr(nodes_module, "write_step", explode)
     with pytest.raises(RuntimeError):
         _run(tmp_path, persona=_persona(root), deps=_deps(tmp_path), db=db)
     assert _rows(db) == []
@@ -1122,12 +1047,9 @@ def test_a_dry_run_never_reaches_the_dream_phase(
     but executes nothing and **writes nothing**".
 
     The dream phase has no `dry_run` to be inert under -- `write_step`
-    archives and rewrites `personality.md`, `snapshot_step` publishes it, and
-    `dream_step` CONSUMES the one-shot `echo_flag_<name>` marker -- so a dry
-    cycle that entered it would have rewritten 23 personalities and uploaded
-    23 snapshots during the round whose whole premise is that Python never
-    wrote. Nothing in the suite could see this before: every dry-run test used
-    a `FakePersonaSource`, so the writes went to a list instead of to disk.
+    archives and rewrites `personality.md`, `snapshot_step` publishes it --
+    so a dry cycle that entered it would rewrite every persona during the
+    round whose whole premise is that nothing is written.
 
     Asserted on EFFECTS and on SPEND: no archive, no snapshot, no cooldown
     marker read -- and exactly ONE backend call, the plan. A version that
@@ -1137,7 +1059,7 @@ def test_a_dry_run_never_reaches_the_dream_phase(
     root = _agent_root(tmp_path)
     source = FakePersonaSource()
     resources = FakeResources()
-    backend = ScriptedBackend(_plan_json(), _valid_candidate(), "叙述")
+    backend = ScriptedBackend(_plan_json(), DREAM_REPLY)
     trace = _trace_steps(monkeypatch)
     final = _run(
         tmp_path,
@@ -1153,7 +1075,7 @@ def test_a_dry_run_never_reaches_the_dream_phase(
     assert trace == list(_ACT_STEPS)
     assert not any(step in trace for step in _DREAM_STEPS)
     assert len(backend.calls) == 1
-    assert source.archived == []
+    assert source.written == []
     assert source.appended == []
     assert resources.snapshots == []
     assert final.get("written") is None
@@ -1239,7 +1161,7 @@ def test_both_leases_are_beaten_between_nodes(tmp_path: Path) -> None:
             seen.append(stamps())
             return super().complete(req)
 
-    backend = WatchingBackend(_plan_json(), _valid_candidate(), "叙述")
+    backend = WatchingBackend(_plan_json(), DREAM_REPLY)
     _run(
         tmp_path,
         persona=_persona(root),

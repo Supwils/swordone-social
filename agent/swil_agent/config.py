@@ -8,8 +8,8 @@ This is the opposite of pydantic-settings' default, hence the explicit
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
@@ -29,73 +29,33 @@ class Settings(BaseSettings):
 
     swil_url: str = "http://localhost:8899"
     swil_pass: str | None = None
-
-    drift_mode: Literal["scalar", "shadow", "aspect"] = "aspect"
-    drift_threshold: float = 0.82
-    drift_threshold_values: float = 0.63
-    drift_threshold_style: float = 0.72
-    drift_threshold_topic: float = 0.71
-    aspect_distill_model: str = "haiku"
+    # Gate for `register` on servers that require it (isAgent signups).
+    swil_agent_setup_token: SecretStr | None = None
 
     embedder_url: str = "http://127.0.0.1:7777"
 
     dream_cooldown_hours: int = 12
     dream_min_new_memories: int = 8
 
-    echo_detect: bool = False
-    echo_variance_threshold: float = 0.04
+    # Era 3 start (ISO 8601). Unset until the operator opens the era.
+    era_start: datetime | None = None
 
-    # How many recent posts each of the two cycle-wired observability samplers
-    # reads. Bash spells them `RULE_CHECK_POST_LIMIT` (rule-check.sh:25) and
-    # `BEHAVIOR_POST_LIMIT` (behavior-snapshot.sh:28), both defaulting to 12.
-    # Declared here so the two runtimes read the SAME env var rather than the
-    # Python side silently ignoring an operator's override -- the defaults are
-    # spelled as literals because `analysis/` sits ABOVE `config` in spec
-    # §5.2's dependency order, so this module cannot import their constants.
-    # `test_config.py` pins the two pairs equal in both directions.
-    rule_check_post_limit: int = 12
+    # Act rhythm: a roll <= post_probability (percent) means the round must
+    # post; at post_ceiling_per_day posts it must not.
+    post_probability: int = Field(60, ge=0, le=100)
+    post_ceiling_per_day: int = Field(1, ge=0)
+    # Duplicate guard: drop a post candidate whose max cosine similarity to the
+    # account's last `post_duplicate_window` posts reaches the threshold.
+    post_duplicate_threshold: float = Field(0.92, gt=0, le=1)
+    post_duplicate_window: int = Field(12, ge=1, le=63)
+
+    # How many recent posts `behavior-snapshot` embeds.
     behavior_post_limit: int = 12
-
-    # How many of the account's OWN recent posts the act path's self-similarity
-    # sampler compares a candidate post against (Phase B task 2). 12 because
-    # that is the window `behavior_post_limit` above already uses: both read the
-    # same `/users/{u}/posts` endpoint about the same account, so a shared
-    # window is what lets "how repetitive was this round's post" and "what does
-    # this account's recent voice look like" be read against each other rather
-    # than against two different slices of history. Spelled as a literal for the
-    # same reason as the pair above -- `act/` sits above `config` in spec §5.2's
-    # dependency order, so this module cannot import
-    # `act.round.DEFAULT_ACT_SIMILARITY_WINDOW`; `test_act_similarity.py` pins
-    # the two equal in both directions.
-    #
-    # There is deliberately NO `act_similarity_threshold` beside it. This
-    # measurement is SHADOW ONLY -- computed, recorded, acting on nothing --
-    # and the threshold that will eventually gate on it has to be calibrated
-    # from the series this task starts collecting. A threshold sitting here
-    # unused is an invitation to set one before there is any data to set it
-    # from.
-    act_similarity_window: int = 12
-
-    # Probability that one round reads a board OUTSIDE the account's assigned
-    # niche (Phase B task 3, spec §8.3). Spelled as a literal for the same
-    # reason as the three windows above -- `act/` sits above `config` in spec
-    # §5.2's dependency order, so this module cannot import
-    # `act.context.DEFAULT_CROSS_READ_PROB`; `test_act_context.py` pins the two
-    # equal in both directions.
-    #
-    # Bounded to [0, 1] at load time rather than trusted. It is read straight
-    # into a `rng.random() < prob` comparison, where both out-of-range spellings
-    # an operator can plausibly type are SILENT: `CROSS_READ_PROB=15` (meaning
-    # "15%") makes every round a cross-read, and a negative value makes none --
-    # the second being indistinguishable from the intended off switch, and the
-    # first from a deliberate all-cross-reads arm. `0` is the documented off
-    # switch and the revert path, so it stays legal.
-    cross_read_prob: float = Field(default=0.15, ge=0.0, le=1.0)
 
     # ── LLM backend selection ────────────────────────────────────────────
     #
     # All five are GLOBAL DEFAULTS, not overrides: `llm/selection.py` ranks the
-    # personality.md bullets above them, because each account's backend is the
+    # persona's `model:` frontmatter above them, because each account's backend is the
     # drift experiment's independent variable and an env var that outranked the
     # roster would silently re-assign every arm at once. Only an explicit CLI
     # flag outranks the file. See that module's docstring for the full ladder.
@@ -137,6 +97,7 @@ class Settings(BaseSettings):
         "swil_llm_provider",
         "swil_llm_base_url",
         "swil_llm_api_key",
+        "swil_agent_setup_token",
         mode="before",
     )
     @classmethod

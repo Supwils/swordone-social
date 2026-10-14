@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from swil_agent.config import Settings
-from swil_agent.dream.distill import distill_cards
+from swil_agent.dream.round import dream_step
 from swil_agent.llm.base import (
     BackendBinaryMissingError,
     BackendUnavailableError,
@@ -15,7 +15,7 @@ from swil_agent.llm.base import (
     SubprocessRunner,
     build_backend,
 )
-from tests.unit._runners import RecordingRunner
+from tests.unit._runners import FakeResources, RecordingRunner, make_persona
 
 
 def _settings() -> Settings:
@@ -103,9 +103,8 @@ def test_codex_passes_declared_model_as_dash_m() -> None:
 
 
 def test_codex_concurrent_calls_never_collide_on_the_same_output_file() -> None:
-    """Regression guard: `swil.sh`'s mktemp template had its X's in the wrong
-    (non-trailing) position, so concurrent image posts collided on one fixed
-    filename and one call's output silently clobbered the other's.
+    """Regression guard: concurrent image posts must not collide on one fixed
+    filename, which would let one call's output silently clobber the other's.
 
     Genuinely concurrent (real OS threads, synchronized on a barrier so they
     enter `complete()` — and therefore `tempfile.NamedTemporaryFile` — at
@@ -332,9 +331,8 @@ def test_backend_binary_missing_is_deliberately_not_a_subclass_of_backend_unavai
     Both are `RuntimeError`s and they look like an obvious pair, which is why
     the flat hierarchy needs defending. Every "the LLM produced nothing" call
     site catches `BackendUnavailableError` and degrades quietly to `None`/`""`
-    -- `act/planner.py`'s `plan_round`, `dream/round.py`'s
-    `_generate_candidate` and `_diff_narrative`, `dream/distill.py`'s
-    `distill_cards` -- because that is what Bash does (`llm.sh`'s `_llm_raw`
+    -- `act/planner.py`'s `plan_round`, `dream/round.py`'s `dream_step` --
+    because that is what Bash does (`llm.sh`'s `_llm_raw`
     ends in `|| true`, so a dead model yields empty output, not an error).
 
     That degradation is correct for a model that answered with nothing and
@@ -352,12 +350,14 @@ def test_backend_binary_missing_is_deliberately_not_a_subclass_of_backend_unavai
     """
     assert not issubclass(BackendBinaryMissingError, BackendUnavailableError)
     assert issubclass(BackendBinaryMissingError, RuntimeError)
-    # ... and the degrade handlers really do let it through. `distill_cards`
-    # is the shortest of the four to drive: it retries 3x and returns None
-    # for a backend that produces nothing, so a subclass would return None
-    # here instead of raising.
+    # ... and the degrade handlers really do let it through: `dream_step`
+    # turns a backend that produces nothing into an "LLM returned empty"
+    # failure, so a subclass would be swallowed here instead of raising.
+    backend = build_backend("claude", _MissingBinaryRunner(), _settings())
     with pytest.raises(BackendBinaryMissingError):
-        distill_cards(_MissingBinaryRunner(), "PERSONA", model="haiku")
+        dream_step(
+            persona=make_persona(), resources=FakeResources(), backend=backend, memory_text=""
+        )
 
 
 class _MissingBinaryRunner:
@@ -445,14 +445,12 @@ def test_codex_runs_read_only_and_never_full_auto() -> None:
     assert argv[argv.index("-s") : argv.index("-s") + 2] == ["-s", "read-only"]
 
 
-# ── the Bash rollback path carries the same invariant ────────────────────────
+# ── the remaining shell LLM call sites carry the same invariant ──────────────
 #
-# `SWIL_RUNTIME=bash` is the Stage 5 rollback, so Bash is not dead code: if it
-# is ever exercised, it must be as safe as the Python path. All five of its
-# LLM call sites had the identical exposure, and three of them build their
-# argv independently of `llm_text` (the aspect distiller in `dream.sh`, the
-# judge in `benchmark-run.sh`, the deepseek branch of `llm.sh`) — which is how
-# a fix applied to one of them drifts away from the others.
+# `llm.sh` and `benchmark-run.sh` (the judge) still invoke the claude CLI
+# directly, and the deepseek branch of `llm.sh` builds its argv independently
+# of `llm_text` -- which is how a fix applied to one site drifts away from the
+# others.
 
 _SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 
@@ -477,12 +475,11 @@ def _live_logical_lines(script: str) -> list[str]:
 _CLAUDE_CALL = re.compile(r"\bclaude\b[^\n#]*\s-p\b")
 
 
-@pytest.mark.parametrize("script", ["llm.sh", "dream.sh", "benchmark-run.sh"])
+@pytest.mark.parametrize("script", ["llm.sh", "benchmark-run.sh"])
 def test_every_bash_claude_invocation_disables_tools(script: str) -> None:
-    # `-p` does not always follow `claude` directly: `dream.sh` writes
-    # `claude --model "$X" -p`, which a literal "claude -p" search misses
-    # entirely — and a search that misses a call site reports PASS for the one
-    # invocation nobody fixed.
+    # `-p` does not always follow `claude` directly (`claude --model "$X" -p`),
+    # which a literal "claude -p" search misses entirely — and a search that
+    # misses a call site reports PASS for the one invocation nobody fixed.
     calls = [line for line in _live_logical_lines(script) if _CLAUDE_CALL.search(line)]
     assert calls, f"{script} no longer invokes the claude CLI — retarget this test"
     for line in calls:

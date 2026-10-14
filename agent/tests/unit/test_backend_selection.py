@@ -9,8 +9,6 @@ direction of that ranking, not just its existence.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from swil_agent.config import Settings
@@ -23,6 +21,8 @@ from swil_agent.llm.selection import (
 )
 from swil_agent.models import Persona
 
+from ._runners import make_persona
+
 
 def _persona(
     *,
@@ -30,9 +30,7 @@ def _persona(
     model: str | None = None,
     raw: str = "- **Username:** zenith\n",
 ) -> Persona:
-    return Persona(
-        username="zenith",
-        directory=Path("/tmp/zenith"),
+    return make_persona(
         backend=declared_backend or "claude",
         declared_backend=declared_backend,
         model=model,

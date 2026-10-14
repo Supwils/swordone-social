@@ -56,10 +56,8 @@ for b in "${BACKENDS[@]}"; do
   # calls above: for claude it's the flag-omission branch in llm.sh
   # (`[[ -n "$model" ]] && model_args=(--model "$model")`); for deepseek it's the
   # `${model:-deepseek-v4-flash}` fallback. codex is skipped — its branch never
-  # reads $model at all, so an empty-model check there asserts nothing. This
-  # path matters beyond coverage: dream.sh's _diff_narrative calls
-  # `llm_text "$backend" "" "$sys" "$usr"` deliberately, since that function has
-  # never pinned a tier.
+  # reads $model at all, so an empty-model check there asserts nothing. A caller
+  # may deliberately pass an empty model to leave the tier unpinned.
   if [[ "$b" == "claude" || "$b" == "deepseek" ]]; then
     out="$(llm_text "$b" "" 'Reply with exactly the word OK and nothing else.' 'Say OK')"
     if [[ -n "$out" ]]; then

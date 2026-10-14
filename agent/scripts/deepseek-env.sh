@@ -8,7 +8,7 @@
 #
 # ⚠ Only ever source this inside a subshell. In the parent shell it would
 # hijack every subsequent `claude` call in the round — including the two
-# neutral rulers (dream.sh aspect distill, benchmark-run.sh judge_score).
+# neutral ruler (benchmark-run.sh judge_score).
 #
 # Setup: put the DeepSeek API key in ~/.claude/.deepseek-key (one line, chmod 600).
 

@@ -4,8 +4,6 @@ from pydantic import ValidationError
 from swil_agent.models import (
     Action,
     ActOutcome,
-    AspectSims,
-    DreamVerdict,
     Plan,
     RhythmPolicy,
 )
@@ -36,16 +34,3 @@ def test_act_outcome_distinguishes_empty_from_unavailable() -> None:
 
 def test_rhythm_policy_has_exactly_three_values() -> None:
     assert {p.value for p in RhythmPolicy} == {"free", "no_post", "must_post"}
-
-
-def test_dream_verdict_records_attempt() -> None:
-    v = DreamVerdict(
-        accepted=False,
-        reason="[style] breached",
-        breached=["style"],
-        sims=AspectSims(values=0.717, style=0.718, topic=0.760),
-        attempt=1,
-    )
-    assert v.attempt == 1
-    assert v.sims is not None
-    assert v.sims.style == 0.718

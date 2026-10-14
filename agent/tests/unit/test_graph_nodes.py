@@ -8,10 +8,8 @@ exactly the wiring in between:
 
   * **A value that never crosses a node boundary.** The steps are correct in
     isolation; the graph fails by dropping what one node produced before the
-    next one reads it. `narrative` is the sharp case: `write_step` computes
-    it and `snapshot_step` uploads it as `diffNarrative`, and an unthreaded
-    `CycleState` field between them empties that column for every snapshot
-    with the whole 952-test suite green.
+    next one reads it. `recent` is the sharp case: the dream node produces
+    it, and the write and snapshot nodes both consume it.
   * **A guard that stops being load-bearing on the graph path.** The two
     composition-shape pins in `test_dream_steps.py` monkeypatch
     `dream.round`'s MODULE GLOBALS, which is what makes them work for
@@ -19,14 +17,14 @@ exactly the wiring in between:
     `write_step` / `snapshot_step` into its OWN globals at import, so those
     spies never see a node's call. The equivalents live in this file,
     patching `graph.nodes`.
-  * **`dry_run` that reaches the steps that write.** Stage 3 is a
-    `--dry-run` shadow round across 23 live accounts. A node that forgets to
-    thread it posts to production.
-  * **The account's identity.** `agent_name` is the persona DIRECTORY name
-    (`basename "$agent_dir"`, auto-run.sh:407), never the `Username` bullet;
-    the two diverge on this roster. Every node test that names an account
-    uses a persona where they differ, so a node reaching for the wrong one
-    is visible rather than coincidentally correct.
+  * **`dry_run` that reaches the steps that write.** A `--dry-run` shadow
+    round runs against live accounts. A node that forgets to thread it posts
+    to production.
+  * **The account's identity.** `agent_name` is the persona DIRECTORY name,
+    never the username. Every node test that names an account uses a
+    persona where they differ (built directly, not through the loader that
+    requires them to match), so a node reaching for the wrong one is visible
+    rather than coincidentally correct.
 """
 
 from __future__ import annotations
@@ -43,7 +41,7 @@ import pytest
 
 from swil_agent.api.client import ApiError
 from swil_agent.config import Settings
-from swil_agent.dream.distill import anchor_cache_key
+from swil_agent.dream.round import snapshot_content
 from swil_agent.graph import nodes as nodes_module
 from swil_agent.graph.nodes import (
     CycleDeps,
@@ -51,7 +49,6 @@ from swil_agent.graph.nodes import (
     agent_dir_name,
     make_dream_node,
     make_execute_node,
-    make_gate_node,
     make_guardrail_node,
     make_login_node,
     make_logout_node,
@@ -65,25 +62,22 @@ from swil_agent.models import (
     ActContext,
     Action,
     ActOutcome,
-    AspectSims,
-    DreamVerdict,
     Persona,
     Plan,
     RhythmDecision,
     RhythmPolicy,
 )
 from swil_agent.persona.rhythm import decide_rhythm
-from swil_agent.persona.source import GitPersonaSource
 
 from ._runners import (
     FakeEmbedder,
     FakePersonaSource,
     FakeResources,
     FakeState,
-    RecordingRunner,
+    ScriptedBackend,
     SilentBackend,
     StubBackend,
-    TwoCallBackend,
+    make_persona,
 )
 
 NOW = datetime(2026, 8, 17, 10, 0, 0)
@@ -94,13 +88,6 @@ NOW = datetime(2026, 8, 17, 10, 0, 0)
 # either way (review finding 8).
 CAPTURED_AT = datetime(2026, 8, 17, 2, 0, 0, tzinfo=UTC)
 
-# `dream.gate._ASPECT_PROMPT_VERSION`, spelled out rather than imported --
-# the same convention `test_gate.py` and `test_distill.py` follow for this
-# private constant. It is part of the anchor cache KEY, so a mismatch seeds a
-# cache miss that looks like a hit and shows up as an unexplained extra
-# runner call several asserts later.
-_ASPECT_PROMPT_VERSION = "2"
-
 # Cooldown markers are written RELATIVE TO `NOW`, never to the wall clock:
 # `cooldown_step` is handed `deps.now`, so a marker seeded from
 # `time.time()` is compared against a frozen 2026-08-17 and yields a
@@ -108,43 +95,30 @@ _ASPECT_PROMPT_VERSION = "2"
 # discriminating the moment `dream_cooldown_hours` is what the test is about.
 _AN_HOUR_BEFORE_NOW = int(NOW.timestamp()) - 3600
 
-# Aspect mode with a `style` floor no bare `Settings()` carries.
-# `drift_mode="aspect"` alone is the FIELD DEFAULT, so a node resolving its
-# own `Settings()` would behave identically -- the threshold is what makes
-# the dep observable.
-_ASPECT_SETTINGS = Settings(drift_mode="aspect", drift_threshold_style=0.99)
-
-# Directory name and `Username` bullet deliberately differ everywhere in this
+# Directory name and username deliberately differ everywhere in this
 # file -- see the module docstring.
 DIR_NAME = "zenith_dir"
 USERNAME = "zenith"
 
-PERSONALITY = """# 测试
+PERSONALITY = """---
+username: zenith
+display_name: 测试
+model: claude:opus
+board: ai
+topics: [alpha, beta]
+era: 3
+---
+# 测试
 
-## 身份
-- **Username:** zenith
-- **Display Name:** 测试
-- **Headline:** AI Agent
-- **Bio:** 一句话
-- **Follow Topics:** alpha,beta,gamma
+一个测试用的账号。
 
-- **AI Backend:** claude
-
-## 发帖节律
-- 每次触发有 60% 概率选择 post
+## 最近
+- 一件旧事
 """
 
-
-def _valid_candidate(bio: str = "改写过的一句话") -> str:
-    return PERSONALITY.replace("一句话", bio)
-
-
-def _rejected_candidate() -> str:
-    """Fails the structural `Username` validator. This helper is fed to the
-    GATE/WRITE nodes as already-generated candidate text -- it never passes
-    through `dream_step`'s identity copy-back -- so a mangled Username still
-    rejects here."""
-    return PERSONALITY.replace("- **Username:** zenith", "- **Username:** someone_else")
+CARD = "# 测试\n\n一个测试用的账号。"
+DREAM_REPLY = '{"recent": ["一件新事", "开始觉得 @alpha 说得有道理"]}'
+NEW_RECENT = ["一件新事", "开始觉得 @alpha 说得有道理"]
 
 
 def _account(
@@ -166,18 +140,15 @@ def _persona(
     dir_name: str = DIR_NAME,
     username: str = USERNAME,
     backend: str = "claude",
-    rhythm_text: str = "",
     model: str | None = None,
-    read: str | None = None,
 ) -> Persona:
     directory = _account(tmp_path, dir_name=dir_name)
-    return Persona(
+    return make_persona(
         username=username,
         directory=directory,
         backend=backend,
         model=model,
-        rhythm_text=rhythm_text,
-        read=read,
+        card=CARD,
         raw=PERSONALITY,
     )
 
@@ -189,10 +160,9 @@ def _deps(tmp_path: Path, **overrides: Any) -> CycleDeps:
         "resources": FakeResources(),
         "backend": StubBackend('{"plan":[{"action":"nothing"}]}'),
         "persona_source": FakePersonaSource(),
-        "runner": RecordingRunner(),
         "embedder": FakeEmbedder(vectors=[[1.0], [1.0]]),
         "dream_state": FakeState(),
-        "settings": Settings(drift_mode="scalar"),
+        "settings": Settings(),
         "agent_root": tmp_path,
         "health_check": lambda: True,
         "memory_text": "",
@@ -227,9 +197,9 @@ class TracingResources(FakeResources):
         self.trace.append("update_profile")
         super().update_profile(patch)
 
-    def feed_global(self, limit: int, sort: str) -> list[dict[str, Any]]:
+    def feed_global(self, limit: int, sort: str, since: str | None = None) -> list[dict[str, Any]]:
         self.trace.append(f"feed_global:{sort}")
-        return super().feed_global(limit, sort)
+        return super().feed_global(limit, sort, since)
 
     def notifications(self, limit: int, unread_only: bool = True) -> list[dict[str, Any]]:
         self.trace.append("notifications")
@@ -298,7 +268,6 @@ def _all_collaborators_explode() -> dict[str, Any]:
         "resources": ExplodingCollaborator("Resources"),
         "backend": ExplodingCollaborator("Backend"),
         "persona_source": ExplodingCollaborator("PersonaSource"),
-        "runner": ExplodingCollaborator("Runner"),
         "embedder": ExplodingCollaborator("Embedder"),
         "dream_state": ExplodingCollaborator("DreamState"),
         "health_check": boom,
@@ -325,25 +294,6 @@ def _spy_on(monkeypatch: pytest.MonkeyPatch, step: str) -> dict[str, Any]:
     return seen
 
 
-class NarrativeBackend:
-    """Tags EVERY call as the diff narrative.
-
-    `TwoCallBackend` tags only its second call, because a full `run_dream`
-    spends the first on the rewrite candidate; a `write` node driven directly
-    makes the narrative call first.
-    """
-
-    name = "narrative"
-
-    def __init__(self, response: str = "叙述") -> None:
-        self._response = response
-        self.calls: list[Any] = []
-
-    def complete(self, req: Any) -> str:
-        self.calls.append(req)
-        return self._response
-
-
 class ScriptedClock:
     """A monotonic-shaped clock returning scripted values in call order, and
     its last value forever after -- so a test pins WHEN the deadline is read
@@ -365,14 +315,11 @@ class ScriptedClock:
 def test_the_login_node_probes_then_syncs_the_backend_then_builds_context(
     tmp_path: Path,
 ) -> None:
-    """Bash's own order (`auto-run.sh:473-494`, after login and before any
-    context is built), reproduced at the node layer.
+    """Probe, then the `agentBackend` PATCH, then the context reads.
 
     Mutation this kills: returning an empty partial, and separately, moving
-    `sync_backend_step` out of this node. Task 5's review measured what the
-    second one costs: deferring the sync drops the `agentBackend` PATCH
-    entirely on every early-return path, and `agentBackend` is the drift
-    experiment's independent variable.
+    `sync_backend_step` out of this node -- deferring the sync drops the
+    `agentBackend` PATCH entirely on every early-return path.
     """
     resources = TracingResources()
     persona = _persona(tmp_path)
@@ -735,83 +682,50 @@ def test_the_execute_node_does_not_turn_an_empty_plan_into_a_failed_round(
 # ── dream ───────────────────────────────────────────────────────────────────
 
 
-def test_the_dream_node_carries_the_candidate_and_the_memory_count_forward(
-    tmp_path: Path,
-) -> None:
-    """`memory_lines` is counted BEFORE this round's own "personality
-    consolidated" line and recorded by the write node into
-    `last_dream_memlines_<name>`. Counting it later records 101 where Bash
-    records 100 and the next round's override tally is off by one forever,
-    so the number has to cross the node boundary rather than being re-read.
-    """
-    memory_text = "\n".join(f"2026-08-01 | act | thing {i}" for i in range(12)) + "\n"
-    persona = _persona(tmp_path)
-    # The INJECTED source carries 12 lines while the account on disk still
-    # carries the one-line default: `GitPersonaSource(deps.agent_root)` is
-    # what a node resolving its own source would build, and rooted at
-    # `tmp_path` it would be indistinguishable from the dep unless the two
-    # disagree about the memory (the discriminability rule, applied to a
-    # collaborator rather than to a value).
+def test_the_dream_node_carries_the_new_list_forward(tmp_path: Path) -> None:
+    """`recent` is the dream node's one product; the write and snapshot nodes
+    both read it from the state. The memory comes from the INJECTED source
+    (`cooldown_step`'s read), not from the file on disk."""
     source = FakePersonaSource()
-    source.memory[DIR_NAME] = memory_text
-    node = make_dream_node(
-        _deps(
-            tmp_path,
-            persona_source=source,
-            backend=TwoCallBackend(candidate_response=_valid_candidate()),
-        )
-    )
+    source.memory[DIR_NAME] = "2026-08-01 | act | INJECTED-MEMORY-MARKER\n"
+    backend = StubBackend(DREAM_REPLY)
+    node = make_dream_node(_deps(tmp_path, persona_source=source, backend=backend))
 
-    update = node({"persona": persona})
+    update = node({"persona": _persona(tmp_path)})
 
     assert update["proceeded"] is True
-    assert update["memory_lines"] == 12
-    assert update["candidate"] is not None
-    assert "改写过的一句话" in update["candidate"]
+    assert update["recent"] == NEW_RECENT
+    assert backend.last is not None
+    assert "INJECTED-MEMORY-MARKER" in backend.last.user
 
 
 def test_a_cooled_down_account_never_reaches_the_backend(tmp_path: Path) -> None:
     """The cooldown gate is inside this node, so a SKIPped account costs no
     LLM call -- and the SKIP line `cooldown_step` logs is the only record
     that the round happened and declined."""
-    persona = _persona(tmp_path)
-    _account(tmp_path)
     state = FakeState()
-    state.record_dream(DIR_NAME, at=_AN_HOUR_BEFORE_NOW, memlines=0)
-    backend = TwoCallBackend(candidate_response=_valid_candidate())
-    node = make_dream_node(
-        _deps(
-            tmp_path,
-            persona_source=GitPersonaSource(tmp_path),
-            dream_state=state,
-            backend=backend,
-            auto=True,
-        )
-    )
+    state.record_dream(DIR_NAME, at=_AN_HOUR_BEFORE_NOW)
+    backend = ScriptedBackend(DREAM_REPLY)
+    node = make_dream_node(_deps(tmp_path, dream_state=state, backend=backend, auto=True))
 
-    update = node({"persona": persona})
+    update = node({"persona": _persona(tmp_path)})
 
     assert update["proceeded"] is False
     assert "cooldown" in update["dream_reason"]
     assert backend.calls == []
-    assert "candidate" not in update
+    assert "recent" not in update
 
 
-def test_an_empty_rewrite_is_reported_as_the_dreams_reason(tmp_path: Path) -> None:
-    """`dream_step`'s single failure mode. The reason belongs in the state
-    because the gate node never runs for it -- there is no verdict to read
-    it off later."""
-    persona = _persona(tmp_path)
-    _account(tmp_path)
-    node = make_dream_node(
-        _deps(tmp_path, persona_source=GitPersonaSource(tmp_path), backend=SilentBackend())
-    )
+def test_an_empty_reply_is_reported_as_the_dreams_reason(tmp_path: Path) -> None:
+    """A dead backend fails the dream; the reason belongs in the state so the
+    cycle's summary can say why nothing was written."""
+    node = make_dream_node(_deps(tmp_path, backend=SilentBackend()))
 
-    update = node({"persona": persona})
+    update = node({"persona": _persona(tmp_path)})
 
     assert update["proceeded"] is True
     assert update["dream_reason"] == "LLM returned empty"
-    assert "candidate" not in update
+    assert "recent" not in update
 
 
 def test_the_dream_node_stops_at_its_deadline_instead_of_starting_the_rewrite(
@@ -829,16 +743,14 @@ def test_the_dream_node_stops_at_its_deadline_instead_of_starting_the_rewrite(
     `SubprocessRunner`'s 300s -- is the one that must not start.
 
     Mutation this kills: deleting the check. The backend is then called and
-    the candidate comes back.
+    the list comes back.
     """
     persona = _persona(tmp_path)
-    _account(tmp_path)
-    backend = TwoCallBackend(candidate_response=_valid_candidate())
+    backend = ScriptedBackend(DREAM_REPLY)
     clock = ScriptedClock(0.0, 50.0)
     node = make_dream_node(
         _deps(
             tmp_path,
-            persona_source=GitPersonaSource(tmp_path),
             backend=backend,
             monotonic=clock,
             # NOT `DREAM_DEADLINE_SECONDS`: a budget equal to the module
@@ -854,7 +766,7 @@ def test_the_dream_node_stops_at_its_deadline_instead_of_starting_the_rewrite(
     assert backend.calls == []
     assert update["proceeded"] is True
     assert "deadline" in update["dream_reason"]
-    assert "candidate" not in update
+    assert "recent" not in update
     assert DIR_NAME in caplog.text
 
 
@@ -863,12 +775,10 @@ def test_a_dream_inside_its_deadline_runs_normally(tmp_path: Path) -> None:
     clock that has barely moved. Without this, a deadline hardcoded to
     "always expired" would pass the test above."""
     persona = _persona(tmp_path)
-    _account(tmp_path)
-    backend = TwoCallBackend(candidate_response=_valid_candidate())
+    backend = ScriptedBackend(DREAM_REPLY)
     node = make_dream_node(
         _deps(
             tmp_path,
-            persona_source=GitPersonaSource(tmp_path),
             backend=backend,
             monotonic=ScriptedClock(0.0, 1.0),
             dream_deadline_seconds=45.0,
@@ -878,196 +788,67 @@ def test_a_dream_inside_its_deadline_runs_normally(tmp_path: Path) -> None:
     update = node({"persona": persona})
 
     assert len(backend.calls) == 1
-    assert update["candidate"] is not None
-
-
-# ── gate ────────────────────────────────────────────────────────────────────
-
-
-def test_the_gate_node_carries_the_verdict_and_its_aspect_sims(tmp_path: Path) -> None:
-    """`aspect_sims` is a §5.5 field with exactly one producer: the verdict's
-    own `sims`. Re-computing it anywhere else would put a second copy of the
-    drift maths in the graph."""
-    persona = _persona(tmp_path)
-    embedder = FakeEmbedder(vectors=[[1.0], [1.0]])
-    node = make_gate_node(_deps(tmp_path, embedder=embedder))
-    candidate = _valid_candidate()
-
-    update = node({"persona": persona, "candidate": candidate})
-
-    verdict = update["verdict"]
-    assert verdict is not None
-    assert verdict.accepted is True
-    assert update["aspect_sims"] == verdict.sims
-    # Constraint: assert on WHAT was embedded, never on the fake's fixed
-    # return value -- it answers the same vector whatever it is asked.
-    assert candidate in [text for batch in embedder.embedded for text in batch]
-
-
-def test_the_gate_node_compares_against_the_persona_it_was_handed(tmp_path: Path) -> None:
-    """`persona.raw` is the ORIGINAL side of every comparison -- the text the
-    prompt was built from, not a fresh read of `personality.md`, which for a
-    concurrent Bash round is a different document."""
-    persona = _persona(tmp_path)
-    resources = TracingResources()
-    node = make_gate_node(_deps(tmp_path, resources=resources))
-
-    update = node({"persona": persona, "candidate": _rejected_candidate()})
-
-    verdict = update["verdict"]
-    assert verdict is not None
-    assert verdict.accepted is False
-    assert "Username" in verdict.reason
-    # Both of the gate's events -- the calibration measurement it posts on
-    # every path, and this round's rejection -- are filed under the
-    # USERNAME. This is the only place `persona`'s identity half is
-    # observable at this call site, so without it a node handing
-    # `gate_step` a persona with the wrong username survives.
-    assert resources.event_usernames == [USERNAME, USERNAME]
+    assert update["recent"] == NEW_RECENT
 
 
 # ── write ───────────────────────────────────────────────────────────────────
 
 
-def test_the_write_node_hands_a_rejected_verdict_to_the_step_rather_than_skipping_it(
+def test_the_write_node_hands_a_missing_list_to_the_step_rather_than_skipping_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The composition-shape pin, on the NODE path.
+    """The composition-shape pin, on the NODE path: `recent=None` is THREADED
+    into `write_step`, whose own guard is what keeps a failed dream off disk.
+    `nodes.py` binds `write_step` into its own globals, so this spy is the
+    only one that sees the node's call."""
+    seen = _spy_on(monkeypatch, "write_step")
+    source = FakePersonaSource()
+    node = make_write_node(_deps(tmp_path, persona_source=source))
 
-    `test_dream_steps.py`'s equivalent monkeypatches `dream.round`'s module
-    globals, which `run_dream` resolves by name -- and which a node never
-    touches, because `nodes.py` binds `write_step` into its own globals at
-    import. So without this test the property "a rejected candidate cannot
-    overwrite `personality.md`" is undefended on the graph path: an edge
-    that skipped the write node on rejection would look identical, and both
-    of `write_step`/`snapshot_step`'s internal guards could then be deleted
-    with the whole suite green.
+    update = node({"persona": _persona(tmp_path)})
 
-    Asserting the VALUE threaded in, not merely that the call happened:
-    `verdict.accepted is False` is what the guard reads.
-    """
-    persona = _persona(tmp_path)
-    real_write = nodes_module.write_step
-    seen: dict[str, Any] = {}
-
-    def spy_write(**kwargs: Any) -> Any:
-        seen.update(kwargs)
-        return real_write(**kwargs)
-
-    monkeypatch.setattr(nodes_module, "write_step", spy_write)
-    node = make_write_node(_deps(tmp_path, persona_source=GitPersonaSource(tmp_path)))
-
-    update = node(
-        {
-            "persona": persona,
-            "candidate": _rejected_candidate(),
-            "verdict": DreamVerdict(accepted=False, reason="Username changed"),
-            "memory_lines": 3,
-        }
-    )
-
-    assert seen["verdict"].accepted is False
-    assert update["written"] is False
-    assert update["narrative"] == ""
-    assert (persona.directory / "personality.md").read_text(encoding="utf-8") == PERSONALITY
-    assert not (persona.directory / "personality.archive.md").exists()
+    assert seen["recent"] is None
+    assert update == {"written": False}
+    assert source.written == []
 
 
-def test_the_write_node_returns_the_narrative_it_just_generated(tmp_path: Path) -> None:
-    """The PRODUCER end of the diff narrative. Its only other witnesses are
-    two tests in `test_dream_steps.py` that drive `write_step`/`run_dream`
-    directly, neither of which can see a node dropping the field."""
-    persona = _persona(tmp_path)
-    backend = NarrativeBackend(response="梦把语气放软了")
-    node = make_write_node(
-        _deps(tmp_path, backend=backend, persona_source=GitPersonaSource(tmp_path))
-    )
-
-    update = node(
-        {
-            "persona": persona,
-            "candidate": _valid_candidate(),
-            "verdict": DreamVerdict(accepted=True, reason="ok"),
-            "memory_lines": 3,
-        }
-    )
-
-    assert update["written"] is True
-    assert update["narrative"] == "梦把语气放软了"
-    assert len(backend.calls) == 1
-
-
-def test_the_write_node_records_the_count_the_dream_node_measured(tmp_path: Path) -> None:
-    """`memory_lines` crosses two node boundaries to reach
-    `last_dream_memlines_<name>`, and it is keyed on the DIRECTORY name."""
-    persona = _persona(tmp_path)
+def test_the_write_node_keys_the_write_and_the_marker_on_the_directory_name(
+    tmp_path: Path,
+) -> None:
+    """`write_recent` and `last_dream_<name>` both take the DIRECTORY name."""
     state = FakeState()
-    node = make_write_node(
-        _deps(
-            tmp_path,
-            dream_state=state,
-            backend=NarrativeBackend(),
-            persona_source=GitPersonaSource(tmp_path),
-        )
-    )
+    source = FakePersonaSource()
+    node = make_write_node(_deps(tmp_path, dream_state=state, persona_source=source))
 
-    node(
-        {
-            "persona": persona,
-            "candidate": _valid_candidate(),
-            "verdict": DreamVerdict(accepted=True, reason="ok"),
-            "memory_lines": 100,
-        }
-    )
+    update = node({"persona": _persona(tmp_path), "recent": NEW_RECENT})
 
-    assert state.last_dream_memlines(DIR_NAME) == 100
-    assert state.last_dream_memlines(USERNAME) == 0
+    assert update == {"written": True}
+    assert source.written[0][0] == DIR_NAME
+    assert state.last_dream_ts(DIR_NAME) == int(NOW.timestamp())
+    assert state.last_dream_ts(USERNAME) is None
 
 
 def test_the_write_node_is_inert_under_a_dry_run(tmp_path: Path) -> None:
-    """Design spec §9.4: a shadow round writes NOTHING.
+    """A shadow round writes NOTHING. `write_step` takes no `dry_run`, so
+    this node is the closest place to the write that can carry the guard:
+    with it deleted, one mis-drawn edge rewrites a real `personality.md`."""
+    source = FakePersonaSource()
+    state = FakeState()
+    node = make_write_node(_deps(tmp_path, dry_run=True, persona_source=source, dream_state=state))
 
-    `write_step` -- in the frozen `dream/round.py`, which predates the shadow
-    round -- takes no `dry_run`, so this node is the closest place to the
-    write that can carry the guard (standing constraint §5). `graph/cycle.py`
-    routes a dry cycle around the dream phase entirely, but that is one edge:
-    with the guard deleted, one mis-drawn arrow archives and rewrites a real
-    `personality.md` during the round whose whole premise is that Python
-    never wrote.
+    update = node({"persona": _persona(tmp_path), "recent": NEW_RECENT})
 
-    Driven against a REAL `GitPersonaSource` over a real file, not a fake
-    that records into a list -- the fake is what made this invisible until
-    now.
-    """
-    persona = _persona(tmp_path)
-    backend = NarrativeBackend()
-    node = make_write_node(
-        _deps(tmp_path, dry_run=True, backend=backend, persona_source=GitPersonaSource(tmp_path))
-    )
-
-    update = node(
-        {
-            "persona": persona,
-            "candidate": _valid_candidate(),
-            "verdict": DreamVerdict(accepted=True, reason="ok"),
-            "memory_lines": 3,
-        }
-    )
-
-    assert update["written"] is False
-    assert update["narrative"] == ""
-    assert (persona.directory / "personality.md").read_text(encoding="utf-8") == PERSONALITY
-    assert not (persona.directory / "personality.archive.md").exists()
-    # ...and no diff-narrative LLM call was paid for either.
-    assert backend.calls == []
+    assert update == {"written": False}
+    assert source.written == []
+    assert source.appended == []
+    assert state.last_dream_ts(DIR_NAME) is None
 
 
 def test_the_snapshot_node_is_inert_under_a_dry_run(tmp_path: Path) -> None:
     """The other half: a snapshot is a PUBLISHED claim about what this
     account's `personality.md` now says. Uploading one during a shadow round
     puts a row in `personalitysnapshots` for a document that was never
-    written, and `/lab`'s drift trajectory -- the in-flight experiment's
-    primary readout -- would plot a version the roster never ran under.
+    written.
 
     `written=True` is supplied deliberately: the dry-run guard must not
     depend on the write node having already declined.
@@ -1076,14 +857,7 @@ def test_the_snapshot_node_is_inert_under_a_dry_run(tmp_path: Path) -> None:
     embedder = FakeEmbedder(vectors=[[1.0]])
     node = make_snapshot_node(_deps(tmp_path, dry_run=True, resources=resources, embedder=embedder))
 
-    update = node(
-        {
-            "persona": _persona(tmp_path),
-            "candidate": _valid_candidate(),
-            "verdict": DreamVerdict(accepted=True, reason="ok"),
-            "written": True,
-        }
-    )
+    update = node({"persona": _persona(tmp_path), "recent": NEW_RECENT, "written": True})
 
     assert update["snapshot_ok"] is False
     assert update["snapshot_reason"] is None
@@ -1091,73 +865,42 @@ def test_the_snapshot_node_is_inert_under_a_dry_run(tmp_path: Path) -> None:
     assert embedder.call_count == 0
 
 
-def test_the_write_node_refuses_to_guess_the_memory_count(tmp_path: Path) -> None:
-    """A missing `memory_lines` is a mis-wired edge, and defaulting it to 0
-    is worse than failing: 0 makes the NEXT round's cooldown override fire
-    on any memory at all, silently doubling that account's dream rate."""
-    node = make_write_node(_deps(tmp_path))
-
-    with pytest.raises(NodeStateError, match="memory_lines"):
-        node(
-            {
-                "persona": _persona(tmp_path),
-                "candidate": _valid_candidate(),
-                "verdict": DreamVerdict(accepted=True, reason="ok"),
-            }
-        )
-
-
 # ── snapshot ────────────────────────────────────────────────────────────────
 
 
-def test_the_narrative_survives_the_hand_off_from_the_write_node_to_the_snapshot_node(
+def test_the_list_survives_the_hand_off_from_the_write_node_to_the_snapshot_node(
     tmp_path: Path,
 ) -> None:
-    """The whole chain across a node boundary: generated by the write node
-    (while `personality.md` still held the old text), merged into
-    `CycleState`, read back by the snapshot node, uploaded as
-    `diffNarrative`.
+    """The whole chain across a node boundary: the list the dream produced is
+    written, then embedded and uploaded as the card plus that list.
 
-    Mutation this kills: dropping `narrative` from the write node's partial
-    -- every uploaded snapshot silently loses the column, and nothing else
-    in the suite notices.
+    Mutation this kills: the snapshot node reading anything other than the
+    state's `recent` -- the vector would then describe a document the file
+    does not hold.
     """
     persona = _persona(tmp_path)
     resources = TracingResources()
-    embedder = FakeEmbedder(vectors=[[1.0], [1.0], [0.5]])
-    deps = _deps(
-        tmp_path,
-        resources=resources,
-        embedder=embedder,
-        backend=NarrativeBackend(response="梦把语气放软了"),
-        persona_source=GitPersonaSource(tmp_path),
-    )
-    candidate = _valid_candidate()
-    state: CycleState = {
-        "persona": persona,
-        "candidate": candidate,
-        "verdict": DreamVerdict(accepted=True, reason="ok"),
-        "memory_lines": 3,
-    }
+    embedder = FakeEmbedder(vectors=[[0.5]])
+    deps = _deps(tmp_path, resources=resources, embedder=embedder)
+    state: CycleState = {"persona": persona, "recent": NEW_RECENT}
 
     state.update(make_write_node(deps)(state))  # type: ignore[typeddict-item]
     state.update(make_snapshot_node(deps)(state))  # type: ignore[typeddict-item]
 
     assert state["snapshot_ok"] is True
+    assert embedder.embedded == [[snapshot_content(persona, NEW_RECENT)]]
+    assert "一件新事" in embedder.embedded[0][0]
     _, payload = resources.snapshots[0]
-    assert payload["diffNarrative"] == "梦把语气放软了"
-    # The vector describes the NEW personality, not the one being replaced.
-    assert embedder.embedded[-1] == [candidate]
+    assert "diffNarrative" not in payload
+    assert "aspectDrift" not in payload
 
 
 def test_the_snapshot_node_publishes_nothing_when_no_write_happened(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A snapshot is a CLAIM about what `personality.md` now says. Publishing
-    one for a rejected candidate puts a row in `personalitysnapshots` for a
-    document that never existed, and `/lab`'s drift trajectory -- the
-    in-flight experiment's primary readout -- would plot versions the roster
-    never ran under.
+    one for a refused write puts a row in `personalitysnapshots` for a
+    document that never existed.
 
     The spy is the node-path half of the same shape pin as the write node's:
     `written=False` must be THREADED IN, so the step's own guard stays the
@@ -1174,15 +917,7 @@ def test_the_snapshot_node_publishes_nothing_when_no_write_happened(
     monkeypatch.setattr(nodes_module, "snapshot_step", spy_snapshot)
     node = make_snapshot_node(_deps(tmp_path, resources=resources))
 
-    update = node(
-        {
-            "persona": _persona(tmp_path),
-            "candidate": _rejected_candidate(),
-            "verdict": DreamVerdict(accepted=False, reason="Username changed"),
-            "written": False,
-            "narrative": "",
-        }
-    )
+    update = node({"persona": _persona(tmp_path), "recent": NEW_RECENT, "written": False})
 
     assert seen["written"] is False
     assert update["snapshot_ok"] is False
@@ -1197,15 +932,7 @@ def test_a_failed_upload_reports_the_servers_own_reason(tmp_path: Path) -> None:
     embedder = FakeEmbedder(fail_always=True)
     node = make_snapshot_node(_deps(tmp_path, embedder=embedder))
 
-    update = node(
-        {
-            "persona": _persona(tmp_path),
-            "candidate": _valid_candidate(),
-            "verdict": DreamVerdict(accepted=True, reason="ok"),
-            "written": True,
-            "narrative": "叙述",
-        }
-    )
+    update = node({"persona": _persona(tmp_path), "recent": NEW_RECENT, "written": True})
 
     assert update["snapshot_ok"] is False
     assert update["snapshot_reason"] is not None
@@ -1218,10 +945,10 @@ def test_a_failed_upload_reports_the_servers_own_reason(tmp_path: Path) -> None:
 def test_the_logout_node_records_the_round_it_is_closing(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """§7.4 removed the `active` file, so there is no session artefact left
-    to clear -- what remains is §7.6's terminal record, carrying `run_id`
-    and the outcome. Without it a cycle that ends has no line saying so, and
-    "did this account run at all" becomes unanswerable from the log.
+    """There is no session artefact left to clear -- what remains is §7.6's
+    terminal record, carrying `run_id` and the outcome. Without it a cycle
+    that ends has no line saying so, and "did this account run at all"
+    becomes unanswerable from the log.
     """
     node = make_logout_node(_deps(tmp_path))
 
@@ -1333,29 +1060,17 @@ def test_the_dream_node_prompts_from_the_memory_the_cooldown_step_read(
     tmp_path: Path,
 ) -> None:
     """`dream_step` must be handed `cooldown_step`'s read of `memory.md`, not
-    the act path's `deps.memory_text` snapshot.
-
-    Mutation this kills: `memory_text=deps.memory_text`. It typechecks, the
-    round completes, the candidate comes back, the gate accepts -- and EVERY
-    dream prompt on the roster is built from an act-side snapshot instead of
-    the account's own memory. For a dream-only cycle, where that dep is at
-    its usual empty default, the rewrite ignores everything the account has
-    ever done.
-    """
-    memory_text = "2026-08-01 | act | DREAM-SIDE-MEMORY-MARKER\n"
-    persona = _persona(tmp_path)
-    _account(tmp_path, memory_text=memory_text)
-    backend = TwoCallBackend(candidate_response=_valid_candidate())
+    the act path's `deps.memory_text` snapshot. With the wrong one every
+    dream on the roster is prompted from an act-side snapshot -- for a
+    dream-only cycle, an empty one."""
+    source = FakePersonaSource()
+    source.memory[DIR_NAME] = "2026-08-01 | act | DREAM-SIDE-MEMORY-MARKER\n"
+    backend = ScriptedBackend(DREAM_REPLY)
     node = make_dream_node(
-        _deps(
-            tmp_path,
-            persona_source=GitPersonaSource(tmp_path),
-            backend=backend,
-            memory_text="ACT-SIDE-SNAPSHOT",
-        )
+        _deps(tmp_path, persona_source=source, backend=backend, memory_text="ACT-SIDE-SNAPSHOT")
     )
 
-    node({"persona": persona})
+    node({"persona": _persona(tmp_path)})
 
     assert len(backend.calls) == 1
     assert "DREAM-SIDE-MEMORY-MARKER" in backend.calls[0].user
@@ -1396,115 +1111,6 @@ def test_the_login_node_threads_every_prompt_input_into_the_context(
     assert context.today_post_count == 1
 
 
-def test_the_login_node_rolls_the_cross_read_at_the_configured_probability(
-    tmp_path: Path,
-) -> None:
-    """Mutation this kills: `cross_read_prob=DEFAULT_CROSS_READ_PROB` in place
-    of `deps.settings.cross_read_prob` in the login node.
-
-    `cycle-one.sh` dispatches `swil-agent cycle`, so this node is the ONE path
-    a production round takes. A node pinned to the module default would ignore
-    an operator's `CROSS_READ_PROB` entirely -- including `0`, the documented
-    off switch and the revert path, which would then be off everywhere except
-    where it matters.
-
-    `1.0` is used rather than a value near the default because it makes the
-    branch deterministic: with the default in place this round stays on
-    `living` for `random.Random(0)` (first draw 0.8444), and with the setting
-    honoured it cannot.
-    """
-    resources = FakeResources()
-    resources.board_lookup = {slug: f"id-{slug}" for slug in ("living", "market", "perception")}
-    node = make_login_node(
-        _deps(
-            tmp_path,
-            resources=resources,
-            settings=Settings(drift_mode="scalar", cross_read_prob=1.0),
-        )
-    )
-
-    update = node({"persona": _persona(tmp_path, read="living")})
-
-    context = update["context"]
-    assert context is not None
-    assert context.cross_read is True
-    assert context.board_read != "living"
-
-
-def test_the_login_node_files_no_board_read_row_on_a_dry_run(tmp_path: Path) -> None:
-    """Mutation this kills: `dry_run=False` in place of `deps.dry_run` in the
-    login node. Stage 3's shadow round drives 23 live accounts and must write
-    nothing (standing constraint §9); the READ still happens, or the shadow
-    round would be shadowing a different feed from the real one."""
-    resources = FakeResources()
-    resources.board_lookup = {"living": "id-living", "market": "id-market"}
-    resources.board_feeds["living"] = [{"id": "a" * 24, "text": "home"}]
-    node = make_login_node(_deps(tmp_path, resources=resources, dry_run=True))
-
-    update = node({"persona": _persona(tmp_path, read="living")})
-
-    assert [e for e in resources.lab_events if "boardRead" in e.metrics] == []
-    assert resources.feed_board_calls == [("living", 40, "recommended"), ("living", 18, "latest")]
-    context = update["context"]
-    assert context is not None
-    assert context.board_read == "living"
-
-
-def test_the_gate_node_carries_the_aspect_sims_the_deployed_mode_produces(
-    tmp_path: Path,
-) -> None:
-    """The gate's OTHER return value, under the mode the roster actually runs.
-
-    `_deps` pins `drift_mode="scalar"` for every other dream test, and in
-    scalar mode `verdict.sims` is always `None` -- so `aspect_sims=None`
-    hardcoded in the node passes an assertion that compares it against
-    `verdict.sims`. The fixture, not the assertion, was the problem (the same
-    shape as Task 6's `FakeEmbedder` finding). Under the deployed
-    `DRIFT_MODE=aspect` the field is populated, and losing it empties
-    `/lab`'s per-aspect trajectory for every cycle that runs on the graph.
-
-    The `style` threshold is set ABOVE the style similarity this fixture
-    produces, so the gate REJECTS. That is what pins `settings` itself:
-    `Settings(drift_mode="aspect")` is what a bare `Settings()` already
-    defaults to, so a node resolving its own `Settings()` -- ignoring
-    `agent/.env`, i.e. the thresholds actually in force on the roster --
-    would accept here and fail this test (review finding 4, and the
-    discriminability rule applied to the fixture that hid it).
-    """
-    persona = _persona(tmp_path)
-    anchor_key = anchor_cache_key(PERSONALITY.rstrip("\n"), prompt_version=_ASPECT_PROMPT_VERSION)
-    persona.directory.joinpath("personality.anchor.aspects.json").write_text(
-        json.dumps(
-            {
-                "key": anchor_key,
-                "cards": {"values": "a", "style": "b", "topic": "c"},
-                "vectors": {"values": [1.0], "style": [1.0], "topic": [1.0]},
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    embedder = FakeEmbedder([[1.0], [1.0], [0.99], [0.98], [0.97]])
-    node = make_gate_node(
-        _deps(
-            tmp_path,
-            embedder=embedder,
-            runner=RecordingRunner('{"values":"a","style":"b","topic":"c"}'),
-            settings=_ASPECT_SETTINGS,
-        )
-    )
-
-    update = node({"persona": persona, "candidate": _valid_candidate()})
-
-    verdict = update["verdict"]
-    assert verdict is not None
-    assert verdict.accepted is False  # style 0.98 < this cycle's 0.99 floor
-    assert verdict.breached == ["style"]
-    sims = update["aspect_sims"]
-    assert sims is not None
-    assert (sims.values, sims.style, sims.topic) == pytest.approx((0.99, 0.98, 0.97))
-
-
 def test_the_execute_node_reports_attempts_and_landings_separately(tmp_path: Path) -> None:
     """A round where the two numbers DIFFER. Without one, transposing them is
     undetectable -- and `landed`/`attempted` is the formula the outcome and
@@ -1536,36 +1142,17 @@ def test_the_execute_node_reports_attempts_and_landings_separately(tmp_path: Pat
         (make_guardrail_node, "plan", {"context": ActContext(), "rhythm": _free_rhythm()}),
         (make_guardrail_node, "context", {"plan": Plan(), "rhythm": _free_rhythm()}),
         (make_guardrail_node, "rhythm", {"plan": Plan(), "context": ActContext()}),
-        (make_gate_node, "candidate", {}),
-        (make_write_node, "verdict", {"candidate": "text", "memory_lines": 1}),
-        (
-            make_write_node,
-            "candidate",
-            {"verdict": DreamVerdict(accepted=True, reason="ok"), "memory_lines": 1},
-        ),
-        (
-            make_write_node,
-            "memory_lines",
-            {"candidate": "text", "verdict": DreamVerdict(accepted=True, reason="ok")},
-        ),
-        (make_snapshot_node, "verdict", {"candidate": "text", "written": True}),
-        (
-            make_snapshot_node,
-            "candidate",
-            {"verdict": DreamVerdict(accepted=True, reason="ok"), "written": True},
-        ),
     ],
 )
 def test_a_node_entered_without_a_value_it_needs_says_which(
     tmp_path: Path, factory: Any, missing: str, extra: dict[str, Any]
 ) -> None:
-    """All eleven `_require` call sites, one param each.
+    """Every `_require` call site, one param each.
 
     100% line coverage hid the gap: `_require` is ONE function, so exercising
     two of its call sites lights up every line of it and says nothing about
-    the other nine. Each of those nine has a silent alternative -- planning
-    against a blank context, gating an empty candidate, snapshotting with no
-    verdict -- and the whole point of the guard is that a mis-wired edge is
+    the others. Each has a silent alternative -- planning
+    against a blank context -- and the whole point of the guard is that a mis-wired edge is
     loud rather than plausible.
     """
     node = factory(_deps(tmp_path))
@@ -1598,7 +1185,7 @@ def test_the_execute_node_dates_the_memory_line_with_the_cycles_now(tmp_path: Pa
     assert f"{NOW:%Y-%m-%d} | like |" in memory
 
 
-def test_the_write_node_stamps_the_archive_and_the_marker_with_the_cycles_now(
+def test_the_write_node_stamps_the_write_and_the_marker_with_the_cycles_now(
     tmp_path: Path,
 ) -> None:
     """The same frozen moment reaches BOTH of `write_step`'s time-carrying
@@ -1606,26 +1193,13 @@ def test_the_write_node_stamps_the_archive_and_the_marker_with_the_cycles_now(
     next round's cooldown is measured from."""
     source = FakePersonaSource()
     dream_state = FakeState()
-    node = make_write_node(
-        _deps(
-            tmp_path,
-            persona_source=source,
-            dream_state=dream_state,
-            backend=NarrativeBackend(),
-        )
-    )
+    node = make_write_node(_deps(tmp_path, persona_source=source, dream_state=dream_state))
 
-    node(
-        {
-            "persona": _persona(tmp_path),
-            "candidate": _valid_candidate(),
-            "verdict": DreamVerdict(accepted=True, reason="ok"),
-            "memory_lines": 3,
-        }
-    )
+    node({"persona": _persona(tmp_path), "recent": NEW_RECENT})
 
-    assert source.archived[0][2] == NOW
+    assert source.written[0][2] == NOW
     assert dream_state.last_dream_ts(DIR_NAME) == int(NOW.timestamp())
+    assert source.appended == [(DIR_NAME, f"{NOW:%Y-%m-%d} | dream | 最近已更新")]
 
 
 def test_the_snapshot_node_stamps_captured_at_from_the_cycle(tmp_path: Path) -> None:
@@ -1635,15 +1209,7 @@ def test_the_snapshot_node_stamps_captured_at_from_the_cycle(tmp_path: Path) -> 
     resources = TracingResources()
     node = make_snapshot_node(_deps(tmp_path, resources=resources))
 
-    node(
-        {
-            "persona": _persona(tmp_path),
-            "candidate": _valid_candidate(),
-            "verdict": DreamVerdict(accepted=True, reason="ok"),
-            "written": True,
-            "narrative": "叙述",
-        }
-    )
+    node({"persona": _persona(tmp_path), "recent": NEW_RECENT, "written": True})
 
     _, payload = resources.snapshots[0]
     assert payload["capturedAt"] == "2026-08-17T02:00:00Z"
@@ -1653,11 +1219,16 @@ def test_the_login_node_rolls_the_rhythm_with_the_injected_rng(tmp_path: Path) -
     """§6.3: randomness must be INJECTABLE, or a round is unreproducible and
     the rhythm gate untestable. The roll has to come from `deps.rng`, never
     from a `random.Random()` the node makes for itself."""
-    persona = _persona(tmp_path, rhythm_text="每次触发有 60% 概率选择 post")
-    expected = decide_rhythm(persona.rhythm_text, 0, random.Random(7))
-    node = make_login_node(_deps(tmp_path, rng=random.Random(7)))
+    settings = Settings()
+    expected = decide_rhythm(
+        0,
+        random.Random(7),
+        probability=settings.post_probability,
+        ceiling=settings.post_ceiling_per_day,
+    )
+    node = make_login_node(_deps(tmp_path, rng=random.Random(7), settings=settings))
 
-    update = node({"persona": persona})
+    update = node({"persona": _persona(tmp_path)})
 
     rhythm = update["rhythm"]
     assert rhythm is not None
@@ -1698,20 +1269,18 @@ def test_the_action_budget_reaches_both_the_context_and_the_guardrails(
 
 
 def test_a_forced_cycle_dreams_through_a_live_cooldown(tmp_path: Path) -> None:
-    """`auto` is the difference between `dream.sh <name>` and `dream.sh
-    <name> --auto`: force mode never consults the markers at all. A node
+    """`auto` is the difference between `dream <name>` and `dream <name>
+    --auto`: force mode never consults the markers at all. A node
     hardcoding `auto=True` turns every manual dream into a cooldown-gated
     one; hardcoding `False` breaks the 12h floor for the whole roster."""
     persona = _persona(tmp_path)
-    _account(tmp_path)
     dream_state = FakeState()
-    dream_state.record_dream(DIR_NAME, at=_AN_HOUR_BEFORE_NOW, memlines=0)
+    dream_state.record_dream(DIR_NAME, at=_AN_HOUR_BEFORE_NOW)
     node = make_dream_node(
         _deps(
             tmp_path,
-            persona_source=GitPersonaSource(tmp_path),
             dream_state=dream_state,
-            backend=TwoCallBackend(candidate_response=_valid_candidate()),
+            backend=ScriptedBackend(DREAM_REPLY),
             auto=False,
         )
     )
@@ -1719,7 +1288,7 @@ def test_a_forced_cycle_dreams_through_a_live_cooldown(tmp_path: Path) -> None:
     update = node({"persona": persona})
 
     assert update["proceeded"] is True
-    assert update["candidate"] is not None
+    assert update["recent"] == NEW_RECENT
 
 
 def test_the_cooldown_window_comes_from_the_cycles_settings(tmp_path: Path) -> None:
@@ -1727,16 +1296,14 @@ def test_the_cooldown_window_comes_from_the_cycles_settings(tmp_path: Path) -> N
     is documented as tunable per environment, and a node resolving its own
     `Settings()` would ignore whatever the operator set for this run."""
     persona = _persona(tmp_path)
-    _account(tmp_path)
     dream_state = FakeState()
-    dream_state.record_dream(DIR_NAME, at=_AN_HOUR_BEFORE_NOW, memlines=0)
+    dream_state.record_dream(DIR_NAME, at=_AN_HOUR_BEFORE_NOW)
     node = make_dream_node(
         _deps(
             tmp_path,
-            persona_source=GitPersonaSource(tmp_path),
             dream_state=dream_state,
-            backend=TwoCallBackend(candidate_response=_valid_candidate()),
-            settings=Settings(drift_mode="scalar", dream_cooldown_hours=0),
+            backend=ScriptedBackend(DREAM_REPLY),
+            settings=Settings(dream_cooldown_hours=0),
             auto=True,
         )
     )
@@ -1777,33 +1344,17 @@ def test_the_execute_node_forwards_the_cycles_image_credential(
 # nobody has flagged yet is covered too.
 
 
-def test_the_write_node_writes_the_candidate_not_the_text_it_replaces(
-    tmp_path: Path,
-) -> None:
-    """`candidate_text` is what gets ARCHIVED and written to `personality.md`.
-
-    Mutation this kills: `candidate_text=state["persona"].raw`. Every
-    accepted dream then writes the OLD personality back over itself while the
-    snapshot node uploads the NEW one -- `personality.md` never changes and
-    the snapshot series says it did, the drift experiment's two records
-    contradicting each other with nothing red. Invisible until something
-    asserts on the archived TEXT rather than only its timestamp.
-    """
+def test_the_write_node_writes_the_list_from_the_state(tmp_path: Path) -> None:
+    """Mutation this kills: the node writing `persona.recent` (the OLD list)
+    instead of the state's new one -- `personality.md` would never change
+    while the snapshot node uploads the new list."""
     source = FakePersonaSource()
-    candidate = _valid_candidate("完全不同的一句话")
-    node = make_write_node(_deps(tmp_path, persona_source=source, backend=NarrativeBackend()))
+    persona = _persona(tmp_path).model_copy(update={"recent": ["一件旧事"]})
+    node = make_write_node(_deps(tmp_path, persona_source=source))
 
-    node(
-        {
-            "persona": _persona(tmp_path),
-            "candidate": candidate,
-            "verdict": DreamVerdict(accepted=True, reason="ok"),
-            "memory_lines": 3,
-        }
-    )
+    node({"persona": persona, "recent": NEW_RECENT})
 
-    assert source.archived[0][1] == candidate
-    assert source.archived[0][1] != PERSONALITY
+    assert source.written[0][1] == NEW_RECENT
 
 
 def test_the_plan_node_prompts_with_the_context_the_login_node_built(
@@ -1892,104 +1443,23 @@ def test_the_guardrail_node_enforces_the_rhythm_policy_it_was_given(
     assert [vetoed.reason for vetoed in update["vetoed"]] == ["rhythm policy no_post"]
 
 
-def test_the_snapshot_node_reports_the_drift_the_gate_measured(tmp_path: Path) -> None:
-    """`verdict` and `settings` reach `snapshot_step` for one purpose each,
-    and both land in the same `aspectDrift` block: the sims come off the
-    verdict, the `mode` off the settings.
-
-    `drift_mode="scalar"` is the discriminating value -- `aspect` is what a
-    bare `Settings()` already defaults to, so a node resolving its own
-    settings (and thereby ignoring `agent/.env`) would still emit `"aspect"`
-    and pass. `/lab` reads this block to say which mode a snapshot was gated
-    under; getting it wrong mislabels the experiment's own record.
-    """
-    resources = TracingResources()
-    sims = AspectSims(values=0.9, style=0.8, topic=0.7)
-    node = make_snapshot_node(_deps(tmp_path, resources=resources))
-
-    node(
-        {
-            "persona": _persona(tmp_path),
-            "candidate": _valid_candidate(),
-            "verdict": DreamVerdict(accepted=True, reason="ok", sims=sims, breached=["topic"]),
-            "written": True,
-            "narrative": "叙述",
-        }
-    )
-
-    _, payload = resources.snapshots[0]
-    assert payload["aspectDrift"] == {
-        "mode": "scalar",
-        # An INT here, deliberately, where the anchor cache key above uses the
-        # str "2" -- `dream/round.py` records why: the server declares
-        # `aspectDrift.promptVersion` as `z.number().int()` with no coercion,
-        # so a string loses the whole snapshot ingest.
-        "promptVersion": 2,
-        "values": 0.9,
-        "style": 0.8,
-        "topic": 0.7,
-        "breached": ["topic"],
-    }
-
-
-def test_the_dream_node_finds_the_echo_nudge_under_the_cycles_agent_root(
-    tmp_path: Path,
-) -> None:
-    """`agent_root` reaches `dream_step` so `read_echo_hint` can find
-    `<agent_root>/.agent-state/echo_flag_<dir>` -- the one-shot "switch
-    input" nudge, which is CONSUMED on read.
-
-    Mutation this kills: passing `persona.directory` instead. The flag is
-    then never found, the nudge never reaches a prompt, and the file is never
-    consumed -- the echo-chamber machinery silently does nothing while
-    looking armed, which is exactly the state it spent its first year in.
-    """
-    persona = _persona(tmp_path)
-    _account(tmp_path)
-    flag = tmp_path / ".agent-state" / f"echo_flag_{DIR_NAME}"
-    flag.parent.mkdir(parents=True, exist_ok=True)
-    flag.write_text("ECHO-NUDGE-MARKER", encoding="utf-8")
-    backend = TwoCallBackend(candidate_response=_valid_candidate())
-    node = make_dream_node(
-        _deps(tmp_path, persona_source=GitPersonaSource(tmp_path), backend=backend)
-    )
-
-    node({"persona": persona})
-
-    assert "ECHO-NUDGE-MARKER" in backend.calls[0].user
-    assert not flag.exists()  # consumed: "only nudge once per dream"
-
-
 def test_the_snapshot_node_paths_the_archive_relative_to_the_agent_root(
     tmp_path: Path,
 ) -> None:
-    """`agent_root`'s other call site: `archivePath` is the account's
-    `personality.md` relative to it (`realpath --relative-to="$ROOT_DIR"`).
-    Substituting `persona.directory` collapses the path to a bare filename,
-    and every snapshot row then claims to describe a `personality.md` with no
-    account in it.
-
-    `contentHash` in the same assertion pins `candidate_text` at this call
-    site: the hash is of the NEW text, so a node passing `persona.raw` would
-    publish a row whose hash matches the version being REPLACED.
-    """
+    """`archivePath` is the account's `personality.md` relative to
+    `agent_root`. Substituting `persona.directory` collapses the path to a
+    bare filename. `contentHash` in the same assertion pins the hashed text:
+    the card plus the NEW list."""
     resources = TracingResources()
-    candidate = _valid_candidate("另一句话")
+    persona = _persona(tmp_path)
     node = make_snapshot_node(_deps(tmp_path, resources=resources))
 
-    node(
-        {
-            "persona": _persona(tmp_path),
-            "candidate": candidate,
-            "verdict": DreamVerdict(accepted=True, reason="ok"),
-            "written": True,
-            "narrative": "叙述",
-        }
-    )
+    node({"persona": persona, "recent": NEW_RECENT, "written": True})
 
     _, payload = resources.snapshots[0]
     assert payload["archivePath"] == f"agents/{DIR_NAME}/personality.md"
-    assert payload["contentHash"] == hashlib.sha256(candidate.encode()).hexdigest()
+    expected = snapshot_content(persona, NEW_RECENT)
+    assert payload["contentHash"] == hashlib.sha256(expected.encode()).hexdigest()
 
 
 def test_the_logout_record_describes_a_shadow_round_as_a_shadow_round(
@@ -1997,8 +1467,8 @@ def test_the_logout_record_describes_a_shadow_round_as_a_shadow_round(
 ) -> None:
     """Three of the six fields in §7.6's terminal record are hardcodable
     without breaking anything else, and `dry_run` is the dangerous one: a
-    hardcoded `False` makes every Stage-3 shadow round read as a REAL round
-    in the log we would be using to judge whether Python is behaving.
+    hardcoded `False` makes every shadow round read as a REAL round in the
+    log.
 
     The complement of `…records_the_round_it_is_closing`, which reports the
     opposite value for all three -- one test alone cannot tell a threaded
@@ -2034,8 +1504,7 @@ def test_the_logout_records_two_flags_cannot_be_transposed(
     They answer different questions: `dream_written` is "did `personality.md`
     change", `snapshot_ok` is "did the row reach `personalitysnapshots`". A
     transposition makes a round whose snapshot upload failed read as one whose
-    personality never changed -- and `/lab`'s drift trajectory is reconstructed
-    from exactly that distinction.
+    personality never changed.
     """
     node = make_logout_node(_deps(tmp_path))
 
@@ -2058,61 +1527,18 @@ def test_the_logout_records_two_flags_cannot_be_transposed(
 
 
 def test_the_dream_node_is_inert_under_a_dry_run(tmp_path: Path) -> None:
-    """The dream node needs this guard MORE than the write nodes do.
-
-    `dream_step` posts a `dream/dream/started` lab event and then CONSUMES the
-    `echo_flag_<name>` marker -- it deletes the file ("only nudge once per
-    dream", `dream.sh:533`). That consumption is IRREVERSIBLE: a shadow round
-    that spent an account's one-shot echo nudge would silently change what its
-    next REAL dream is prompted with, and nothing downstream could tell.
-
-    Driven against a real on-disk flag rather than a fake, because the flag's
-    deletion is the whole property.
-    """
-    state_dir = tmp_path / ".agent-state"
-    state_dir.mkdir(parents=True, exist_ok=True)
-    flag = state_dir / f"echo_flag_{DIR_NAME}"
-    flag.write_text("1", encoding="utf-8")
+    """`dream_step` posts a `dream/started` lab event and spends an LLM call;
+    a shadow round must do neither."""
     resources = TracingResources()
-    backend = NarrativeBackend()
+    backend = ScriptedBackend(DREAM_REPLY)
     node = make_dream_node(_deps(tmp_path, dry_run=True, resources=resources, backend=backend))
 
     update = node({"persona": _persona(tmp_path)})
 
     assert update["proceeded"] is False
-    assert "candidate" not in update
-    assert flag.exists(), "a shadow round consumed the account's one-shot echo flag"
+    assert "recent" not in update
     assert resources.lab_events == []
     assert backend.calls == []
-
-
-def test_the_gate_node_is_inert_under_a_dry_run(tmp_path: Path) -> None:
-    """`gate_step` posts a lab event on EVERY path since Phase B task 1 --
-    the `drift measured` calibration record, plus at most one of `warn` /
-    `fail` -- and, in the deployed `DRIFT_MODE=aspect`, writes
-    `personality.anchor.aspects.json` for any account whose anchor cache is
-    cold -- 23 of which is exactly the state a fresh worktree or CI runner
-    starts in.
-
-    So `lab_events == []` below is a stronger assertion than it was when the
-    gate could accept silently: there is no longer any path through
-    `gate_step` that posts nothing, which means only the `dry_run` guard can
-    produce this state.
-
-    An empty partial is the right return: nothing downstream needs a verdict
-    on this path, because the write and snapshot nodes check `dry_run` before
-    they `_require` one.
-    """
-    resources = TracingResources()
-    runner = RecordingRunner()
-    node = make_gate_node(_deps(tmp_path, dry_run=True, resources=resources, runner=runner))
-
-    update = node({"persona": _persona(tmp_path), "candidate": _valid_candidate()})
-
-    assert update == {}
-    assert resources.lab_events == []
-    assert runner.calls == []
-    assert not (tmp_path / "agents" / DIR_NAME / "personality.anchor.aspects.json").exists()
 
 
 def test_a_round_where_nothing_landed_names_the_directory_in_its_fail_line(
@@ -2142,9 +1568,9 @@ def test_a_failed_backend_sync_names_the_directory_it_failed_for(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """`sync_backend_step`'s `agent_name`, same story: its only observable
-    use is the WARN line, and that line exists because a bare `|| true` hid a
-    403 on every `humans/` round for months. A WARN naming an account nobody
-    can find in the roster is barely an improvement."""
+    use is the WARN line, and that line exists because a bare `|| true` once
+    hid a 403 for months. A WARN naming an account nobody can find in the
+    roster is barely an improvement."""
     resources = TracingResources(update_profile_raises=ApiError(403, "forbidden", None))
     node = make_login_node(_deps(tmp_path, resources=resources))
 
@@ -2176,38 +1602,10 @@ def test_an_absent_written_flag_publishes_nothing(tmp_path: Path) -> None:
     resources = TracingResources()
     node = make_snapshot_node(_deps(tmp_path, resources=resources))
 
-    update = node(
-        {
-            "persona": _persona(tmp_path),
-            "candidate": _valid_candidate(),
-            "verdict": DreamVerdict(accepted=True, reason="ok"),
-        }
-    )
+    update = node({"persona": _persona(tmp_path), "recent": NEW_RECENT})
 
     assert update["snapshot_ok"] is False
     assert resources.snapshots == []
-
-
-def test_an_absent_narrative_uploads_no_diff_narrative(tmp_path: Path) -> None:
-    """`state.get("narrative", "")`: the same treatment for the other
-    fallback. An empty narrative is omitted from the payload entirely
-    (`build_snapshot_payload` adds the key only when it is non-empty), so any
-    other fallback would fabricate a diff description for a round that
-    produced none."""
-    resources = TracingResources()
-    node = make_snapshot_node(_deps(tmp_path, resources=resources))
-
-    node(
-        {
-            "persona": _persona(tmp_path),
-            "candidate": _valid_candidate(),
-            "verdict": DreamVerdict(accepted=True, reason="ok"),
-            "written": True,
-        }
-    )
-
-    _, payload = resources.snapshots[0]
-    assert "diffNarrative" not in payload
 
 
 def test_an_absent_solo_nothing_flag_is_not_a_quiet_round(tmp_path: Path) -> None:
@@ -2229,28 +1627,22 @@ def test_an_absent_solo_nothing_flag_is_not_a_quiet_round(tmp_path: Path) -> Non
 def test_every_lab_event_is_filed_under_the_username_not_the_directory(
     tmp_path: Path,
 ) -> None:
-    """`persona` reaches five steps, and its externally visible half is
-    `persona.username`: `POST /agents/{username}/events` and the snapshot
-    upload both take the `Username` bullet, while every log line in the same
-    round takes the directory name. Different fields, and this roster has
-    accounts where they differ.
+    """`persona.username` is what `POST /agents/{username}/events` and the
+    snapshot upload take, while every log line takes the directory name.
 
-    Drives the whole dream path through its four nodes, which also proves the
-    hand-offs compose: candidate -> verdict -> written/narrative -> upload.
+    Drives the whole dream path through its three nodes, which also proves
+    the hand-offs compose: recent -> written -> upload.
     """
-    persona = _persona(tmp_path)
-    _account(tmp_path)
     resources = TracingResources()
     deps = _deps(
         tmp_path,
         resources=resources,
-        persona_source=GitPersonaSource(tmp_path),
-        backend=TwoCallBackend(candidate_response=_valid_candidate()),
-        embedder=FakeEmbedder(vectors=[[1.0], [1.0], [0.5]]),
+        backend=ScriptedBackend(DREAM_REPLY),
+        embedder=FakeEmbedder(vectors=[[0.5]]),
     )
-    state: CycleState = {"persona": persona}
+    state: CycleState = {"persona": _persona(tmp_path)}
 
-    for factory in (make_dream_node, make_gate_node, make_write_node, make_snapshot_node):
+    for factory in (make_dream_node, make_write_node, make_snapshot_node):
         state.update(factory(deps)(state))  # type: ignore[typeddict-item]
 
     assert state["written"] is True

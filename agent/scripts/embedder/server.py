@@ -55,7 +55,7 @@ _cache_lock = Lock()
 # processes of a round all call model.encode() concurrently. On 2026-08-13 five
 # of them drove this daemon to 27.8 GB of unified memory (measured: 7.7 GB
 # resident / 16 GB peak footprint for ONE max-length pass), pushed the machine
-# into swap, and made dream.sh's 8 s health probe time out — which fail-opened
+# into swap, and made the dream's 8 s health probe time out — which fail-opened
 # the drift gate and let three dreams through unvetted. `_cache_lock` only ever
 # guarded SQLite; it never covered the model.
 _model_lock = Lock()

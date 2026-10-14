@@ -26,10 +26,10 @@ from swil_agent.api.auth import ApiKeyAuth
 from swil_agent.api.client import ApiClient, ApiError
 from swil_agent.api.resources import Resources
 from swil_agent.llm.base import Backend
-from swil_agent.locks import LockBusy, act_lock_path
+from swil_agent.locks import LockBusy, act_lock_path, dream_lock_path
 from swil_agent.models import Action, ActOutcome, ActResult, Persona
 
-from ._runners import ExplodingBackend, FakeResources, SilentBackend, StubBackend
+from ._runners import ExplodingBackend, FakeResources, SilentBackend, StubBackend, make_persona
 
 NOW = datetime(2026, 8, 17, 10, 0, 0)
 
@@ -38,25 +38,17 @@ def _persona(
     tmp_path: Path,
     *,
     backend: str = "claude",
-    rhythm_text: str = "",
     username: str = "zenith",
     dir_name: str = "zenith",
-    board: str | None = None,
+    board: str = "",
 ) -> Persona:
-    """`username` and `dir_name` default to the same string, matching every
-    existing call site, but can be set apart on purpose (fix round 1, item
-    2) -- Bash's `agent_name` is `basename "$agent_dir"`, NOT the `Username`
-    bullet, and a fixture where the two always match can never catch a slip
-    that uses one where the other belongs."""
+    """`username` and `dir_name` default to the same string but can be set
+    apart: `agent_name` is the directory name, not the username, and a
+    fixture where the two always match cannot catch a slip between them."""
     directory = tmp_path / "agents" / dir_name
     directory.mkdir(parents=True, exist_ok=True)
-    return Persona(
-        username=username,
-        directory=directory,
-        backend=backend,
-        rhythm_text=rhythm_text,
-        board=board,
-        raw="PERSONA",
+    return make_persona(
+        username=username, directory=directory, backend=backend, board=board, prompt="PERSONA"
     )
 
 
@@ -139,12 +131,12 @@ def _scenario(name: str, tmp_path: Path) -> ActResult:
         return _run(tmp_path, backend=backend, resources=resources)
 
     if name == "guardrails_empty_the_plan":
-        # Rhythm ceiling=1 reached (one post already logged today) forces
-        # policy=NO_POST; the model's only action is `post`, so guardrails
-        # drop it to empty WITH a non-empty vetoed list. Mutation this
-        # pins: if guardrails did not veto (e.g. the ceiling text were
-        # absent), the post would survive -> LANDED_ALL, not VETOED_EMPTY.
-        persona = _persona(tmp_path, rhythm_text="已有一条发帖记录时本轮不再发帖。")
+        # The default daily ceiling (1) is reached by the post already logged
+        # today, forcing policy=NO_POST; the model's only action is `post`,
+        # so guardrails drop it to empty WITH a non-empty vetoed list.
+        # Mutation this pins: if guardrails did not veto, the post would
+        # survive -> LANDED_ALL, not VETOED_EMPTY.
+        persona = _persona(tmp_path)
         backend = StubBackend('{"plan":[{"action":"post","text":"hello"}]}')
         memory_text = f"2026-08-17 | post | id={'a' * 24} | earlier\n"
         return _run(tmp_path, persona=persona, backend=backend, memory_text=memory_text)
@@ -371,7 +363,7 @@ def test_dry_run_still_returns_the_plan_and_vetoes(tmp_path: Path) -> None:
 def test_dry_run_reports_vetoed_empty_when_guardrails_would_have_dropped_everything(
     tmp_path: Path,
 ) -> None:
-    persona = _persona(tmp_path, rhythm_text="已有一条发帖记录时本轮不再发帖。")
+    persona = _persona(tmp_path)
     backend = StubBackend('{"plan":[{"action":"post","text":"hello"}]}')
     memory_text = f"2026-08-17 | post | id={'a' * 24} | earlier\n"
     result = _run(tmp_path, persona=persona, backend=backend, memory_text=memory_text, dry_run=True)
@@ -543,7 +535,7 @@ def test_empty_plan_after_guardrails_executes_nothing_at_all(tmp_path: Path) -> 
     """VETOED_EMPTY/PLANNER_EMPTY (an empty guarded action list) must never
     reach `execute_action` -- there is nothing to execute, so no write call,
     no lab event, and no memory line of any kind should appear."""
-    persona = _persona(tmp_path, rhythm_text="已有一条发帖记录时本轮不再发帖。")
+    persona = _persona(tmp_path)
     backend = StubBackend('{"plan":[{"action":"post","text":"hello"}]}')
     memory_text = f"2026-08-17 | post | id={'a' * 24} | earlier\n"
     resources = FakeResources()
@@ -610,7 +602,7 @@ def test_no_board_bullet_never_calls_get_boards(tmp_path: Path) -> None:
     """Mutation this pins: dropping the `if persona.board:` guard would make
     every round -- even one with no `Board:` bullet at all -- pay a network
     call for nothing, matching Bash's own `if [[ -n "$POST_BOARD" ]]`."""
-    persona = _persona(tmp_path, board=None)
+    persona = _persona(tmp_path, board="")
     resources = FakeResources()
     backend = StubBackend('{"plan":[{"action":"post","text":"hello"}]}')
     _run(tmp_path, persona=persona, backend=backend, resources=resources)
@@ -648,7 +640,7 @@ def test_board_resolution_is_skipped_when_the_plan_ends_up_empty(tmp_path: Path)
     (round.py), so a round that never reaches execution never pays the
     network call either -- proven directly, not just implied by "once per
     round"."""
-    persona = _persona(tmp_path, board="tech", rhythm_text="已有一条发帖记录时本轮不再发帖。")
+    persona = _persona(tmp_path, board="tech")
     backend = StubBackend('{"plan":[{"action":"post","text":"hello"}]}')
     memory_text = f"2026-08-17 | post | id={'a' * 24} | earlier\n"
     resources = FakeResources()
@@ -1541,3 +1533,101 @@ def test_the_memory_note_is_flattened_before_it_is_written_or_sent(tmp_path: Pat
     ) == f"2026-08-17 | {expected}\n"
     memory = next(e for e in events if e["type"] == "memory")
     assert memory["summary"] == expected
+
+
+# ── memory rotation at the end of a real round ──────────────────────────────
+
+
+def _long_memory(persona: Persona, count: int) -> list[str]:
+    lines = [f"2026-08-16 | old {i}" for i in range(count)]
+    (persona.directory / "memory.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return lines
+
+
+def test_a_real_round_rotates_an_oversized_memory_file(tmp_path: Path) -> None:
+    persona = _persona(tmp_path)
+    lines = _long_memory(persona, 350)
+
+    _run(tmp_path, persona=persona)
+
+    live = (persona.directory / "memory.md").read_text(encoding="utf-8").splitlines()
+    archive = (persona.directory / "memory.archive.md").read_text(encoding="utf-8").splitlines()
+    assert len(live) == 200
+    assert archive == lines[:150]
+
+
+def test_a_dry_run_never_rotates_memory(tmp_path: Path) -> None:
+    persona = _persona(tmp_path)
+    _long_memory(persona, 350)
+
+    _run(tmp_path, persona=persona, dry_run=True)
+
+    assert len((persona.directory / "memory.md").read_text(encoding="utf-8").splitlines()) == 350
+    assert not (persona.directory / "memory.archive.md").exists()
+
+
+def test_an_empty_plan_round_still_rotates(tmp_path: Path) -> None:
+    persona = _persona(tmp_path)
+    _long_memory(persona, 301)
+    backend = StubBackend('{"plan":[]}')
+
+    result = _run(tmp_path, persona=persona, backend=backend)
+
+    assert result.outcome is ActOutcome.PLANNER_EMPTY
+    assert (persona.directory / "memory.archive.md").exists()
+
+
+def test_a_rotation_failure_warns_and_never_changes_the_outcome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import swil_agent.act.round as act_round
+
+    def boom(path: Path) -> int:
+        raise OSError("read-only fs")
+
+    monkeypatch.setattr(act_round, "rotate_memory", boom)
+    with caplog.at_level(logging.WARNING, logger="swil_agent.act.round"):
+        result = _run(tmp_path)
+
+    assert result.outcome is ActOutcome.PLANNER_EMPTY
+    assert "memory rotation failed" in caplog.text
+
+
+def test_a_held_dream_lock_skips_rotation(tmp_path: Path) -> None:
+    """A standalone `dream` appends to memory.md under the dream lock only, so
+    rotating under the act lock alone could drop its line between the read
+    and the replace. The rotation waits for the next round instead."""
+    persona = _persona(tmp_path)
+    _long_memory(persona, 350)
+    lock = dream_lock_path(tmp_path, persona.directory.name)
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text("999999\n", encoding="utf-8")
+
+    _run(tmp_path, persona=persona)
+
+    assert len((persona.directory / "memory.md").read_text(encoding="utf-8").splitlines()) >= 350
+    assert not (persona.directory / "memory.archive.md").exists()
+    assert lock.exists(), "the dream's lock must not be released by the act round"
+
+
+def test_a_rotation_that_takes_the_dream_lock_releases_it(tmp_path: Path) -> None:
+    persona = _persona(tmp_path)
+    _long_memory(persona, 301)
+
+    _run(tmp_path, persona=persona)
+
+    assert (persona.directory / "memory.archive.md").exists()
+    assert not dream_lock_path(tmp_path, persona.directory.name).exists()
+
+
+def test_a_non_utf8_memory_file_warns_and_never_changes_the_outcome(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    persona = _persona(tmp_path)
+    (persona.directory / "memory.md").write_bytes(b"\xff\xfe bad\n" * 400)
+
+    with caplog.at_level(logging.WARNING, logger="swil_agent.act.round"):
+        result = _run(tmp_path, persona=persona)
+
+    assert result.outcome is ActOutcome.PLANNER_EMPTY
+    assert "memory rotation failed" in caplog.text

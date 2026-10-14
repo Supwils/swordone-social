@@ -9,7 +9,6 @@ through two different backends must produce an identical `Plan`.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -29,18 +28,17 @@ from swil_agent.llm.factory import get_backend
 from swil_agent.llm.selection import resolve_backend_choice
 from swil_agent.models import ActContext, Persona
 
-from ._runners import RecordingRunner
+from ._runners import RecordingRunner, make_persona
 
 PLAN_JSON = '{"plan":[{"action":"post","text":"hello world"}]}'
 
 
 def _persona(*, declared_backend: str | None = "claude", model: str | None = None) -> Persona:
-    return Persona(
-        username="zenith",
-        directory=Path("/tmp/zenith"),
+    return make_persona(
         backend=declared_backend or "claude",
         declared_backend=declared_backend,
         model=model,
+        prompt="PERSONA",
         raw="PERSONA",
     )
 

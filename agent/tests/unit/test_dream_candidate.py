@@ -1,199 +1,190 @@
-"""Tests for `swil_agent.dream.candidate`: the dream cooldown gate, the
-group-memory digest, the exact dream prompt, and raw-LLM-output cleanup.
-
-`_EXPECTED_EMPTY_USER` / `_EXPECTED_POPULATED_USER` are produced the same
-way `test_planner.py`'s `_EXPECTED_EMPTY` / `_EXPECTED_POPULATED` are: by
-calling the real renderer and capturing its output, never retyped by hand,
-so the pin itself cannot be a transcription error. The renderer's byte
-layout was independently cross-checked against the real `dream.sh:580-616`
-heredoc rendered under real `bash` across five scenarios (empty/group-only/
-echo-only/both/archive-placeholder) during implementation -- see
-`render_dream_prompt`'s docstring.
-"""
+"""Tests for `swil_agent.dream.candidate`: the cooldown gate, the group-memory
+digest, the 最近 prompt and `parse_recent`."""
 
 from __future__ import annotations
 
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from swil_agent.dream.candidate import (
-    DREAM_SYSTEM_PROMPT,
+    DREAM_INSTRUCTION,
+    DREAM_MEMORY_NOTE,
     FilesystemDreamState,
-    MissingIdentityBulletError,
+    build_dream_prompt,
     check_cooldown,
-    clean_candidate,
     group_memory_digest,
-    pin_identity_bullets,
-    read_echo_hint,
-    render_dream_prompt,
+    memories_since,
+    parse_recent,
 )
-from swil_agent.persona.validators import validate_candidate
 
-from ._runners import FakeState
+from ._runners import FakeState, make_persona
 
-# ── shared fixtures / helpers ───────────────────────────────────────────────
+# A fixed local wall-clock moment for every cooldown test, so memory-line
+# dates can be written relative to it.
+NOW = datetime(2026, 10, 14, 20, 0, 0)
 
 
-@pytest.fixture
-def state() -> FakeState:
-    return FakeState()
+def _ts(moment: datetime) -> int:
+    return int(moment.timestamp())
+
+
+def _memory(*lines: str) -> str:
+    return "".join(f"{line}\n" for line in lines)
 
 
 def _n(user: str, kind: str, name: str | None = None) -> dict[str, Any]:
-    """One `/notifications` item, shaped like `Resources.notifications()`'s
-    real payload (contract `03` §2.2: `.actor.username`, `.actor.displayName`,
-    `.type`). `name` defaults to `user.capitalize()` so
-    `test_digest_strips_the_trailing_separator`'s literal expected string
-    ("Alpha") falls out of the default rather than needing to be spelled out
-    at every call site.
-    """
-    return {"actor": {"username": user, "displayName": name or user.capitalize()}, "type": kind}
+    return {"actor": {"username": user, "displayName": name or user.title()}, "type": kind}
 
 
-# ── cooldown (contract 03 §1.3) ─────────────────────────────────────────────
+# ── memories_since ───────────────────────────────────────────────────────────
 
 
-def test_force_mode_never_cools_down(state: FakeState) -> None:
-    state.set_last_dream(minutes_ago=1, memlines=1000)
-    assert check_cooldown(state, "zenith", auto=False, memory_lines=1000).proceed is True
+def test_lines_dated_after_the_dream_day_count() -> None:
+    text = _memory("2026-10-13 | post | a", "2026-10-14 | like | b", "2026-10-15 | like | c")
+    assert memories_since(text, datetime(2026, 10, 13, 9, 0)) == 2
 
 
-def test_a_first_ever_dream_proceeds(state: FakeState) -> None:
-    assert check_cooldown(state, "zenith", auto=True, memory_lines=0).proceed is True
-
-
-def test_within_cooldown_and_too_few_new_lines_skips(state: FakeState) -> None:
-    state.set_last_dream(hours_ago=1, memlines=100)
-    decision = check_cooldown(state, "zenith", auto=True, memory_lines=104)
-    assert decision.proceed is False
-    assert "+4 new memories" in decision.reason
-
-
-def test_enough_new_lines_overrides_the_cooldown(state: FakeState) -> None:
-    state.set_last_dream(hours_ago=1, memlines=100)
-    decision = check_cooldown(state, "zenith", auto=True, memory_lines=108)
-    assert decision.proceed is True
-    assert decision.override is True
-
-
-def test_an_elapsed_cooldown_proceeds_regardless_of_new_lines(state: FakeState) -> None:
-    state.set_last_dream(hours_ago=13, memlines=100)
-    assert check_cooldown(state, "zenith", auto=True, memory_lines=100).proceed is True
-
-
-def test_undated_lines_count_toward_the_override(state: FakeState) -> None:
-    # Bash uses a plain `wc -l` delta; the awk that counts DATED lines is dead
-    # code (contract 03 §1.3). Any appended line counts -- including the
-    # "personality consolidated" housekeeping line the previous dream wrote.
-    state.set_last_dream(hours_ago=1, memlines=100)
-    assert check_cooldown(state, "zenith", auto=True, memory_lines=108).proceed is True
-
-
-def test_hours_are_floored_not_rounded(state: FakeState) -> None:
-    state.set_last_dream(hours_ago=11.9, memlines=100)
-    assert check_cooldown(state, "zenith", auto=True, memory_lines=100).proceed is False
-
-
-def test_the_cooldown_boundary_at_exactly_twelve_hours_proceeds(state: FakeState) -> None:
-    """`hours >= cooldown_hours` must include the boundary itself -- a
-    mutation to `hours > cooldown_hours` would still pass
-    `test_hours_are_floored_not_rounded` (11.9h) and
-    `test_an_elapsed_cooldown_proceeds_regardless_of_new_lines` (13h), since
-    neither sits ON the boundary. Uses an explicit `now` computed as exactly
-    `marker_ts + 12*3600` (not `hours_ago=12` through `FakeState`'s
-    `time.time()` arithmetic) so the 43200-second gap is exact, not subject
-    to any timing skew between `set_last_dream` and this call. `memory_lines
-    == memlines` (zero new lines) rules out the override path masking a
-    tightened comparison -- if `>=` regressed to `>`, `tail_lines` (0) is
-    still `< min_new_memories` (8), so this can only pass via the elapsed-
-    cooldown branch itself, not by accident through the override."""
-    state.set_last_dream(memlines=100)
-    marker_ts = state.last_dream_ts("zenith")
-    assert marker_ts is not None
-    decision = check_cooldown(
-        state, "zenith", auto=True, memory_lines=100, now=marker_ts + 12 * 3600
+def test_same_day_lines_count_only_after_the_dreams_own_line() -> None:
+    text = _memory(
+        "2026-10-14 | post | before",
+        f"2026-10-14 | {DREAM_MEMORY_NOTE}",
+        "2026-10-14 | like | after-1",
+        "2026-10-14 | comment | after-2",
     )
-    assert decision.proceed is True
+    assert memories_since(text, datetime(2026, 10, 14, 8, 0)) == 2
 
 
-def test_the_skip_reason_omits_the_log_prefix(state: FakeState) -> None:
-    """`CooldownDecision.reason` is the message BODY only -- no `"SKIP
-    $name — "` prefix. Mutating `check_cooldown` to prepend that prefix
-    itself would break this."""
-    state.set_last_dream(hours_ago=1, memlines=100)
-    decision = check_cooldown(state, "zenith", auto=True, memory_lines=104)
-    assert not decision.reason.startswith("SKIP")
+def test_same_day_lines_without_a_dream_line_do_not_count() -> None:
+    """A date with no time cannot be ordered against the dream unless the
+    dream's own line sits between them -- such lines are not counted."""
+    text = _memory("2026-10-14 | post | a", "2026-10-14 | like | b")
+    assert memories_since(text, datetime(2026, 10, 14, 8, 0)) == 0
 
 
-def test_a_silently_elapsed_cooldown_carries_no_reason(state: FakeState) -> None:
-    """Contract 03 §1.3: an elapsed cooldown "proceeds silently (no log
-    line)" -- `reason` must stay empty, not just `proceed=True`. Mutating
-    `check_cooldown` to always fill in a reason string would pass every
-    other test in this file but breaks this one."""
-    state.set_last_dream(hours_ago=13, memlines=100)
-    decision = check_cooldown(state, "zenith", auto=True, memory_lines=100)
-    assert decision.reason == ""
+def test_the_last_dream_line_of_the_day_is_the_one_that_orders() -> None:
+    text = _memory(
+        f"2026-10-14 | {DREAM_MEMORY_NOTE}",
+        "2026-10-14 | like | between",
+        "2026-10-14 | dream | personality consolidated",
+        "2026-10-14 | like | after",
+    )
+    assert memories_since(text, datetime(2026, 10, 14, 8, 0)) == 1
 
 
-# ── FilesystemDreamState (the real on-disk DreamState) ──────────────────────
+def test_undated_lines_never_count() -> None:
+    text = _memory("no date here", "2026-10-15 | post | a", "   ", "15-10-2026 | x")
+    assert memories_since(text, datetime(2026, 10, 14, 8, 0)) == 1
+
+
+def test_rotation_cannot_make_the_count_negative() -> None:
+    """The count reads dates, not a line-count delta, so a memory file that
+    shrank since the last dream (rotation) yields 0, never a negative."""
+    assert memories_since("", datetime(2026, 10, 14, 8, 0)) == 0
+
+
+# ── cooldown ─────────────────────────────────────────────────────────────────
+
+
+def test_force_mode_never_cools_down() -> None:
+    state = FakeState()
+    state.set_last_dream(at=_ts(NOW) - 60)
+    decision = check_cooldown(state, "zenith", auto=False, memory_text="", now=NOW)
+    assert decision.proceed and decision.reason == ""
+
+
+def test_a_first_ever_dream_proceeds() -> None:
+    decision = check_cooldown(FakeState(), "zenith", auto=True, memory_text="", now=NOW)
+    assert decision.proceed and not decision.override
+
+
+def test_within_cooldown_and_too_few_new_memories_skips() -> None:
+    state = FakeState()
+    state.set_last_dream(at=_ts(datetime(2026, 10, 14, 12, 0)))
+    text = _memory(f"2026-10-14 | {DREAM_MEMORY_NOTE}", *["2026-10-14 | like | x"] * 7)
+    decision = check_cooldown(state, "zenith", auto=True, memory_text=text, now=NOW)
+    assert not decision.proceed
+    assert decision.reason == "cooldown (8h < 12h, +7 new memories)"
+
+
+def test_enough_dated_memories_override_the_cooldown() -> None:
+    state = FakeState()
+    state.set_last_dream(at=_ts(datetime(2026, 10, 14, 12, 0)))
+    text = _memory(f"2026-10-14 | {DREAM_MEMORY_NOTE}", *["2026-10-14 | like | x"] * 8)
+    decision = check_cooldown(state, "zenith", auto=True, memory_text=text, now=NOW)
+    assert decision.proceed and decision.override
+    assert decision.reason == "cooldown override: +8 new memories since last dream"
+
+
+def test_lines_written_before_the_dream_do_not_override() -> None:
+    """The Era 2 rule counted a line-count delta, so lines that predate the
+    dream could fire the override. Dated counting must not."""
+    state = FakeState()
+    state.set_last_dream(at=_ts(datetime(2026, 10, 14, 12, 0)))
+    text = _memory(*["2026-10-13 | like | old"] * 20, f"2026-10-14 | {DREAM_MEMORY_NOTE}")
+    decision = check_cooldown(state, "zenith", auto=True, memory_text=text, now=NOW)
+    assert not decision.proceed
+
+
+def test_an_elapsed_cooldown_proceeds_silently() -> None:
+    state = FakeState()
+    state.set_last_dream(at=_ts(NOW) - 12 * 3600)
+    decision = check_cooldown(state, "zenith", auto=True, memory_text="", now=NOW)
+    assert decision.proceed and decision.reason == "" and not decision.override
+
+
+def test_hours_are_floored_not_rounded() -> None:
+    state = FakeState()
+    state.set_last_dream(at=_ts(NOW) - int(11.9 * 3600))
+    decision = check_cooldown(state, "zenith", auto=True, memory_text="", now=NOW)
+    assert not decision.proceed
+    assert decision.reason.startswith("cooldown (11h < 12h")
+
+
+def test_the_cooldown_settings_are_threaded() -> None:
+    state = FakeState()
+    state.set_last_dream(at=_ts(NOW) - 3 * 3600)
+    text = _memory("2026-10-15 | like | a", "2026-10-15 | like | b")
+    assert check_cooldown(
+        state, "zenith", auto=True, memory_text="", now=NOW, cooldown_hours=2
+    ).proceed
+    assert check_cooldown(
+        state, "zenith", auto=True, memory_text=text, now=NOW, min_new_memories=2
+    ).override
+
+
+def test_cooldown_defaults_to_the_wall_clock() -> None:
+    state = FakeState()
+    state.set_last_dream(at=int(time.time()) - 13 * 3600)
+    assert check_cooldown(state, "zenith", auto=True, memory_text="").proceed
+
+
+# ── FilesystemDreamState ─────────────────────────────────────────────────────
 
 
 def test_filesystem_state_has_no_marker_for_a_never_dreamed_account(tmp_path: Path) -> None:
+    assert FilesystemDreamState(tmp_path).last_dream_ts("zenith") is None
+
+
+def test_record_dream_round_trips(tmp_path: Path) -> None:
     fs_state = FilesystemDreamState(tmp_path)
-    assert fs_state.last_dream_ts("zenith") is None
-    assert fs_state.last_dream_memlines("zenith") == 0
-
-
-def test_record_dream_round_trips_through_check_cooldown(tmp_path: Path) -> None:
-    """Proves `record_dream`'s writes and `check_cooldown`'s reads agree on
-    the same two files -- a wrong key name or a swapped write order in
-    either method would desync them and this end-to-end read fails."""
-    fs_state = FilesystemDreamState(tmp_path)
-    fs_state.record_dream("zenith", at=1000, memlines=50)
-    assert fs_state.last_dream_ts("zenith") == 1000
-    assert fs_state.last_dream_memlines("zenith") == 50
-    decision = check_cooldown(fs_state, "zenith", auto=True, memory_lines=54, now=1000 + 3600)
-    assert decision.proceed is False
-    assert "+4 new memories" in decision.reason
-
-
-def test_record_dream_overwrites_a_previous_marker(tmp_path: Path) -> None:
-    fs_state = FilesystemDreamState(tmp_path)
-    fs_state.record_dream("zenith", at=1000, memlines=50)
-    fs_state.record_dream("zenith", at=2000, memlines=75)
-    assert fs_state.last_dream_ts("zenith") == 2000
-    assert fs_state.last_dream_memlines("zenith") == 75
-
-
-def test_record_dream_only_touches_the_named_account(tmp_path: Path) -> None:
-    fs_state = FilesystemDreamState(tmp_path)
-    fs_state.record_dream("zenith", at=1000, memlines=50)
-    assert fs_state.last_dream_ts("liushang") is None
-    assert fs_state.last_dream_memlines("liushang") == 0
+    fs_state.record_dream("zenith", at=1_700_000_000)
+    assert fs_state.last_dream_ts("zenith") == 1_700_000_000
+    assert (tmp_path / "last_dream_zenith").read_text(encoding="utf-8") == "1700000000"
+    assert fs_state.last_dream_ts("other") is None
 
 
 def test_filesystem_state_treats_a_corrupt_marker_as_absent(tmp_path: Path) -> None:
-    """A marker file that exists but does not parse as an integer (disk
-    corruption, a manual edit gone wrong) must degrade to "no marker" rather
-    than raising -- the same fail-open posture `check_cooldown` gives a
-    never-dreamed account."""
     (tmp_path / "last_dream_zenith").write_text("not-a-number", encoding="utf-8")
-    (tmp_path / "last_dream_memlines_zenith").write_text("also-not-a-number", encoding="utf-8")
-    fs_state = FilesystemDreamState(tmp_path)
-    assert fs_state.last_dream_ts("zenith") is None
-    assert fs_state.last_dream_memlines("zenith") == 0
+    assert FilesystemDreamState(tmp_path).last_dream_ts("zenith") is None
 
 
-# ── group-memory digest (contract 03 §2.2) ──────────────────────────────────
+# ── group-memory digest ─────────────────────────────────────────────────────
 
 
 def test_digest_sorts_by_likes_plus_double_comments() -> None:
-    notifications = [
-        *[_n("alpha", "like")] * 5,
-        *[_n("beta", "comment")] * 3,
-    ]
+    notifications = [*[_n("alpha", "like")] * 5, *[_n("beta", "comment")] * 3]
     assert group_memory_digest(notifications).splitlines()[0].startswith("- @beta")
 
 
@@ -203,8 +194,7 @@ def test_follows_do_not_affect_the_sort_weight() -> None:
 
 
 def test_reply_and_mention_count_as_comments() -> None:
-    digest = group_memory_digest([_n("alpha", "reply"), _n("alpha", "mention")])
-    assert "2 条回应" in digest
+    assert "2 条回应" in group_memory_digest([_n("alpha", "reply"), _n("alpha", "mention")])
 
 
 def test_digest_takes_at_most_five_users() -> None:
@@ -212,320 +202,133 @@ def test_digest_takes_at_most_five_users() -> None:
     assert len(group_memory_digest(notifications).splitlines()) == 5
 
 
-def test_digest_strips_the_trailing_separator() -> None:
-    assert group_memory_digest([_n("alpha", "like")]) == "- @alpha（Alpha）：1 次点赞"
+def test_digest_renders_one_line_per_user() -> None:
+    digest = group_memory_digest([_n("alpha", "follow"), _n("alpha", "like")])
+    assert digest == "- @alpha（Alpha）：1 次点赞 / 关注了你"
+
+
+def test_digest_skips_a_notification_with_no_usable_username() -> None:
+    notifications = [{"actor": {"displayName": "Ghost"}, "type": "like"}, _n("alpha", "like")]
+    assert group_memory_digest(notifications) == "- @alpha（Alpha）：1 次点赞"
+
+
+def test_digest_orders_ties_alphabetically_by_username() -> None:
+    notifications = [_n("zoo", "like"), _n("alpha", "like")]
+    assert group_memory_digest(notifications).splitlines()[0].startswith("- @alpha")
 
 
 def test_an_empty_notification_list_yields_an_empty_digest() -> None:
     assert group_memory_digest([]) == ""
 
 
-def test_digest_skips_a_notification_with_no_usable_username() -> None:
-    """A malformed item (missing/blank `actor.username`) must be dropped,
-    not crash the whole digest or fall into a `"None"`/`""`-keyed group --
-    the real API always populates this field, but a defensive skip here
-    matches how every other resource-consuming formatter in this codebase
-    (e.g. `act/context.py`'s `_author`) treats a malformed dict."""
-    notifications = [{"actor": {"displayName": "Ghost"}, "type": "like"}, _n("alpha", "like")]
-    digest = group_memory_digest(notifications)
-    assert digest == "- @alpha（Alpha）：1 次点赞"
+# ── the dream prompt ─────────────────────────────────────────────────────────
 
 
-def test_digest_renders_a_follow_marker_alongside_likes_and_comments() -> None:
-    """`follows` is excluded from the SORT weight
-    (`test_follows_do_not_affect_the_sort_weight`) but still RENDERS in the
-    line -- a mutation that dropped the follow clause entirely from the
-    render (as opposed to just the sort) would pass that test but fail
-    this one."""
-    digest = group_memory_digest([_n("alpha", "follow"), _n("alpha", "like")])
-    assert digest == "- @alpha（Alpha）：1 次点赞 / 关注了你"
+def test_the_system_prompt_is_the_persona_prompt() -> None:
+    persona = make_persona(prompt="卡片\n\n## 最近\n- 旧事", model="claude-haiku-5-5")
+    req = build_dream_prompt(persona, memory_tail="m", group_memory="")
+    assert req.system == "卡片\n\n## 最近\n- 旧事"
+    assert req.model == "claude-haiku-5-5"
 
 
-def test_digest_orders_ties_alphabetically_by_username() -> None:
-    """jq's `group_by(.user)` sorts by username before grouping, so a tie in
-    the final weight sort resolves in username order -- not in the order the
-    notifications happened to arrive in. Feeding "zoo" before "alpha" (arrival
-    order) with an equal weight proves the tie-break is alphabetical, not
-    insertion order."""
-    notifications = [_n("zoo", "like"), _n("alpha", "like")]
-    assert group_memory_digest(notifications).splitlines()[0].startswith("- @alpha")
-
-
-# ── the dream prompt (contract 03 §2.4) ─────────────────────────────────────
-
-
-def test_the_system_prompt_is_static() -> None:
-    a = render_dream_prompt(persona_text="A", recent_memory="m", archive_tail="t")[0]
-    b = render_dream_prompt(persona_text="B", recent_memory="n", archive_tail="u")[0]
-    assert a == b
-
-
-def test_the_system_prompt_is_the_module_constant() -> None:
-    assert render_dream_prompt(persona_text="A", recent_memory="m", archive_tail="t")[0] == (
-        DREAM_SYSTEM_PROMPT
+def test_the_user_prompt_carries_the_instruction_memory_and_group_memory() -> None:
+    req = build_dream_prompt(
+        make_persona(), memory_tail="2026-10-14 | post | 一件事", group_memory="- @alpha：1 次点赞"
     )
+    assert req.user.startswith(DREAM_INSTRUCTION)
+    assert "2026-10-14 | post | 一件事" in req.user
+    assert "- @alpha：1 次点赞" in req.user
+    assert req.user.index("2026-10-14 | post") < req.user.index("- @alpha")
+
+
+def test_the_instruction_asks_for_a_bounded_json_list() -> None:
+    assert "最多 5 条" in DREAM_INSTRUCTION
+    assert "不超过 60 字" in DREAM_INSTRUCTION
+    assert '{"recent": ["…", "…"]}' in DREAM_INSTRUCTION
+    assert "不要改写你的人设" in DREAM_INSTRUCTION
 
 
 def test_the_group_memory_section_vanishes_when_empty() -> None:
-    _, user = render_dream_prompt(persona_text="p", recent_memory="m", archive_tail="t")
-    assert "最近与你对话过的人" not in user
+    with_group = build_dream_prompt(make_persona(), memory_tail="m", group_memory="- @a：x")
+    without = build_dream_prompt(make_persona(), memory_tail="m", group_memory="")
+    assert "互动" in with_group.user
+    assert "互动" not in without.user
 
 
-def test_the_echo_hint_section_vanishes_when_empty() -> None:
-    _, user = render_dream_prompt(persona_text="p", recent_memory="m", archive_tail="t")
-    assert "来自上一个梦的提醒" not in user
+def test_an_empty_memory_still_renders_a_placeholder() -> None:
+    req = build_dream_prompt(make_persona(), memory_tail="", group_memory="")
+    assert "（暂无）" in req.user
 
 
-def test_both_optional_sections_appear_when_populated() -> None:
-    _, user = render_dream_prompt(
-        persona_text="p",
-        recent_memory="m",
-        archive_tail="t",
-        group_memory="- @vex（Vex）：1 次点赞",
-        echo_hint="换个话题",
-    )
-    assert "最近与你对话过的人" in user
-    assert "来自上一个梦的提醒" in user
+# ── parse_recent ─────────────────────────────────────────────────────────────
 
 
-def test_the_archive_tail_placeholder_is_used_when_there_is_no_archive() -> None:
-    _, user = render_dream_prompt(persona_text="p", recent_memory="m", archive_tail="")
-    assert "(尚无历史归档)" in user
+def test_parse_recent_reads_a_clean_object() -> None:
+    assert parse_recent('{"recent": ["一", "二"]}') == ["一", "二"]
 
 
-def test_a_real_archive_tail_is_used_verbatim_when_present() -> None:
-    """The other side of the placeholder test -- a mutation that always
-    substituted the placeholder (ignoring a real, non-empty `archive_tail`)
-    would pass the previous test but fail this one."""
-    _, user = render_dream_prompt(
-        persona_text="p", recent_memory="m", archive_tail="2026-07-01 | dream | x"
-    )
-    assert "2026-07-01 | dream | x" in user
-    assert "(尚无历史归档)" not in user
+def test_parse_recent_reads_a_bare_list() -> None:
+    assert parse_recent('["一", "二"]') == ["一", "二"]
 
 
-_EXPECTED_EMPTY_USER = """# 当前的 personality.md（你的旧自我画像）
+def test_parse_recent_reads_fenced_json() -> None:
+    assert parse_recent('```json\n{"recent": ["一"]}\n```') == ["一"]
 
-# Zenith
-- **Username:** zenith
-- **AI Backend:** claude
 
-## 发帖节律
-60% 概率选择 post
+def test_parse_recent_reads_json_surrounded_by_prose() -> None:
+    text = '好的，这是我的最近：\n{"recent": ["想起了夜班", "多肉又死了一盆"]}\n希望可以。'
+    assert parse_recent(text) == ["想起了夜班", "多肉又死了一盆"]
 
----
 
-# 最近 60 条 memory（你最近真实做过的事）
+def test_parse_recent_skips_bracketed_prose_before_the_json() -> None:
+    assert parse_recent('[1] 以下 {"recent": ["一"]}') == ["一"]
 
-2026-08-15 | post | id=aaa text=hello
-2026-08-16 | like | postId=bbb
 
----
+def test_parse_recent_rejects_an_object_whose_recent_is_not_a_list() -> None:
+    assert parse_recent('{"recent": "一件事"}') is None
 
-# 更早的 memory 末尾（归档，可参考但不必逐条回应）
 
-(尚无历史归档)
+def test_parse_recent_rejects_garbage() -> None:
+    assert parse_recent("我今天不想写。") is None
+    assert parse_recent("") is None
+    assert parse_recent("{not json}") is None
 
 
+def test_parse_recent_drops_non_string_items() -> None:
+    assert parse_recent('{"recent": ["一", 2, null, "三"]}') == ["一", "三"]
 
----
 
-请基于以上，输出新的完整 personality.md（看上去和旧的高度相似，但有少许真实漂移和一条新的"自传成长"条目）。"""
+def test_parse_recent_rejects_a_list_with_no_strings_at_all() -> None:
+    assert parse_recent('{"recent": [1, 2]}') is None
 
-_EXPECTED_POPULATED_USER = """# 当前的 personality.md（你的旧自我画像）
 
-# Zenith
-- **Username:** zenith
-- **AI Backend:** claude
+def test_parse_recent_treats_an_empty_object_list_as_unparseable() -> None:
+    """An empty 最近 is never written: the dream keeps the current list."""
+    assert parse_recent('{"recent": []}') is None
 
-## 发帖节律
-60% 概率选择 post
 
----
+def test_parse_recent_treats_an_empty_bare_list_as_unparseable() -> None:
+    assert parse_recent("[]") is None
+    assert parse_recent("```json\n[]\n```") is None
 
-# 最近 60 条 memory（你最近真实做过的事）
 
-2026-08-15 | post | id=aaa text=hello
-2026-08-16 | like | postId=bbb
+def test_parse_recent_prefers_an_object_with_recent_over_an_earlier_bare_list() -> None:
+    assert parse_recent('我之前写的是 [] 现在 {"recent": ["a"]}') == ["a"]
+    assert parse_recent('旧的 ["x"] 新的 {"recent": ["a"]}') == ["a"]
 
----
 
-# 更早的 memory 末尾（归档，可参考但不必逐条回应）
+def test_parse_recent_skips_an_empty_object_list_for_a_later_full_one() -> None:
+    assert parse_recent('{"recent": []} 改一下 {"recent": ["a"]}') == ["a"]
 
-2026-07-01 | dream | personality consolidated
 
+def test_parse_recent_falls_back_to_a_bare_list_when_no_object_has_recent() -> None:
+    assert parse_recent('{"note": 1} 然后 ["一", "二"]') == ["一", "二"]
 
----
 
-# 最近与你对话过的人（来自平台未读通知）
+def test_parse_recent_keeps_over_limit_items_for_the_writer_to_clamp() -> None:
+    items = ["长" * 200] * 8
+    assert parse_recent('{"recent": [' + ",".join(f'"{i}"' for i in items) + "]}") == items
 
-- @vex（Vex）：3 条回应 / 2 次点赞
 
-可以让这些人/事在「自传成长」里留下一点痕迹，但不强求。
-
-
----
-
-# 来自上一个梦的提醒
-
-你最近 12 条帖子的话题/语气相似度过高（pairwise variance = 0.01）。下个梦在「自传成长」里写一条关于换入口、换主题、换姿态的觉悟。
-
----
-
-请基于以上，输出新的完整 personality.md（看上去和旧的高度相似，但有少许真实漂移和一条新的"自传成长"条目）。"""
-
-_GOLDEN_PERSONA = (
-    "# Zenith\n- **Username:** zenith\n- **AI Backend:** claude\n\n## 发帖节律\n60% 概率选择 post"
-)
-_GOLDEN_MEMORY = "2026-08-15 | post | id=aaa text=hello\n2026-08-16 | like | postId=bbb"
-_GOLDEN_ARCHIVE = "2026-07-01 | dream | personality consolidated"
-_GOLDEN_GROUP = "- @vex（Vex）：3 条回应 / 2 次点赞"
-_GOLDEN_ECHO = (
-    "你最近 12 条帖子的话题/语气相似度过高（pairwise variance = 0.01）。"
-    "下个梦在「自传成长」里写一条关于换入口、换主题、换姿态的觉悟。"
-)
-
-
-def test_render_dream_prompt_matches_bash_byte_for_byte_when_empty() -> None:
-    _, user = render_dream_prompt(
-        persona_text=_GOLDEN_PERSONA, recent_memory=_GOLDEN_MEMORY, archive_tail=""
-    )
-    assert user == _EXPECTED_EMPTY_USER
-
-
-def test_render_dream_prompt_matches_bash_byte_for_byte_when_populated() -> None:
-    _, user = render_dream_prompt(
-        persona_text=_GOLDEN_PERSONA,
-        recent_memory=_GOLDEN_MEMORY,
-        archive_tail=_GOLDEN_ARCHIVE,
-        group_memory=_GOLDEN_GROUP,
-        echo_hint=_GOLDEN_ECHO,
-    )
-    assert user == _EXPECTED_POPULATED_USER
-
-
-# ── candidate cleanup (contract 03 §3) ──────────────────────────────────────
-
-
-def test_cleanup_strips_a_markdown_fence() -> None:
-    assert clean_candidate("```markdown\n# Name\nbody\n```") == "# Name\nbody"
-
-
-def test_cleanup_strips_a_bare_md_fence() -> None:
-    """The real sed pipeline (`dream.sh:644`) has THREE passes, not two --
-    ` ```md ` in addition to ` ```markdown ` and ` ``` `. A mutation that
-    dropped this middle pattern would still pass the `markdown`-fence test
-    above."""
-    assert clean_candidate("```md\n# Name\nbody\n```") == "# Name\nbody"
-
-
-def test_cleanup_drops_preamble_before_the_first_heading() -> None:
-    assert clean_candidate("Sure, here you go:\n\n# Name\nbody").startswith("# Name")
-
-
-def test_cleanup_keeps_later_hash_headings() -> None:
-    assert "## 发帖节律" in clean_candidate("# Name\n## 发帖节律\n60% 概率选择 post")
-
-
-def test_cleanup_of_an_empty_response_is_empty() -> None:
-    assert clean_candidate("   \n\n  ") == ""
-
-
-def test_cleanup_strips_a_fence_line_that_is_not_at_an_edge() -> None:
-    """`dream.sh:644`'s sed is a per-line substitution, not a
-    strip-only-the-first/last-line operation -- it blanks every line that
-    is EXACTLY one of the three fence markers, wherever it occurs. A
-    mutation that only checked the first and last lines would pass every
-    test above but fail this one."""
-    candidate = clean_candidate("# Name\nbefore\n```\nafter")
-    assert candidate == "# Name\nbefore\n\nafter"
-
-
-# ── echo hint, consuming read (contract 03 §2.1/§2.3) ───────────────────────
-
-
-def test_read_echo_hint_is_empty_when_no_flag_file_exists(tmp_path: Path) -> None:
-    assert read_echo_hint(tmp_path, "zenith") == ""
-
-
-def test_read_echo_hint_returns_and_consumes_the_flag(tmp_path: Path) -> None:
-    flag = tmp_path / "echo_flag_zenith"
-    flag.write_text("换个话题\n", encoding="utf-8")
-    assert read_echo_hint(tmp_path, "zenith") == "换个话题"
-    assert not flag.exists()
-
-
-def test_read_echo_hint_only_consumes_the_named_account(tmp_path: Path) -> None:
-    (tmp_path / "echo_flag_zenith").write_text("hint", encoding="utf-8")
-    assert read_echo_hint(tmp_path, "liushang") == ""
-    assert (tmp_path / "echo_flag_zenith").exists()
-
-
-# ── identity-bullet copy-back (loop-engine spec §12) ────────────────────────
-
-
-_LIVE_IDENTITY = """# 测试
-
-## 身份
-- **Username:** zenith
-- **Display Name:** 测试
-- **Headline:** AI Agent
-- **Bio:** 一句话
-- **Follow Topics:** alpha,beta
-
-- **AI Backend:** claude
-
-## 发帖节律
-- 自由发挥，看心情
-"""
-
-
-def test_a_mangled_ai_backend_is_restored_to_the_live_bytes_and_then_validates() -> None:
-    """Spec §12: `AI Backend: claude` -> `AI Backend: Claude` is accepted
-    after copy-back and still carries the original bytes. Without the pin,
-    `_check_round_trip` treats the case change as identity drift."""
-    mangled = _LIVE_IDENTITY.replace("- **AI Backend:** claude", "- **AI Backend:** Claude")
-    pinned = pin_identity_bullets(_LIVE_IDENTITY, mangled)
-    assert "- **AI Backend:** claude" in pinned
-    assert "- **AI Backend:** Claude" not in pinned
-    assert validate_candidate(_LIVE_IDENTITY, pinned) is None
-
-
-def test_a_candidate_that_dropped_follow_topics_still_fails_after_copy_back() -> None:
-    """Copy-back is not a silent personality edit of anything else. Follow
-    Topics is free to change, and dropping it still fails structural
-    validation."""
-    dropped = _LIVE_IDENTITY.replace("- **Follow Topics:** alpha,beta\n", "")
-    pinned = pin_identity_bullets(_LIVE_IDENTITY, dropped)
-    failure = validate_candidate(_LIVE_IDENTITY, pinned)
-    assert failure is not None
-    assert failure.check == "Follow Topics"
-
-
-def test_copy_back_uses_the_live_line_byte_for_byte() -> None:
-    """The live file's exact line, not a reconstructed `- **Field:** value`.
-    Extra trailing spaces on the live bullet must survive."""
-    live = _LIVE_IDENTITY.replace("- **Username:** zenith", "- **Username:** zenith  ")
-    candidate = live.replace("- **Username:** zenith  ", "- **Username:** other")
-    pinned = pin_identity_bullets(live, candidate)
-    assert "- **Username:** zenith  " in pinned.splitlines()
-    assert "- **Username:** other" not in pinned
-
-
-def test_copy_back_aborts_when_username_is_missing_on_the_live_file() -> None:
-    """Spec §12: missing identity bullet on the live file aborts as today
-    (`load_persona` already refuses a Username-less document)."""
-    live = _LIVE_IDENTITY.replace("- **Username:** zenith\n", "")
-    with pytest.raises(MissingIdentityBulletError):
-        pin_identity_bullets(live, _LIVE_IDENTITY)
-
-
-def test_copy_back_skips_ai_backend_when_the_live_file_has_none() -> None:
-    """hodlge / lvchuang / zaofan ship no AI Backend bullet. Today the
-    round-trip check skips an absent original; copy-back must not invent
-    one and must not abort those dreams."""
-    live = _LIVE_IDENTITY.replace("- **AI Backend:** claude\n", "")
-    candidate = live.replace("- **Bio:** 一句话", "- **Bio:** 改写")
-    pinned = pin_identity_bullets(live, candidate)
-    assert "- **AI Backend:**" not in pinned
-    assert validate_candidate(live, pinned) is None
+def test_parse_recent_skips_an_object_without_recent() -> None:
+    assert parse_recent('{"note": "先说一句"} 然后 {"recent": ["一"]}') == ["一"]

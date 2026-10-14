@@ -1,24 +1,21 @@
 """Execute one approved action and verify it actually landed.
 
-Ports `execute_action` (contract `02` §2, source `auto-run.sh:156-310`) plus
-the `_lab_event`/`emit_lab_event` call sites for the `cycle`/`act` events it
-fires (contract `02` §5.3). `swil.sh` is the second half of the round: it is
-what auto-run.sh actually shells out to for every write, and where it and the
-contract doc disagree this module follows the script (see the per-kind
-docstrings below for the two places that happened).
+Implements `execute_action` (contract `02` §2) plus the call sites for the
+`cycle`/`act` lab events it fires (contract `02` §5.3).
 
 **Write verification is the whole point of this module** (design spec §7.2).
-Bash decided success from an exit code alone and never parsed the response —
-that is exactly how codex's `comment` and `like` came to log `DONE` while
-persisting nothing (`likes.controller.ts`/`comments.controller.ts` 2xx, no
-row). Every `Resources` write method already raises `WriteNotVerifiedError`
-on a 2xx with no provable created/changed state (Task 1); this module's job
-is to never swallow that into a false "landed". A caught `ApiError` or
+A write is never judged by an exit code alone: a 2xx with no created row
+(codex's `comment` and `like`) would otherwise log `DONE` while persisting
+nothing (`likes.controller.ts`/`comments.controller.ts` 2xx, no row). Every
+`Resources` write already raises `WriteNotVerifiedError` on a 2xx with no
+provable created/changed state (Task 1); this module's job is to never
+swallow that into a false "landed". A caught `ApiError` or
 `WriteNotVerifiedError` always yields `landed=False` and a `detail` string
-that preserves the response body — `2>/dev/null` is why `"Invalid id"`
-errors are invisible in today's `auto-run.log` (spec §7.6); `ApiError`'s own
-`__str__` already carries `status` and `body[:300]` (`api/client.py`), so
-reusing it unmodified is the fix, not a new formatter.
+that preserves the response body; `ApiError`'s own `__str__` already carries
+`status` and `body[:300]` (`api/client.py`), so reusing it unmodified is the
+fix, not a new formatter.
+
+Two rules are preserved deliberately:
 
 Two Bash rules are preserved deliberately, not just left as historical
 trivia:
@@ -26,48 +23,26 @@ trivia:
   * **`follow` 409 / `CONFLICT` is idempotent success** (loop-engine spec
     §6) — `landed=True`, `call_succeeded=False`, no memory line. That is
     "already following": the edge exists, the round is not a failure, and
-    Bash itself never `_remember`s it. Any other `ApiError` /
-    `WriteNotVerifiedError` is `landed=False`. After cutover we no longer
-    need Bash's "every follow is landed" lie — a 500 must not look like a
+    no memory line is written. Any other `ApiError` /
+    `WriteNotVerifiedError` is `landed=False`, so a 500 never looks like a
     healthy round in the tally.
 
-    An earlier version of this paragraph added that `Resources.follow`
-    "already absorbs a 409 `CONFLICT` as a no-op success". **That is no
-    longer true and its removal is the point** (ruling R20): the swallow was
-    itself the defect. It sent the common "already following" case down the
-    SUCCESS branch — a `DONE` log line, a `success` lab event, and a
-    `memory.md` line — where Bash emits `WARN`, a `warn` event, and no
-    memory line at all, because `swil.sh` runs under `set -euo pipefail` and
-    `_curl` returns 1 for any status >= 400 (swil.sh:132-135). Every non-2xx
-    now reaches the `except` branch below. Spelled out rather than deleted
-    because this sentence, left standing as context for three review rounds,
-    is what made the defect read as intentional.
+    `Resources.follow` does NOT absorb a 409 (ruling R20): every non-2xx
+    reaches the `except` branch below, which logs `WARN`, emits a `warn`
+    event and writes no memory line.
   * **This module's own DM lab event never carries the message body**
     (contract `02` §2.6) — the `cycle/act/success` event it files sends only
     `"→@{username}"`.
 
     **That is NOT the same as "DM bodies stay out of the observation
-    layer", and an earlier version of this paragraph said exactly that.**
-    A second, independent event exists: `act/round.py`'s `_write_memory_line`
-    fires `memory/memory/success` for every memory line, porting
-    `swil.sh`'s `_remember` (swil.sh:184-203), and its `summary` is the
-    WHOLE note — which for a dm is `dm | to=<user> conversationId=<id> |
-    <first 80 chars of the body>` (swil.sh:711). So the first 80 characters
-    of a DM body DO reach `POST /agents/{username}/events`, in this runtime
-    and in Bash alike.
-
-    Bash carries the same wrong claim in its own comment at
-    `swil.sh:708-710` ("carries the recipient but never the body — private
-    conversations stay off the observation layer by design"). It is true of
-    `auto-run.sh`'s event and false of `_remember`'s, three lines below it.
-    `agent/scripts/` is frozen, so that comment stays as it is — noted here
-    so nobody "corrects" this Python comment back to match a Bash comment
-    that is itself wrong.
-
-    The behaviour is deliberate parity, not a leak introduced by the port:
-    both runtimes send the same two events with the same bodies. Whether the
-    80-char preview SHOULD be in the events table is a product question for
-    whoever owns `/lab`, not something this port may quietly change.
+    layer".** A second, independent event exists: `act/round.py`'s
+    `_write_memory_line` fires `memory/memory/success` for every memory
+    line, and its `summary` is the WHOLE note -- for a dm
+    `dm | to=<user> conversationId=<id> | <first 80 chars of the body>`. So
+    the first 80 characters of a DM body DO reach
+    `POST /agents/{username}/events`. Whether that preview SHOULD be in the
+    events table is a product question for whoever owns `/lab`, not
+    something to change quietly here.
 
 `collapse_doubled_text` (contract `02`, "cross-cutting facts") applies to
 `post.text`, `comment.text`, `echo.text`, and `dm.text` — never to
@@ -129,7 +104,7 @@ class ImageFetcher(Protocol):
 
 class ExecutionOutcome(BaseModel):
     """Everything one executed action produces: the `ActionResult` a round
-    tally cares about, the `auto-run.log`-shaped line a caller may want to
+    tally cares about, the act-log line a caller may want to
     print (contract `02` §5.2), and the exact `LabEvent` this module already
     emits via `Resources.lab_event` (contract `02` §5.3) — exposed here too
     so a future caller (a round-level orchestrator) can reconstruct or
@@ -142,20 +117,12 @@ class ExecutionOutcome(BaseModel):
 
 
 def _clean(raw: str | None) -> str:
-    """Newlines deleted (not replaced — `tr -d '\\n'`, not `tr '\\n' ' '`),
-    runs of spaces collapsed to one, then trimmed.
+    """Newlines deleted (not replaced with a space), runs of spaces collapsed
+    to one, then trimmed.
 
-    The trailing `.strip()` is a deliberate departure from a literal replay
-    of `auto-run.sh`'s `tr -d '\\n' | sed 's/  */ /g'`: that pipeline never
-    strips a single leading/trailing space, so bash's own "empty text" skip
-    (`[[ -z "$text" ]]`) does NOT fire on a whitespace-only string like
-    `"   "` — collapsed to a single residual `" "`, which is non-empty by
-    bash's own test, so bash would actually make the network call and let
-    the server 400 on it. This task's own brief pins `Action(kind="post",
-    text="   ")` as a local SKIP with no `Resources` call at all
-    (`resources.calls == []`), which only `.strip()`-based emptiness can
-    satisfy. Treating "SKIP without ever hitting the network" as the
-    intended behavior on whitespace-only text.
+    The trailing `.strip()` makes a whitespace-only text empty, so
+    `Action(kind="post", text="   ")` is a local SKIP with no `Resources`
+    call at all instead of a network round-trip the server would 400.
     """
     text = (raw or "").replace("\n", "")
     text = re.sub(r" {2,}", " ", text)
@@ -163,7 +130,7 @@ def _clean(raw: str | None) -> str:
 
 
 def _clean_username(raw: str | None) -> str:
-    """`tr -d '@[:space:]'` (auto-run.sh follow/dm cases): every `@` and
+    """Every `@` and
     every whitespace character removed, anywhere in the string — not just
     a leading `@` or surrounding trim.
     """
@@ -179,7 +146,7 @@ def _error_detail(exc: ApiError | WriteNotVerifiedError) -> str:
     already fixes the `2>/dev/null` blind spot. `WriteNotVerifiedError` gets
     an explicit "not verified" prefix so a 2xx-with-no-id failure reads as a
     distinct failure class from a genuine 4xx/5xx wherever `detail` surfaces
-    (log line, `/lab`, a human skimming `auto-run.log`'s Python equivalent).
+    (log line, `/lab`, a human skimming the act log).
     """
     if isinstance(exc, WriteNotVerifiedError):
         return f"write not verified: {exc}"
@@ -439,11 +406,8 @@ def _execute_follow(resources: Resources, action: Action, *, agent_name: str) ->
             return _outcome(
                 action,
                 landed=True,
-                # The swil.sh call itself did NOT succeed, so no memory.md line
-                # (rulings R19 + R20). `swil.sh`'s `follow` case is `_curl … |
-                # jq .` followed by `_remember` (swil.sh:679-683), and the
-                # failing `_curl` aborts the case under `set -euo pipefail`
-                # before `_remember` ever runs.
+                # The follow write did NOT succeed, so no memory.md line
+                # (rulings R19 + R20).
                 call_succeeded=False,
                 resource_id=None,
                 detail=f"likely already following: {_error_detail(exc)}",
@@ -575,9 +539,9 @@ def execute_action(
 
     Success is decided by a RETURNED RESOURCE ID (or, for `like`/`follow`, a
     verified state change), never by the absence of an exception (design
-    spec §7.2) -- the root-cause fix for the codex silent failures: bash's
-    `swil.sh` subcommands checked only their own exit code, so a 2xx with no
-    created row logged `DONE` and the round tallied a landing that never
+    spec §7.2) -- the root-cause fix for the codex silent failures: an
+    exit-code-only check saw a 2xx with no
+    created row and logged `DONE` and the round tallied a landing that never
     happened. Every `Resources` write already raises on that shape (Task
     1); this function's only job is to never catch that exception and treat
     it as success anyway.
@@ -636,9 +600,7 @@ def execute_action(
         # raises loudly here instead of falling through to unhandled state.
         raise AssertionError(f"unhandled action kind: {action.kind!r}")  # pragma: no cover
 
-    # `log_line` is the whole reason it is computed: it is `_log`'s exact
-    # text (`auto-run.sh`'s per-action DONE/WARN/SKIP lines), and until this
-    # call all 17 of them were built and dropped on the floor. `agent/logs/
+    # `log_line` is the per-action DONE/WARN/SKIP line. `agent/logs/
     # auto-run.log` is what straggler reconciliation and post-run QA grep
     # after a round; a Python round that never wrote a line there is
     # indistinguishable from a round that never happened.

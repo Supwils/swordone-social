@@ -101,7 +101,7 @@ class PasswordAuth:
 
 
 def resolve_auth(directory: Path, *, username: str, password: str | None) -> AuthStrategy:
-    """Pick the auth strategy for an account, matching swil.sh's `_curl`.
+    """Pick the auth strategy for an account, Bearer or session cookie.
 
     Bearer wins when `api_key.txt` is usable; the session cookie is the
     fallback (contract 02 §2.9). Both exception types from

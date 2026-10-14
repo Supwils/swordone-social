@@ -67,6 +67,10 @@ agent/.agent-state/
 agent/.env
 agent/agents/*/api_key.txt
 agent/humans/*/api_key.txt
+agent/archive/**/api_key.txt
+agent/archive/**/feed_for_*.md
+agent/archive/*/state/
+agent/archive/**/personality.anchor.aspects.json
 agent/context/now.md
 agent/context/feed_for_*.md
 agent/context/news_today.md

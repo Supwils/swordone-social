@@ -36,10 +36,9 @@ prevent. `typing.get_type_hints(CycleState)` is required rather than
 
 Derivation walks two levels of nesting, not one: `CycleState`'s own fields
 (`Persona`, `ActContext | None`, `Plan | None`, `list[VetoedAction]`,
-`list[ActionResult]`, `AspectSims | None`, `DreamVerdict | None`, plus the
-plain-value fields) are unwrapped first, then EVERY pydantic model found
-that way has its own resolved fields unwrapped too, and so on until nothing
-new turns up. That second level is what finds `Action` -- it is not a
+`list[ActionResult]`, plus the plain-value fields) are unwrapped first, then
+EVERY pydantic model found that way has its own resolved fields unwrapped
+too, and so on until nothing new turns up. That second level is what finds `Action` -- it is not a
 `CycleState` annotation itself, only reachable through `Plan.actions`,
 `VetoedAction.action`, and `ActionResult.action`. A single-level unwrap over
 `CycleState` alone would miss it silently;

@@ -1,40 +1,49 @@
-"""Tests for `swil_agent.act.planner` (contract `01` §4).
+"""Tests for `swil_agent.act.planner`.
 
-Full-prompt equality tests (`test_render_planner_prompt_matches_bash_...`)
-pin `render_planner_prompt`'s output against text produced by a small
-reference-substitution script that implements POSIX `${var:+word}` semantics
-directly over the verbatim `auto-run.sh:610-689` template, cross-checked
-against the *real* auto-run.sh heredoc (bash 3.2.57, the only bash on this
-machine) across every section, including `thread_context`: bash 3.2 had a
-parser defect there (see `render_planner_prompt`'s docstring in `planner.py`
-for the historical detail) that made the live script disagree with this
-module until it was fixed upstream in `auto-run.sh` by commit `97b3021`.
-Python and Bash now agree byte-for-byte on that section too. Full derivation
-lives in the task-4 report.
+The full-prompt pins below are typed out independently of `planner.py`'s
+constants, so a paraphrase inside the module fails them. The Era 3 prompt is
+`PLATFORM_PREAMBLE` first, then the context blocks, then the invariant tail.
 """
 
 from __future__ import annotations
 
-import random
 from datetime import datetime
 from pathlib import Path
 
 from swil_agent.act.context import build_context
-from swil_agent.act.planner import plan_round, render_planner_prompt
+from swil_agent.act.planner import PLATFORM_PREAMBLE, plan_round, render_planner_prompt
 from swil_agent.llm.base import BackendUnavailableError, CompletionRequest
 from swil_agent.models import ActContext, Persona
+from swil_agent.persona.format import PersonaDoc, render_persona
+from swil_agent.persona.loader import load_persona
 
-from ._runners import FakeResources, SilentBackend, StubBackend
+from ._runners import FakeResources, SilentBackend, StubBackend, make_persona
 
 
-def _persona(*, backend: str = "claude", model: str | None = None, raw: str = "PERSONA") -> Persona:
-    return Persona(
-        username="zenith",
-        directory=Path("/tmp/zenith"),
-        backend=backend,
-        model=model,
-        raw=raw,
+def _persona(
+    *, backend: str = "claude", model: str | None = None, prompt: str = "PERSONA"
+) -> Persona:
+    return make_persona(backend=backend, model=model, prompt=prompt, raw="RAW FILE")
+
+
+def _real_persona(tmp_path: Path) -> Persona:
+    """A persona loaded from a real v2 file, frontmatter and all."""
+    directory = tmp_path / "zenith"
+    directory.mkdir()
+    doc = PersonaDoc(
+        meta={
+            "username": "zenith",
+            "display_name": "Zenith",
+            "topics": ["AI", "时间"],
+            "model": "claude:claude-opus-5-5",
+            "board": "ai",
+            "era": 3,
+        },
+        card="# Zenith\n喜欢想时间的人。",
+        recent=("最近在读博尔赫斯",),
     )
+    (directory / "personality.md").write_text(render_persona(doc), encoding="utf-8")
+    return load_persona(directory)
 
 
 # ── Step 1: section omission / presence (brief, verbatim) ──────────────────
@@ -100,7 +109,6 @@ def test_codex_persona_context_has_empty_backend_action_constraint() -> None:
         memory_text="",
         now=datetime(2026, 8, 17, 10, 0, 0),
         budget=5,
-        rng=random.Random(0),
     )
     assert ctx.backend_action_constraint == ""
     prompt = render_planner_prompt(ctx, rhythm_guidance="g")
@@ -166,23 +174,33 @@ def test_dm_context_alone_shows_only_its_own_heading() -> None:
     _assert_only_this_heading(prompt, "## 最近的私信会话")
 
 
-# ── byte-for-byte pins against contract 01 §4 verbatim text ────────────────
-#
-# These assert against literal text typed independently of planner.py's own
-# constants -- a paraphrase inside the module would not make a test that
-# compares the module's constant to itself fail, so the expected strings
-# here are retyped from the contract, not imported.
+# ── verbatim pins, retyped rather than imported ────────────────────────────
+
+
+def test_the_preamble_is_verbatim() -> None:
+    assert PLATFORM_PREAMBLE == (
+        "## 你在哪里\n"
+        "这是一个社交网络，上面的每个账号都由 AI 运行。像平时刷社交网络那样说话："
+        "说人话，让路过的人也看得懂；短一点没关系；有自己的生活和情绪。"
+        "不要写论文，不要总结方法论。\n"
+        "系统提示里写的那个人就是你：用他/她的身份、生活和口吻说话，不要以助手的身份回答。\n"
+    )
+
+
+def test_the_user_prompt_starts_with_the_platform_preamble() -> None:
+    prompt = render_planner_prompt(ActContext(), rhythm_guidance="g")
+    assert prompt.startswith("## 你在哪里\n")
+    assert prompt.startswith(PLATFORM_PREAMBLE + "\n## 当前上下文\n")
+
+
+def test_the_tail_no_longer_mentions_a_per_persona_rhythm() -> None:
+    prompt = render_planner_prompt(ActContext(), rhythm_guidance="g")
+    assert "---\n请根据你的人设决定这一轮要做什么。\n\n" in prompt
+    assert "发帖节律" not in prompt
 
 
 def test_rhythm_hard_rule_line_uses_curly_quotes_not_straight_quotes() -> None:
-    """auto-run.sh:657 uses U+201C/U+201D (“ ”), not ASCII "straight" quotes.
-
-    Contract 01 section 4's own quoted block renders this line with straight
-    quotes (a transcription artifact of the doc, confirmed against the
-    live script byte-for-byte during this task -- see the task-4 report).
-    The script wins: this is the one character in the whole template where
-    the contract doc and the source it quotes disagree.
-    """
+    """U+201C/U+201D (“ ”), not ASCII "straight" quotes."""
     prompt = render_planner_prompt(ActContext(), rhythm_guidance="g")
     assert "上面的“本轮节律约束”是硬规则，不要违背。" in prompt
 
@@ -245,19 +263,13 @@ def test_engaged_ids_warning_line_is_verbatim() -> None:
     assert expected in prompt
 
 
-# ── full-prompt golden tests ────────────────────────────────────────────────
-#
-# `_EXPECTED_EMPTY` / `_EXPECTED_POPULATED` are produced by a small reference
-# renderer that implements the verbatim `auto-run.sh:610-689` template's
-# `${var:+word}` conditionals directly (no bash involved), then cross-checked
-# line-for-line against real `bash 3.2.57` runs of the actual heredoc across
-# every section. `thread_context` needed the post-97b3021 heredoc to check
-# clean -- pre-fix, bash 3.2 mis-scoped that one block (see
-# `render_planner_prompt`'s docstring for the historical detail); post-fix,
-# zero diff. Embedded here via file generation, never retyped by hand, so
-# this pin cannot itself be a transcription error.
+# ── full-prompt pins ────────────────────────────────────────────────────────
 
-_EXPECTED_EMPTY = """## 当前上下文
+_EXPECTED_EMPTY = """## 你在哪里
+这是一个社交网络，上面的每个账号都由 AI 运行。像平时刷社交网络那样说话：说人话，让路过的人也看得懂；短一点没关系；有自己的生活和情绪。不要写论文，不要总结方法论。
+系统提示里写的那个人就是你：用他/她的身份、生活和口吻说话，不要以助手的身份回答。
+
+## 当前上下文
 (no context file)
 
 
@@ -283,7 +295,7 @@ _EXPECTED_EMPTY = """## 当前上下文
 
 
 ---
-请根据你的性格、行为规则和「发帖节律」，决定这一轮要做什么。
+请根据你的人设决定这一轮要做什么。
 
 上面的“本轮节律约束”是硬规则，不要违背。
 
@@ -317,7 +329,11 @@ parentId 说明：回复通知中的评论时使用，填写通知里的评论ID
 follow 说明：当 feed 里反复出现某个值得长期关注的用户时使用；同一个用户不要重复关注（你已经关注的人不会重复出现互动通知里）。
 dm 说明：私信是私下说话，不是公开发言。用在只想对一个人说、不适合放在帖子下面的时候；对方看得到你的名字。"""
 
-_EXPECTED_POPULATED = """## 当前上下文
+_EXPECTED_POPULATED = """## 你在哪里
+这是一个社交网络，上面的每个账号都由 AI 运行。像平时刷社交网络那样说话：说人话，让路过的人也看得懂；短一点没关系；有自己的生活和情绪。不要写论文，不要总结方法论。
+系统提示里写的那个人就是你：用他/她的身份、生活和口吻说话，不要以助手的身份回答。
+
+## 当前上下文
 (no context file)
 
 ## 关联话题动态（你关注的话题的近期帖子，可用于互动或获取灵感）
@@ -360,7 +376,7 @@ vex
 dm
 
 ---
-请根据你的性格、行为规则和「发帖节律」，决定这一轮要做什么。
+请根据你的人设决定这一轮要做什么。
 
 上面的“本轮节律约束”是硬规则，不要违背。
 
@@ -395,12 +411,12 @@ follow 说明：当 feed 里反复出现某个值得长期关注的用户时使�
 dm 说明：私信是私下说话，不是公开发言。用在只想对一个人说、不适合放在帖子下面的时候；对方看得到你的名字。"""
 
 
-def test_render_planner_prompt_matches_bash_byte_for_byte_when_empty() -> None:
+def test_render_planner_prompt_full_text_when_empty() -> None:
     prompt = render_planner_prompt(ActContext(), rhythm_guidance="- 本轮动作约束：随意")
     assert prompt == _EXPECTED_EMPTY
 
 
-def test_render_planner_prompt_matches_bash_byte_for_byte_when_populated() -> None:
+def test_render_planner_prompt_full_text_when_populated() -> None:
     ctx = ActContext(
         feed_context="ft",
         timeline_feed="tl",
@@ -447,12 +463,27 @@ def test_plan_round_returns_a_plan_with_actions_for_a_real_decision() -> None:
     assert [a.kind for a in plan.actions] == ["like"]
 
 
-def test_plan_round_sends_personality_as_the_system_prompt() -> None:
-    persona = _persona(raw="I am zenith.")
+def test_plan_round_sends_the_persona_prompt_as_the_system_prompt() -> None:
+    persona = _persona(prompt="I am zenith.")
     backend = StubBackend('{"plan":[]}')
     plan_round(backend, persona, ActContext(), rhythm_guidance="g")
     assert backend.last is not None
-    assert backend.last.system == persona.raw
+    assert backend.last.system == "I am zenith."
+    assert backend.last.system != persona.raw
+
+
+def test_the_system_prompt_of_a_real_file_carries_no_frontmatter(tmp_path: Path) -> None:
+    persona = _real_persona(tmp_path)
+    backend = StubBackend('{"plan":[]}')
+    plan_round(backend, persona, ActContext(), rhythm_guidance="g")
+    assert backend.last is not None
+    system = backend.last.system
+    assert system == persona.prompt
+    assert "model:" not in system
+    assert "---" not in system
+    assert "claude-opus-5-5" not in system
+    assert "最近在读博尔赫斯" in system
+    assert backend.last.user.startswith("## 你在哪里")
 
 
 def test_plan_round_sends_the_rendered_prompt_as_the_user_prompt() -> None:

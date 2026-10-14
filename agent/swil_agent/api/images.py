@@ -1,76 +1,36 @@
-"""Image fetch for image posts, ports `_fetch_image` (agent/scripts/swil.sh:141) whole.
+"""Image fetch for image posts.
 
-Returns bytes in memory rather than a temp file path. `_fetch_image` used to
-build its temp path with `mktemp /tmp/swil_img_XXXXXX.jpg` -- a `.jpg` suffix
-trailing the `X` run, and `mktemp` only substitutes a *trailing* run of `X`s,
-so with a non-`X` suffix appended the whole template resolved to one fixed,
-unrandomized path. Two concurrent image posts wrote that same
-`/tmp/swil_img_XXXXXX.jpg`; whichever process finished second clobbered the
-first process's file, and the loser's post silently degraded to text-only
-with nothing in any log. That defect is NOT currently live: commit
-`98bf730` already patched it on the Bash side (`tmpbase=$(mktemp
-/tmp/swil_img_XXXXXX)` -- no suffix, so the trailing-X run IS substituted --
-followed by a rename to append `.jpg`), before this porting task started.
-This module's in-memory design still goes a step further than that patch:
-it removes the shared temp-file resource altogether rather than randomising
-it better, so there is nothing left for two concurrent callers, in any
-process, to collide over, and no orphaned temp file to clean up on failure
-either.
-
-Endpoint/params/response-shape and the fallback below were read out of
-`_fetch_image` itself, not assumed from a spec:
+Returns bytes in memory rather than a temp file path, so there is no shared
+temp-file resource for two concurrent callers to collide over and no
+orphaned temp file to clean up on failure.
 
   * Unsplash: `GET https://api.unsplash.com/photos/random` (the RANDOM
     endpoint, NOT `/search/photos`) with `query`, `orientation=landscape`,
     and `content_filter=high`, authenticated via `Authorization: Client-ID
-    <key>` (swil.sh:153-161). The response is a *single* JSON object --
-    `jq -r '.urls.regular // empty'` reads `.urls.regular` directly off the
-    top level, not `.results[0].urls.regular` the way `/search/photos`
-    would shape it.
+    <key>`. The response is a *single* JSON object; `.urls.regular` is read
+    directly off the top level, not `.results[0].urls.regular` the way
+    `/search/photos` would shape it.
 
-  * Picsum fallback (swil.sh:167-173): fires whenever the Unsplash attempt
-    leaves `fetched` at `0`. Reading the bash precisely: `fetched` is set to
-    `1` only by the download curl's own `&&`
-    (`curl ... -o "$tmpfile" "$image_url" ... && fetched=1`); neither curl
-    call's HTTP status is ever inspected (no `-f`/`--fail`), and the search
-    call's own exit status is never checked either (`image_url=$(curl ... |
-    jq ...)` never tests `$?`). So EVERY Unsplash failure class collapses to
-    the same `fetched=0` -> Picsum branch, with no distinction between them:
-    missing `UNSPLASH_ACCESS_KEY`, a non-2xx search response, a malformed or
-    keyless JSON body, curl/network failure on either request, or an empty
-    download. This module reproduces that uniformly: `fetch_unsplash_image`
-    falls back to Picsum on ANY failure out of the Unsplash attempt, full
-    stop -- there is no failure class Bash treats differently, so there is
-    none to special-case here either. Bash's FINAL gate for the whole
-    function is only `[[ "$fetched" -eq 1 && -s "$tmpfile" ]]` -- non-empty
-    output, with NO status-code check anywhere, on EITHER curl download (the
-    Unsplash image or the Picsum fallback alike).
-
-    `_fetch_picsum` below matches that leniency exactly: a non-empty body is
-    success regardless of status code, same as Bash.
+  * Picsum fallback: used whenever the Unsplash attempt fails for ANY reason
+    (missing `UNSPLASH_ACCESS_KEY`, a non-2xx search response, a malformed
+    or keyless JSON body, a network failure on either request, an empty
+    download). `fetch_unsplash_image` makes no distinction between failure
+    classes. `_fetch_picsum` is lenient: a non-empty body is success
+    regardless of status code.
 
     `_fetch_unsplash`'s download leg (the second `client.get`, fetching the
-    URL Unsplash's search returned) does NOT match it, and this is a
-    DELIBERATE divergence from Bash, not an oversight: it additionally
-    rejects a non-2xx response even when the body is non-empty, where Bash
-    would silently accept it. Demonstrated live: point that URL at a host
-    that returns 403 with a non-empty body, and Bash's `-s "$tmpfile"` check
-    still passes -- it uploads the error page's bytes as if they were the
-    photo. That is a latent defect in Bash, not a behaviour worth
-    reproducing, so this port does not reproduce it. The divergence is
-    low-risk specifically because the Picsum fallback still runs first and
-    is just as lenient as Bash, so it usually succeeds; a caller only ever
-    sees `ImageFetchError` (and therefore a text-only post) instead of
-    Bash's error-page-as-photo when the Unsplash download returns a non-2xx
-    status AND Picsum ALSO fails. See
+    URL Unsplash's search returned) is deliberately stricter: it rejects a
+    non-2xx response even when the body is non-empty, so an error page is
+    never uploaded as the photo. A caller only sees `ImageFetchError` (and
+    therefore a text-only post) when the Unsplash download returns a
+    non-2xx status AND Picsum also fails. See
     `test_unsplash_download_non_2xx_with_body_falls_back_to_picsum` and
-    `test_picsum_http_error_with_non_empty_body_is_not_a_failure` for the
-    two sides of this asymmetry pinned down as tests -- one accepts a
-    non-2xx body, the other does not, on purpose.
+    `test_picsum_http_error_with_non_empty_body_is_not_a_failure` for the two
+    sides of this asymmetry.
 
 Fail-soft: `fetch_unsplash_image` raises `ImageFetchError` only once BOTH
-Unsplash and the Picsum fallback have failed, matching Bash's empty-
-`IMGFILE` fallthrough to a text-only post. A raw httpx exception is never
+Unsplash and the Picsum fallback have failed, and the caller then posts
+text-only. A raw httpx exception is never
 allowed to escape this module -- both attempts are made inside the same
 `with httpx.Client(...)` block and any `httpx.HTTPError` from either one is
 caught alongside `ImageFetchError`, so `ImageFetchError` is the one type a
@@ -81,15 +41,13 @@ redundant: it is NOT an `httpx.HTTPError` subclass
 (`issubclass(httpx.InvalidURL, httpx.HTTPError)` is `False`), so it used to
 escape this module entirely. Reachable, and the consequence was a dead
 round rather than a text-only post: `_picsum_seed` replaces literal SPACES
-only -- faithfully, since Bash's is `tr ' ' '-'` -- so a TAB in a
+only, so a TAB in a
 planner-supplied `imageTopic` survives into the picsum URL, httpx rejects
 it as a non-printable ASCII character, and the exception propagated out of
 `execute_action`, out of `run_act`, and into `cli.py`'s guard as
 `SKIP <name> -- UNEXPECTED InvalidURL`, exit 75, with every remaining
-action of that round unexecuted. Bash degrades instead (curl fails, so
-`fetched=0` and the post goes out text-only), so catching it here is
-parity, not a new policy. Found while writing a test for something else
-(ruling R22); pinned by
+action of that round unexecuted. It now degrades to a text-only post. Found while writing a test for
+something else (ruling R22); pinned by
 `test_a_control_character_in_the_topic_degrades_instead_of_escaping`.
 """
 
@@ -117,10 +75,8 @@ def safe_temp_name(topic: str) -> str:
 
     No shared state backs this -- no file, no counter, no pid/time seed --
     so uniqueness comes entirely from `uuid.uuid4()`'s OS-CSPRNG randomness.
-    That is the structural fix for the Bash defect: it is not that the Bash
-    *code* forgot to guard a shared path, it is that this design has no
-    shared path for two concurrent callers (same process or, as in the
-    original bug, two separate OS processes) to race over.
+    There is no shared path for two concurrent callers (same process or
+    separate OS processes) to race over.
 
     `topic` is sanitised down to `[A-Za-z0-9_-]`, so it can never introduce a
     path separator, a colon, or a newline into the resulting name.
@@ -137,8 +93,7 @@ def fetch_unsplash_image(
     """Fetch one image for `topic`: try Unsplash, fall back to Picsum on ANY
     failure, and raise `ImageFetchError` only once both have failed. Never
     returns a half-built result and never lets a raw httpx exception escape
-    -- see the module docstring for exactly which Bash branch each half
-    ports.
+    -- see the module docstring.
     """
     with httpx.Client(
         transport=transport, timeout=DEFAULT_TIMEOUT, follow_redirects=True
@@ -163,15 +118,11 @@ def fetch_unsplash_image(
 
 
 def _fetch_unsplash(client: httpx.Client, topic: str, access_key: str) -> tuple[str, bytes]:
-    """The Unsplash attempt. Bash skips this branch entirely when
-    `UNSPLASH_ACCESS_KEY` is unset (`if [[ -n "${UNSPLASH_ACCESS_KEY:-}" ]]`,
-    swil.sh:153); an empty `access_key` here does the same, going straight
-    to the caller's Picsum fallback rather than sending an unauthenticated
-    request.
+    """The Unsplash attempt. An empty `access_key` goes straight to the
+    caller's Picsum fallback rather than sending an unauthenticated request.
 
     The download leg below rejects a non-2xx response even with a non-empty
-    body -- a deliberate divergence from Bash, which doesn't check status at
-    all there. See the module docstring for why.
+    body, unlike the lenient Picsum leg. See the module docstring for why.
     """
     if not access_key:
         raise ImageFetchError("no unsplash access key configured")
@@ -197,7 +148,7 @@ def _fetch_unsplash(client: httpx.Client, topic: str, access_key: str) -> tuple[
     if download.status_code >= 400:
         raise ImageFetchError(
             f"image download HTTP {download.status_code} "
-            "(non-2xx; rejected even with a body -- unlike bash, see module docstring)"
+            "(non-2xx; rejected even with a body -- see module docstring)"
         )
     if not download.content:
         raise ImageFetchError("image download returned an empty body")
@@ -206,11 +157,8 @@ def _fetch_unsplash(client: httpx.Client, topic: str, access_key: str) -> tuple[
 
 
 def _fetch_picsum(client: httpx.Client, topic: str) -> tuple[str, bytes]:
-    """The Picsum fallback (swil.sh:167-173). Deliberately does NOT check
-    the response status code -- Bash's own picsum curl call has no `-f`, so
-    an HTTP error there is invisible to it too; the only gate Bash applies
-    is "did any bytes land in the file" (`-s "$tmpfile"`), which this
-    mirrors as "is the body non-empty".
+    """The Picsum fallback. Deliberately does NOT check the response status
+    code; the only gate is "is the body non-empty".
     """
     url = _PICSUM_URL_TEMPLATE.format(seed=_picsum_seed(topic))
     download = client.get(url)
@@ -220,17 +168,8 @@ def _fetch_picsum(client: httpx.Client, topic: str) -> tuple[str, bytes]:
 
 
 def _picsum_seed(topic: str) -> str:
-    """`echo "$topic" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | cut -c1-24`
-    (swil.sh:170), translated: lowercase, literal spaces (only) become
-    hyphens, then the first 24 characters. Python string slicing is
-    code-point based, matching `cut -c` under a UTF-8 locale -- but `cut -c`
-    is BYTE-oriented instead under a C/POSIX locale, and nobody has verified
-    which locale `_fetch_image` actually runs under in production. For a
-    CJK topic (personas do post in Chinese) a C-locale `cut -c1-24` would
-    truncate mid-multibyte-character and land on a different seed than this
-    codepoint-based slice. Noted, not chased further -- low-stakes (picsum
-    still returns *an* image either way, just seeded differently).
-    """
+    """Lowercase, literal spaces (only) become hyphens, then the first 24
+    code points."""
     return topic.lower().replace(" ", "-")[:24]
 
 

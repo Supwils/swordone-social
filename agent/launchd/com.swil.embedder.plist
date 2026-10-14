@@ -5,7 +5,7 @@
   com.swil.embedder.plist
   =======================
   launchd config for the local sentence-embedder daemon (FastAPI + bge-m3 + MPS).
-  Mirrors com.swil.heartbeat.plist: install to ~/Library/LaunchAgents/ then
+  Install to ~/Library/LaunchAgents/ then
   `launchctl load`. Maintenance commands in agent/MAINTENANCE.md.
 -->
 <plist version="1.0">

@@ -1,27 +1,23 @@
-"""Run leases -- a SQLite row that still holds the Bash-visible lock file.
+"""Run leases -- a SQLite row that also holds the lock file.
 
 Spec §7.3 says `lock_<name>` / `dream_lock_<name>` "become a row in SQLite
-with a uniqueness constraint and a heartbeat timestamp". Read literally --
-the row *replaces* the file -- that would silently destroy mutual exclusion
-during migration stages 3 and 4, the exact window in which Bash and Python
-run the same 23-account roster. A Bash round reads `.agent-state/lock_<name>`
-and nothing else; it cannot see a SQLite row. Two runtimes, two disjoint
-notions of "held", one account posting twice.
+with a uniqueness constraint and a heartbeat timestamp". The lease keeps the
+file as well: `opportunistic-round.sh` sweeps dead-PID lock files, and a
+second process that only looks at `.agent-state/lock_<name>` must still see
+the account as held.
 
 So a lease holds BOTH:
 
-- the **file lock** (`swil_agent.locks.FileLock`, same paths, same 1800s
-  staleness rule as auto-run.sh:406-433 and dream.sh:460-471) -- this is what
-  makes exclusion *cross-runtime*;
+- the **file lock** (`swil_agent.locks.FileLock`, 1800s staleness rule) --
+  the cheap, atomic guard that `opportunistic-round.sh` also sweeps;
 - the **row** -- this is what makes a lease *expire*, and what carries the
   identity (`run_id`, `pid`) that a bare lock file cannot.
 
-The file half is dropped at stage 5, when Bash no longer runs. Until then
-removing it is not a simplification, it is a regression.
+Removing the file half would blind that sweep and any file-based check.
 
 **What actually kills the orphan-lock class.** Time-based expiry alone buys
-nothing over the file it accompanies: Bash already reclaims at the same 1800s
-(auto-run.sh:423, dream.sh:466), so a dead run still costs the account up to
+nothing over the file it accompanies: the file reclaims at the same 1800s,
+so a dead run still costs the account up to
 30 minutes of SKIPped rounds. The row carries the holder's **pid**, and a
 lease whose pid is no longer alive is reclaimable *immediately*. That is the
 difference between "we added SQLite" and "we killed the class of defect that
@@ -68,7 +64,7 @@ survives on disk exactly as long as the file it identifies. Cost: one small
 read per heartbeat and one on release, in place of a `stat`.
 
 A busy lease raises `LeaseBusy` immediately. There is deliberately no retry
-loop: Bash logs `SKIP <name> -- locked` and moves on (auto-run.sh:424), and
+loop: Bash logs `SKIP <name> -- locked` and moves on, and
 waiting instead would change round scheduling.
 
 **Concurrency on the SQLite file itself** (spec §15.1 row 23). Stage 3's
@@ -106,7 +102,7 @@ from swil_agent.locks import (
 
 logger = logging.getLogger(__name__)
 
-# The same 1800s Bash reclaims at (auto-run.sh:423, dream.sh:466), and the
+# The same 1800s Bash reclaims at, and the
 # same window `locks.STALE_AFTER_SECONDS` applies to the file half. The two
 # halves of one lease must expire at the same instant -- any gap between them
 # is a window in which one runtime reclaims what the other still considers
@@ -287,7 +283,7 @@ def sweep_expired(db: sqlite3.Connection, now: float) -> int:
 
     A convenience for startup and for observability. Correctness does not
     depend on anyone calling it -- `RunLease.__enter__` reclaims its own key,
-    the same way auto-run.sh:427 reclaims its own stale lock. Requiring an
+    the same way the file lock reclaims its own stale file. Requiring an
     external sweep would have made the row a *new* orphan class, strictly
     worse than the lock file it accompanies.
     """
@@ -315,16 +311,13 @@ class RunLease:
         run_id: str | None = None,
         now: Callable[[], float] = time.time,
     ) -> None:
-        """`agent_dir_name` is the **persona directory name**, not the username.
+        """`agent_dir_name` is the **persona directory name** (`agents/<name>`),
+        not the username.
 
-        auto-run.sh:407 derives the lock name with `basename "$agent_dir"` and
-        builds `.agent-state/lock_${agent_name}` from it (:408); dream.sh:462
-        does the same with the name it was invoked with, which `_find_dir`
-        resolves as a directory under `agents/` or `humans/`. Folder name and
-        registered username diverge for several accounts on this roster, and a
-        lease built from the username computes a *different* lock path than
-        the Bash round it is meant to exclude -- with every test still green,
-        because both runtimes would simply be locking files no one else looks
+        Lock files are `.agent-state/lock_<dir name>`. Folder name and
+        registered username can diverge, and a lease built from the username
+        computes a *different* lock path than every other holder -- with every
+        test still green, because each would lock a file no one else looks
         at. Pass `Path(persona_dir).name`.
         """
         if kind not in _LOCK_PATH:
@@ -358,7 +351,7 @@ class RunLease:
         deliberately not any `stat` field: this guard used to compare
         `st_ino`, and an inode number is recycled -- ext4 hands the one just
         freed by the reclaiming unlink straight back to the create that
-        follows it (auto-run.sh:428-429, dream.sh:471-472), so the successor's
+        follows it, so the successor's
         file answers to the predecessor's inode and the predecessor then
         deletes a lock it does not hold. `st_dev` is likewise reused, and the
         timestamps have filesystem-dependent granularity. A token cannot be
@@ -426,7 +419,7 @@ class RunLease:
         """Mark the lease alive: advance the row, and refresh the lock file's mtime.
 
         Both, because the two runtimes read different things. Bash's staleness
-        test is the file's mtime (auto-run.sh:422, dream.sh:465), so a long
+        test is the file's mtime, so a long
         cycle that only heartbeat the row would have its lock file reclaimed
         out from under it by the next Bash round -- the double-run the file
         half exists to prevent. The file is touched with the real wall clock

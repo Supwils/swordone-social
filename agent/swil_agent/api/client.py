@@ -1,11 +1,9 @@
 """HTTP transport for the Swil API.
 
-Differences from `swil.sh` that are the point of this module:
-  * Error bodies are preserved on ApiError instead of being sent to
-    /dev/null — `swil.sh`'s `_curl` pipes curl's stderr through
-    `2>/dev/null`, so a "HTTP 400: Invalid id" validation error is invisible
-    in `agent/logs/auto-run.log`. Real runs have logged apparent success for
-    writes that never happened because of exactly this.
+Properties that are the point of this module:
+  * Error bodies are preserved on ApiError, so a "HTTP 400: Invalid id"
+    validation error is visible in the logs instead of a write that looks
+    successful but never happened.
   * Non-2xx raises; it never silently returns a body that could be mistaken
     for success. A 2xx response with an unparseable or non-object body also
     raises, for the same reason: better a loud ApiError than a caller trying
@@ -67,8 +65,8 @@ class ApiError(RuntimeError):
     """A non-2xx response, or a 2xx response with an unusable body.
 
     `status`, `body`, and `code` are always populated so a caller (or a log
-    line) can show exactly what the server said — the detail `swil.sh`'s
-    `2>/dev/null` throws away today.
+    line) can show exactly what the server said — the detail a bare
+    status code would lose.
     """
 
     def __init__(self, status: int, body: str, code: str | None) -> None:

@@ -9,8 +9,6 @@ from swil_agent.models import (
     Action,
     ActionResult,
     ActOutcome,
-    AspectSims,
-    DreamVerdict,
     Persona,
     Plan,
     RhythmDecision,
@@ -59,7 +57,8 @@ class CycleState(TypedDict, total=False):
         (`guidance` vs `policy`), so the decision must survive intact rather
         than being flattened to whichever string one caller needed.
       * `actions` -- `guardrail` produces (the POST-guardrail survivors),
-        `execute` consumes. Kept separate from `plan`, which stays the
+        `execute` consumes and writes back what survived the duplicate guard
+        (what actually executed). Kept separate from `plan`, which stays the
         model's ORIGINAL proposal: `ActResult` reports both, and overwriting
         `plan` with the survivors would make a vetoed round indistinguishable
         from one the model never proposed anything in -- the exact confusion
@@ -72,21 +71,13 @@ class CycleState(TypedDict, total=False):
         These four are `ActResult`'s tally, and the final `CycleState` is what
         a caller reports the round from.
       * `proceeded` / `dream_reason` -- `dream` produces. `dream_reason`
-        carries the reason a dream never reached the gate (cooldown SKIP,
-        empty LLM, deadline). A rejection's reason is on `verdict` itself.
-      * `memory_lines` -- `dream` produces (the count taken BEFORE this
-        round's own housekeeping line), `write` consumes and records into
-        `last_dream_memlines_<name>`. Counting it anywhere later is off by
-        one, permanently.
-      * `narrative` -- `write` produces, `snapshot` consumes. Computed while
-        `personality.md` still holds the old text and uploaded as the
-        snapshot's `diffNarrative`; a node layer that forgets to thread it
-        empties that field for every snapshot with nothing going red except
-        the pin in `test_dream_steps.py`.
-      * `written` -- `write` produces, `snapshot` consumes. NOT the same
-        question as `verdict.accepted`: the snapshot is a claim about what
-        `personality.md` now says, so it keys off the write actually
-        happening.
+        carries why a dream produced no list (cooldown SKIP, empty or
+        unparseable reply, deadline).
+      * `recent` -- `dream` produces (the new, clamped 最近 list), `write`
+        and `snapshot` consume. `None` means there is nothing to write.
+      * `written` -- `write` produces, `snapshot` consumes: the snapshot is a
+        claim about what `personality.md` now says, so it keys off the write
+        actually happening.
       * `snapshot_ok` / `snapshot_reason` -- `snapshot` produces; the reason
         is the failure's own message, never a hardcoded guess.
       * `dry_run` -- `run_cycle` produces (seeded from the round-0 deps), the
@@ -100,9 +91,9 @@ class CycleState(TypedDict, total=False):
         So a dry run does not dream at all: it would otherwise rewrite 23
         personalities and upload 23 snapshots during the round whose whole
         premise is that Python never wrote (standing constraint §9).
-      * `missing_behavior_snapshot` / `missing_rule_check` -- the matching
-        sampler node produces True when that sampler raised or failed to
-        produce a sample. `logout` copies them onto the cycle_run card.
+      * `missing_behavior_snapshot` -- the behavior_snapshot node produces
+        True when the sampler raised or failed to produce a sample. `logout`
+        copies it onto the cycle_run card.
         Unset is False: a path that never reached the sampler (offline, dead
         backend, empty-plan skipping behavior_snapshot) is not a missing
         sample, it is a round that was not supposed to sample.
@@ -140,18 +131,11 @@ class CycleState(TypedDict, total=False):
     # dream
     proceeded: bool
     dream_reason: str
-    memory_lines: int
-    candidate: str | None
-    validator_failures: list[str]
-    aspect_sims: AspectSims | None
-    verdict: DreamVerdict | None
-    narrative: str
+    recent: list[str] | None
     written: bool
     snapshot_ok: bool
     snapshot_reason: str | None
-    dream_attempt: int
 
     # ledger
     missing_behavior_snapshot: bool
-    missing_rule_check: bool
     started_monotonic: float

@@ -1,14 +1,11 @@
-import random
-from datetime import datetime
-from pathlib import Path
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 import pytest
 
 from swil_agent.act.context import (
-    DEFAULT_CROSS_READ_PROB,
+    _within_era,
     build_context,
-    choose_read_scope,
     engaged_post_ids,
     format_conversations,
     format_global_feed,
@@ -17,12 +14,12 @@ from swil_agent.act.context import (
     format_timeline_feed,
     last_post_line,
     posts_today,
-    read_scope,
     select_thread_targets,
 )
 from swil_agent.api.client import ApiError
-from swil_agent.config import Settings
-from swil_agent.models import GLOBAL_READ_SCOPE, ActContext, Persona
+from swil_agent.models import Persona
+
+from ._runners import make_persona
 
 NOW = datetime(2026, 8, 17, 10, 0, 0)
 
@@ -35,28 +32,8 @@ MEMORY = """\
 """
 
 
-def _persona(backend: str = "claude", read: str | None = None) -> Persona:
-    """`read` is the `Read` bullet -- the account's assigned INPUT pool.
-
-    It defaults to `None` (absent) because 22 of the 23 roster accounts carry
-    no such bullet, so that is the state every pre-existing test in this file
-    is describing. `board` is deliberately NOT set here: it is the POSTING
-    target and drives nothing on the read path, and a fixture that set both
-    could not tell an implementation that read the right field from one that
-    read the wrong one.
-    """
-    return Persona(username="zenith", directory=Path("/tmp/zenith"), backend=backend, read=read)
-
-
-def _rng(seed: int = 0) -> random.Random:
-    """An INJECTED generator for `build_context`.
-
-    Every pre-existing test in this file passes one because the parameter is
-    required, not because the test cares: a global-scope persona (the default)
-    returns from `choose_read_scope` before drawing at all, so none of them
-    consume a single value from it.
-    """
-    return random.Random(seed)
+def _persona(backend: str = "claude") -> Persona:
+    return make_persona(backend=backend)
 
 
 # ── memory-derived fields (contract 01 §2e/§2f) ─────────────────────────────
@@ -332,14 +309,11 @@ class FakeResources:
         self.conversation_items: list[dict[str, Any]] = []
         self.posts: dict[str, dict[str, Any]] = {}
         self.comments: dict[str, list[dict[str, Any]]] = {}
-        # Board-scoped reads (Phase B task 3). `board_lookup` mirrors
-        # `Resources.get_boards()`'s slug -> id shape; only its KEYS matter to
-        # the read path, but the values are real-shaped so a test that starts
-        # asserting on them does not have to re-seed the fake.
+        # Recorded so a test can pin which feeds a round read, and with what `since`.
         self.board_feeds: dict[str, list[dict[str, Any]]] = {}
         self.board_lookup: dict[str, str] = {}
-        self.feed_global_calls: list[tuple[int, str]] = []
-        self.feed_board_calls: list[tuple[str, int, str]] = []
+        self.feed_global_calls: list[tuple[int, str, str | None]] = []
+        self.feed_board_calls: list[tuple[str, int, str, str | None]] = []
         self.get_boards_calls = 0
 
     def fail(self, name: str) -> None:
@@ -348,14 +322,16 @@ class FakeResources:
     def fail_post(self, post_id: str) -> None:
         self._fail_posts.add(post_id)
 
-    def feed_global(self, limit: int, sort: str) -> list[dict[str, Any]]:
-        self.feed_global_calls.append((limit, sort))
+    def feed_global(self, limit: int, sort: str, since: str | None = None) -> list[dict[str, Any]]:
+        self.feed_global_calls.append((limit, sort, since))
         if f"feed_global_{sort}" in self._fail:
             raise ApiError(500, "boom", None)
         return self.recommended if sort == "recommended" else self.latest
 
-    def feed_board(self, slug: str, limit: int = 12, sort: str = "latest") -> list[dict[str, Any]]:
-        self.feed_board_calls.append((slug, limit, sort))
+    def feed_board(
+        self, slug: str, limit: int = 12, sort: str = "latest", since: str | None = None
+    ) -> list[dict[str, Any]]:
+        self.feed_board_calls.append((slug, limit, sort, since))
         if f"feed_board_{slug}" in self._fail:
             raise ApiError(500, "boom", None)
         return self.board_feeds.get(slug, [])
@@ -399,7 +375,7 @@ def fake_resources() -> FakeResources:
 
 def test_a_failed_timeline_fetch_leaves_the_field_empty(fake_resources: FakeResources) -> None:
     fake_resources.fail("feed_global_latest")
-    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5, rng=_rng())
+    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5)
     assert ctx.timeline_feed == ""
 
 
@@ -407,7 +383,7 @@ def test_a_failed_recommended_fetch_still_renders_a_placeholder(
     fake_resources: FakeResources,
 ) -> None:
     fake_resources.fail("feed_global_recommended")
-    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5, rng=_rng())
+    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5)
     assert ctx.global_feed == "(could not fetch feed)"
 
 
@@ -415,7 +391,7 @@ def test_a_failed_notifications_fetch_still_renders_a_placeholder(
     fake_resources: FakeResources,
 ) -> None:
     fake_resources.fail("notifications")
-    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5, rng=_rng())
+    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5)
     assert ctx.notification_context == "（暂无新互动）"
 
 
@@ -423,7 +399,7 @@ def test_a_failed_contacts_fetch_empties_both_the_text_and_the_list(
     fake_resources: FakeResources,
 ) -> None:
     fake_resources.fail("contacts")
-    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5, rng=_rng())
+    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5)
     assert ctx.contacts_list == ""
     assert ctx.contacts == []
 
@@ -439,7 +415,7 @@ def test_a_failed_conversations_fetch_leaves_dm_context_empty(
     failure path. This closes that gap; see the report's mutation proof for
     the guard-deletion reproduction."""
     fake_resources.fail("conversations")
-    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5, rng=_rng())
+    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5)
     assert ctx.dm_context == ""
 
 
@@ -463,7 +439,7 @@ def test_one_failing_thread_does_not_drop_the_others(fake_resources: FakeResourc
         },
     ]
     fake_resources.fail_post("bbbbbbbbbbbbbbbbbbbbbbbb")
-    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5, rng=_rng())
+    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5)
     assert "aaaaaaaaaaaaaaaaaaaaaaaa" in ctx.thread_context
     assert "bbbbbbbbbbbbbbbbbbbbbbbb" not in ctx.thread_context
 
@@ -513,7 +489,7 @@ def test_build_context_populates_every_block_on_success(fake_resources: FakeReso
         }
     ]
 
-    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5, rng=_rng())
+    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5)
     assert "recommended post" in ctx.global_feed
     assert "latest post" in ctx.timeline_feed
     assert "pppppppppppppppppppppppp" in ctx.notification_context
@@ -539,7 +515,6 @@ def test_build_context_passes_through_context_now_and_feed_context(
         memory_text="",
         now=NOW,
         budget=5,
-        rng=_rng(),
         context_now="今日上下文",
         feed_context="关注话题动态",
     )
@@ -548,9 +523,7 @@ def test_build_context_passes_through_context_now_and_feed_context(
 
 
 def test_build_context_derives_rhythm_fields_from_memory(fake_resources: FakeResources) -> None:
-    ctx = build_context(
-        fake_resources, _persona(), memory_text=MEMORY, now=NOW, budget=5, rng=_rng()
-    )
+    ctx = build_context(fake_resources, _persona(), memory_text=MEMORY, now=NOW, budget=5)
     assert ctx.today == "2026-08-17"
     assert ctx.today_post_count == 1
     assert ctx.last_post.endswith("today one")
@@ -565,468 +538,130 @@ def test_build_context_leaves_backend_action_constraint_empty_for_every_backend(
     is the real fix; `ActContext.backend_action_constraint` is always `""`.
     """
     for backend in ("codex", "claude", "deepseek"):
-        ctx = build_context(
-            fake_resources, _persona(backend), memory_text="", now=NOW, budget=5, rng=_rng()
-        )
+        ctx = build_context(fake_resources, _persona(backend), memory_text="", now=NOW, budget=5)
         assert ctx.backend_action_constraint == ""
 
 
-# ── read scope + cross-reads (Phase B task 3, spec §8.3) ──────────────────
-#
-# The roster ships with 22 of 23 accounts carrying NO `Read` bullet, so this
-# whole mechanism is a strict no-op in production until an operator assigns
-# the niches. Every test below that exercises the niche path therefore has to
-# MANUFACTURE one in its fixture -- which is the point: the code half must be
-# tested and reviewable before the data half is proposed.
-
-HOME = "living"
-OTHER_BOARDS = ("ai-governance", "life-science", "making", "market", "perception")
-
-# `random.Random(1).random()` is 0.1344 and `random.Random(0).random()` is
-# 0.8444, so at the SHIPPING probability of 0.15 seed 1 crosses and seed 0
-# does not. Both are pinned by `test_the_two_branch_seeds_are_what_this_file
-# _claims` below, because a test that "forces the branch" with a seed nobody
-# checked is a test that silently stops forcing it.
-CROSS_SEED = 1
-HOME_SEED = 0
+# ── read scope: home board (now-context) + global feed, for everyone ─────
 
 
-class _RecordingRandom(random.Random):
-    """A `random.Random` that counts what was drawn from IT.
-
-    Determinism assertions cannot tell an injected generator from a
-    module-level `random.random()` with certainty -- they only make the
-    coincidence unlikely. This makes it observable: a code path that reaches
-    for the module-level generator leaves `draws` at zero.
-    """
-
-    def __init__(self, seed: int) -> None:
-        super().__init__(seed)
-        self.draws = 0
-        self.choices = 0
-
-    def random(self) -> float:
-        self.draws += 1
-        return super().random()
-
-    def choice(self, seq):  # type: ignore[no-untyped-def, override]
-        self.choices += 1
-        return super().choice(seq)
+ERA = datetime(2026, 10, 15, 0, 0, 0, tzinfo=UTC)
 
 
-def _boarded(fake: FakeResources, *, home_items: int = 3) -> FakeResources:
-    """Seed a fake with every board the production roster uses.
-
-    `home_items` posts on the home board and one on each other board, so the
-    board a round actually read is visible in `ctx.board_items` as well as in
-    `feed_board_calls` -- two independent witnesses of the same fact.
-    """
-    fake.board_lookup = {slug: f"id-{slug}" for slug in (HOME, *OTHER_BOARDS)}
-    fake.board_feeds[HOME] = [{"id": f"{i:024d}", "text": f"home {i}"} for i in range(home_items)]
-    for slug in OTHER_BOARDS:
-        fake.board_feeds[slug] = [{"id": "b" * 24, "text": f"from {slug}"}]
-    return fake
+def _post(post_id: str, created_at: str, *, comments: int = 0) -> dict[str, Any]:
+    return {
+        "id": post_id,
+        "author": {"username": "a"},
+        "createdAt": created_at,
+        "likeCount": 0,
+        "commentCount": comments,
+        "text": f"text {post_id}",
+    }
 
 
-def test_the_two_branch_seeds_are_what_this_file_claims() -> None:
-    """`CROSS_SEED` / `HOME_SEED` are load-bearing constants of the tests
-    below, and if Python's Mersenne Twister stream ever changed under them
-    they would keep passing while testing the opposite branch."""
-    assert random.Random(CROSS_SEED).random() < DEFAULT_CROSS_READ_PROB
-    assert random.Random(HOME_SEED).random() >= DEFAULT_CROSS_READ_PROB
+OLD = _post("o" * 24, "2026-10-14T23:59:59.000Z", comments=9)
+NEW = _post("n" * 24, "2026-10-15T00:00:01.000Z", comments=3)
 
 
-# ── read_scope: WHICH bullet drives the read ──────────────────────────────
-
-
-def test_the_read_scope_comes_from_the_read_bullet_not_the_board_bullet() -> None:
-    """`Board` is the POSTING target and every account has one; `Read` is the
-    reading scope and one account has one. An implementation that read
-    `Board` here would put all 23 accounts on board feeds in a single round,
-    with no operator decision anywhere -- and would still pass any test whose
-    fixture set the two fields to the same value."""
-    posts_to_market = Persona(
-        username="zenith", directory=Path("/tmp/zenith"), board="market", read=None
-    )
-    assert read_scope(posts_to_market) == GLOBAL_READ_SCOPE
-
-    reads_living = Persona(
-        username="zenith", directory=Path("/tmp/zenith"), board="market", read="living"
-    )
-    assert read_scope(reads_living) == "living"
-
-
-@pytest.mark.parametrize("raw", [None, "", "   ", "global", "Global", " GLOBAL "])
-def test_absent_blank_and_global_all_mean_the_widest_input(raw: str | None) -> None:
-    """Absent is the state 22 of 23 accounts are in, and it must mean exactly
-    what `Read: global` means -- otherwise adding the bullet to the one
-    account that has it would have changed that account's behaviour."""
-    assert read_scope(_persona(read=raw)) == GLOBAL_READ_SCOPE
-
-
-def test_a_slug_is_passed_through_verbatim_rather_than_normalised() -> None:
-    """`Read` is a round-trip-validated experiment control field
-    (`persona/validators.py`); silently case-folding it would make the value
-    the runtime acts on different from the one the operator wrote and the
-    validator compares."""
-    assert read_scope(_persona(read="  Life-Science  ")) == "Life-Science"
-
-
-# ── choose_read_scope: the roll ───────────────────────────────────────────
-
-
-def test_a_cross_read_round_is_recorded_as_such(fake_resources: FakeResources) -> None:
-    """Seed the RNG to force the branch; assert the board read is recorded and
-    differs from the persona's home board.
-
-    Asserted on EFFECTS as well as on the recorded fields (standing constraint
-    §4): `feed_board_calls` shows both passes went to the cross board and none
-    went to `living`, so an implementation that recorded a cross-read and then
-    read its home board anyway is caught here rather than shipping a series
-    that describes reads that never happened.
-
-    The generator is a `_RecordingRandom` so that "`build_context` built its
-    own `random.Random` instead of forwarding the injected one" is killed
-    DETERMINISTICALLY. Without the draw count, a fresh generator would still
-    cross-read 15% of the time and this test would merely be flaky against
-    that mutation rather than fatal to it.
-    """
-    _boarded(fake_resources)
-    rng = _RecordingRandom(CROSS_SEED)
-    ctx = build_context(
-        fake_resources,
-        _persona(read=HOME),
-        memory_text="",
-        now=NOW,
-        budget=5,
-        rng=rng,
-    )
-
-    assert rng.draws >= 1
-    assert ctx.cross_read is True
-    assert ctx.board_read != HOME
-    assert ctx.board_read in OTHER_BOARDS
-    # The niche the round LEFT is carried separately, because `board_read` on
-    # a cross-read names the away board and the home one is otherwise
-    # recoverable only from `personality.md` as it stood that day.
-    assert ctx.home_board == HOME
-    assert [slug for slug, _, _ in fake_resources.feed_board_calls] == [ctx.board_read] * 2
-    assert fake_resources.feed_global_calls == []
-    assert f"from {ctx.board_read}" in ctx.global_feed
-
-
-def test_the_roll_uses_the_injected_rng(fake_resources: FakeResources) -> None:
-    """Two runs with the same seed take the same branch. A module-level
-    random.random() passes any single-run assertion and is untestable.
-
-    Determinism is asserted over a SEQUENCE of seeds at p=0.5, where both
-    branches genuinely occur: a single seed compared against itself would
-    also pass for a module-level generator whenever its two coin flips
-    happened to agree. Twenty-four seeds make that coincidence ~2^-24.
-
-    And it is asserted a second, non-probabilistic way: `_RecordingRandom`
-    counts the draws taken from the generator that was passed IN, and a code
-    path reaching for `random.random()` leaves that count at zero while every
-    equality below can still pass by luck.
-    """
-    _boarded(fake_resources)
-    persona = _persona(read=HOME)
-    seeds = range(24)
-
-    def run(seed: int) -> tuple[str, bool]:
-        got = choose_read_scope(fake_resources, persona, random.Random(seed), cross_read_prob=0.5)
-        return got.scope, got.cross
-
-    first = [run(s) for s in seeds]
-    assert first == [run(s) for s in seeds]
-    # Non-degenerate: if every seed took the same branch, the equality above
-    # would hold for a constant and prove nothing.
-    assert {cross for _, cross in first} == {True, False}
-
-    # The home branch is the exact pin: one draw, no pick.
-    stays = _RecordingRandom(HOME_SEED)
-    assert choose_read_scope(fake_resources, persona, stays, cross_read_prob=0.5).cross is False
-    assert (stays.draws, stays.choices) == (1, 0)
-
-    # The cross branch pins the PICK exactly and the draws only as ">= 1":
-    # overriding `random()` on a `random.Random` subclass makes CPython route
-    # `_randbelow` through `random()` instead of `getrandbits`
-    # (`Random.__init_subclass__`), so `choice` adds draws of its own. That is
-    # this fixture's artefact, not the code's, and pinning it would pin CPython
-    # internals.
-    crosses = _RecordingRandom(CROSS_SEED)
-    result = choose_read_scope(fake_resources, persona, crosses, cross_read_prob=0.5)
-    assert result.cross is True
-    assert crosses.choices == 1
-    assert crosses.draws >= 1
-
-
-def test_cross_read_prob_zero_never_leaves_the_home_board(
+def test_both_feed_passes_read_the_global_feed_and_never_a_board(
     fake_resources: FakeResources,
 ) -> None:
-    """The off switch has to actually be off -- this is the revert path."""
-    _boarded(fake_resources)
-    persona = _persona(read=HOME)
-
-    results = [
-        choose_read_scope(fake_resources, persona, random.Random(seed), cross_read_prob=0.0)
-        for seed in range(50)
-    ]
-
-    assert {(r.scope, r.cross) for r in results} == {(HOME, False)}
-    # And it costs nothing: an off switch that still asked the API which
-    # boards exist would be off in behaviour but not in cost or in the logs.
-    assert fake_resources.get_boards_calls == 0
-
-
-def test_cross_read_prob_one_always_leaves_the_home_board(
-    fake_resources: FakeResources,
-) -> None:
-    """The opposite end of the same guard. Without it, an implementation that
-    ignored `cross_read_prob` entirely and never crossed would satisfy the
-    zero test above."""
-    _boarded(fake_resources)
-    persona = _persona(read=HOME)
-
-    results = [
-        choose_read_scope(fake_resources, persona, random.Random(seed), cross_read_prob=1.0)
-        for seed in range(50)
-    ]
-
-    assert {r.cross for r in results} == {True}
-    assert HOME not in {r.scope for r in results}
-    assert {r.scope for r in results} <= set(OTHER_BOARDS)
-
-
-def test_a_global_account_draws_no_randomness_at_all(fake_resources: FakeResources) -> None:
-    """The global early return sits ABOVE the roll, and that ordering is a
-    contract, not a micro-optimisation: `rng` is shared with `decide_rhythm`
-    one step later, so a wasted draw here would shift every global account's
-    rhythm decision for a seed the day a single account gains a `Read`
-    bullet."""
-    _boarded(fake_resources)
-    recording = _RecordingRandom(CROSS_SEED)
-
-    got = choose_read_scope(fake_resources, _persona(), recording, cross_read_prob=1.0)
-
-    assert got == (GLOBAL_READ_SCOPE, GLOBAL_READ_SCOPE, False)
-    assert (recording.draws, recording.choices) == (0, 0)
-    assert fake_resources.get_boards_calls == 0
-
-
-def test_the_boards_endpoint_is_only_asked_on_a_firing_roll(
-    fake_resources: FakeResources,
-) -> None:
-    """A home round is one feed read and nothing else."""
-    _boarded(fake_resources)
-    persona = _persona(read=HOME)
-
-    choose_read_scope(fake_resources, persona, random.Random(HOME_SEED))
-    assert fake_resources.get_boards_calls == 0
-
-    choose_read_scope(fake_resources, persona, random.Random(CROSS_SEED))
-    assert fake_resources.get_boards_calls == 1
-
-
-def test_a_boards_outage_keeps_the_account_on_its_home_board(
-    fake_resources: FakeResources,
-) -> None:
-    """Fail-open TO THE NICHE, never to global. Falling back to `global` would
-    silently move the account into the widest-input arm of the experiment --
-    the one condition an operator did not assign it to -- because a lookup
-    endpoint was briefly down."""
-    _boarded(fake_resources)
-    fake_resources.fail("get_boards")
-
-    got = choose_read_scope(fake_resources, _persona(read=HOME), random.Random(CROSS_SEED))
-
-    assert got == (HOME, HOME, False)
-
-
-def test_a_roster_with_only_the_home_board_cannot_cross_read(
-    fake_resources: FakeResources,
-) -> None:
-    """`rng.choice([])` raises `IndexError`; there is nowhere else to go."""
-    fake_resources.board_lookup = {HOME: "id-living"}
-
-    got = choose_read_scope(fake_resources, _persona(read=HOME), random.Random(CROSS_SEED))
-
-    assert got == (HOME, HOME, False)
-
-
-def test_the_cross_read_pick_does_not_depend_on_board_insertion_order(
-    fake_resources: FakeResources,
-) -> None:
-    """`get_boards()` builds its dict from a JSON array off the network, so
-    dict order is response order. Sorting the candidates is what makes one
-    seed reproduce one board across processes and across a server that
-    reorders its `/boards` payload."""
-    persona = _persona(read=HOME)
-    fake_resources.board_lookup = {slug: f"id-{slug}" for slug in (HOME, *OTHER_BOARDS)}
-    forward = choose_read_scope(fake_resources, persona, random.Random(CROSS_SEED))
-
-    reversed_fake = FakeResources()
-    reversed_fake.board_lookup = {slug: f"id-{slug}" for slug in reversed((HOME, *OTHER_BOARDS))}
-    backward = choose_read_scope(reversed_fake, persona, random.Random(CROSS_SEED))
-
-    assert forward.scope == backward.scope
-
-
-# ── build_context: which feed the round actually reads ────────────────────
-
-
-def test_an_account_with_no_read_bullet_reads_globally_exactly_as_before(
-    fake_resources: FakeResources,
-) -> None:
-    """The no-op guarantee for 22 of 23 accounts, asserted at the wire: the
-    same two `feed_global` passes, in the same order, with the same limits and
-    sorts, and no board call of any kind."""
-    _boarded(fake_resources)
-
-    ctx = build_context(
-        fake_resources, _persona(), memory_text="", now=NOW, budget=5, rng=_rng(CROSS_SEED)
-    )
-
-    assert fake_resources.feed_global_calls == [(40, "recommended"), (18, "latest")]
+    persona = make_persona(board="market")
+    build_context(fake_resources, persona, memory_text="", now=NOW, budget=5)
+    assert fake_resources.feed_global_calls == [(40, "recommended", None), (18, "latest", None)]
     assert fake_resources.feed_board_calls == []
-    assert (ctx.board_read, ctx.home_board, ctx.cross_read) == (
-        GLOBAL_READ_SCOPE,
-        GLOBAL_READ_SCOPE,
-        False,
-    )
+    assert fake_resources.get_boards_calls == 0
 
 
-def test_a_niche_account_reads_its_board_on_both_passes(
+def test_no_since_is_sent_when_the_era_is_unset(fake_resources: FakeResources) -> None:
+    build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5, era_start=None)
+    assert [since for *_, since in fake_resources.feed_global_calls] == [None, None]
+
+
+def test_every_feed_read_passes_since_when_the_era_is_set(
     fake_resources: FakeResources,
 ) -> None:
-    """Both passes, not just the breadth one. Leaving the depth pass on
-    `/feed/global` would keep every niche account reading the shared latest
-    slice, which is the input loop this task exists to break -- and the
-    breadth-only version passes any test that only inspects `global_feed`."""
-    _boarded(fake_resources)
-
-    ctx = build_context(
-        fake_resources,
-        _persona(read=HOME),
-        memory_text="",
-        now=NOW,
-        budget=5,
-        rng=_rng(HOME_SEED),
-    )
-
-    assert fake_resources.feed_board_calls == [
-        (HOME, 40, "recommended"),
-        (HOME, 18, "latest"),
+    build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5, era_start=ERA)
+    assert [since for *_, since in fake_resources.feed_global_calls] == [
+        ERA.isoformat(),
+        ERA.isoformat(),
     ]
-    assert fake_resources.feed_global_calls == []
-    assert (ctx.board_read, ctx.home_board, ctx.cross_read) == (HOME, HOME, False)
-    assert "home 0" in ctx.global_feed
-    assert "home 0" in ctx.timeline_feed
 
 
-def test_board_items_counts_the_breadth_pass_of_the_board_that_was_read(
+def test_items_older_than_the_era_are_dropped_client_side(
     fake_resources: FakeResources,
 ) -> None:
-    _boarded(fake_resources, home_items=3)
-
+    fake_resources.recommended = [OLD, NEW]
+    fake_resources.latest = [OLD, NEW]
     ctx = build_context(
-        fake_resources,
-        _persona(read=HOME),
-        memory_text="",
-        now=NOW,
-        budget=5,
-        rng=_rng(HOME_SEED),
+        fake_resources, _persona(), memory_text="", now=NOW, budget=5, era_start=ERA
     )
+    assert "n" * 24 in ctx.global_feed
+    assert "o" * 24 not in ctx.global_feed
+    assert "o" * 24 not in ctx.timeline_feed
+    assert "n" * 24 in ctx.timeline_feed
 
-    assert ctx.board_items == 3
 
-
-def test_board_items_tells_an_empty_board_apart_from_a_failed_read(
+def test_thread_targets_come_only_from_era_filtered_items(
     fake_resources: FakeResources,
 ) -> None:
-    """`making` carried 4 posts roster-wide at the last count, so a niched
-    account reading nothing is a real, expected state -- and the starvation
-    risk this number exists to make visible. `0` is that state; `None` is an
-    outage. Collapsing them would hide a starving account inside the noise of
-    a flaky endpoint."""
-    fake_resources.board_lookup = {HOME: "id-living"}
-    fake_resources.board_feeds[HOME] = []
-    empty = build_context(
-        fake_resources,
-        _persona(read=HOME),
-        memory_text="",
-        now=NOW,
-        budget=5,
-        rng=_rng(HOME_SEED),
-    )
-    assert empty.board_items == 0
-    assert empty.global_feed == "(could not fetch feed)"
-
-    broken = FakeResources()
-    broken.board_lookup = {HOME: "id-living"}
-    broken.fail(f"feed_board_{HOME}")
-    failed = build_context(
-        broken, _persona(read=HOME), memory_text="", now=NOW, budget=5, rng=_rng(HOME_SEED)
-    )
-    assert failed.board_items is None
-    assert failed.global_feed == "(could not fetch feed)"
-    assert failed.timeline_feed == ""
-    assert failed.board_read == HOME
-
-
-def test_the_cross_read_probability_reaches_the_roll_from_build_context(
-    fake_resources: FakeResources,
-) -> None:
-    """`build_context` must PASS its `cross_read_prob` on, not drop it and let
-    `choose_read_scope`'s own default apply. `HOME_SEED` draws 0.8444, which
-    is above the 0.15 default and below 1.0, so the two spellings disagree
-    here -- with the default forwarded silently the account would stay home."""
-    _boarded(fake_resources)
-
+    """The old post has more comments and would win the thread pick."""
+    fake_resources.recommended = [OLD, NEW]
     ctx = build_context(
-        fake_resources,
-        _persona(read=HOME),
-        memory_text="",
-        now=NOW,
-        budget=5,
-        rng=_rng(HOME_SEED),
-        cross_read_prob=1.0,
+        fake_resources, _persona(), memory_text="", now=NOW, budget=5, era_start=ERA
     )
-
-    assert ctx.cross_read is True
-    assert ctx.board_read != HOME
-
-
-def test_settings_cross_read_prob_matches_the_module_default() -> None:
-    """Pinned in both directions, like `act_similarity_window`: `act/` cannot
-    import `config`, so the shared number is spelled twice and only a test
-    keeps the two spellings from drifting."""
-    assert Settings().cross_read_prob == DEFAULT_CROSS_READ_PROB
-    assert DEFAULT_CROSS_READ_PROB == 0.15
-    assert Settings(cross_read_prob=0.4).cross_read_prob == 0.4
+    assert "n" * 24 in ctx.thread_context
+    assert "o" * 24 not in ctx.thread_context
 
 
-@pytest.mark.parametrize("bad", [-0.01, 1.5, 15.0])
-def test_an_out_of_range_cross_read_prob_is_rejected_at_load(bad: float) -> None:
-    """`CROSS_READ_PROB=15` (meaning "15%") would make every round a
-    cross-read and `-1` would make none, both silently, since the value is
-    read straight into a `rng.random() < prob` comparison."""
-    with pytest.raises(ValueError, match="cross_read_prob"):
-        Settings(cross_read_prob=bad)
+def test_an_all_old_feed_falls_back_to_the_placeholder(fake_resources: FakeResources) -> None:
+    fake_resources.recommended = [OLD]
+    fake_resources.latest = [OLD]
+    ctx = build_context(
+        fake_resources, _persona(), memory_text="", now=NOW, budget=5, era_start=ERA
+    )
+    assert ctx.global_feed == "(could not fetch feed)"
+    assert ctx.timeline_feed == ""
+    assert ctx.thread_context == ""
 
 
-def test_zero_and_one_stay_legal_cross_read_probs() -> None:
-    """`0` is the documented off switch and the revert path."""
-    assert Settings(cross_read_prob=0.0).cross_read_prob == 0.0
-    assert Settings(cross_read_prob=1.0).cross_read_prob == 1.0
+def test_without_an_era_old_items_are_kept(fake_resources: FakeResources) -> None:
+    fake_resources.recommended = [OLD, NEW]
+    ctx = build_context(fake_resources, _persona(), memory_text="", now=NOW, budget=5)
+    assert "o" * 24 in ctx.global_feed
 
 
-def test_a_bare_act_context_reads_as_global_rather_than_blank() -> None:
-    """`ActContext` is also constructed outside `build_context` -- graph state
-    carries one across a checkpoint restore. Its default must be the same
-    "widest input" sentinel the read path uses, not `""`, which is a scope no
-    account is ever assigned and which no consumer would recognise."""
-    assert ActContext().board_read == GLOBAL_READ_SCOPE
-    assert ActContext().home_board == GLOBAL_READ_SCOPE
-    assert ActContext().cross_read is False
-    assert ActContext().board_items is None
+# ── _within_era ──────────────────────────────────────────────────────────
+
+
+def test_within_era_is_the_identity_without_an_era() -> None:
+    items = [OLD, NEW, {"id": "x"}]
+    assert _within_era(items, None) == items
+
+
+def test_within_era_keeps_an_item_created_exactly_at_the_era_start() -> None:
+    edge = _post("e" * 24, "2026-10-15T00:00:00.000Z")
+    assert _within_era([edge], ERA) == [edge]
+
+
+def test_within_era_drops_items_with_a_missing_or_unparseable_date() -> None:
+    items = [{"id": "a"}, {"id": "b", "createdAt": "yesterday"}, {"id": "c", "createdAt": 5}]
+    assert _within_era(items, ERA) == []
+
+
+def test_within_era_treats_a_naive_era_start_as_utc() -> None:
+    naive = datetime(2026, 10, 15, 0, 0, 0)
+    assert _within_era([OLD, NEW], naive) == [NEW]
+
+
+def test_within_era_compares_across_time_zones() -> None:
+    """00:30 at +08:00 is 16:30 the previous day in UTC: before the era."""
+    east = _post("t" * 24, "2026-10-15T00:30:00+08:00")
+    assert _within_era([east], ERA) == []
+    assert _within_era([east], ERA - timedelta(hours=8)) == [east]
+    assert _within_era([east], datetime(2026, 10, 15, 0, 0, tzinfo=timezone(timedelta(hours=8))))
+
+
+def test_within_era_treats_a_naive_created_at_as_utc() -> None:
+    naive_item = _post("z" * 24, "2026-10-15T00:00:01")
+    assert _within_era([naive_item], ERA) == [naive_item]

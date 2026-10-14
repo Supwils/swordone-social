@@ -229,8 +229,8 @@ def _openai_text(payload: dict[str, Any]) -> str:
 def _body_excerpt(response: httpx.Response, limit: int = 200) -> str:
     """A bounded slice of the error body.
 
-    `api/client.py` exists partly because `swil.sh` sent curl's stderr to
-    /dev/null and made "HTTP 400: Invalid id" invisible in the logs; the same
+    `api/client.py` keeps the response body of failed requests so that
+    "HTTP 400: Invalid id" is visible in the logs; the same
     reasoning applies to a provider's error body, which is where "model not
     found" and "insufficient quota" actually say so. Bounded because some
     providers return an HTML error page.

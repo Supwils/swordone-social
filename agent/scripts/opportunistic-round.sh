@@ -59,6 +59,20 @@ case "${1:-}" in
 esac
 
 mkdir -p "$ROOT_DIR/logs" "$STATE_DIR"
+
+# Roster = every agents/<name>/ whose personality.md has a line exactly
+# `era: 3` (the frontmatter marker). Anything else -- sealed Era 2 files, a
+# half-written account -- is not part of the unattended sweep. Sets ACCOUNTS;
+# prints nothing, so it is safe in every mode.
+discover_roster() {
+  ACCOUNTS=()
+  local d
+  for d in "$ROOT_DIR"/agents/*/; do
+    [[ -f "$d/personality.md" ]] || continue
+    tr -d '\r' < "$d/personality.md" | grep -qx 'era: 3' || continue
+    ACCOUNTS+=( "$(basename "$d")" )
+  done
+}
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"; }
 # The gate is the common path and it must stay quiet: a no-op that writes a log
 # line every 30 minutes buries the rounds in its own noise.
@@ -80,6 +94,8 @@ if [[ "$MODE" == "status" ]]; then
   echo "elapsed    : $(( elapsed / 3600 ))h of ${MIN_INTERVAL_HOURS}h"
   echo "power      : $(pmset -g batt 2>/dev/null | head -1 | sed "s/.*from '//;s/'.*//")"
   echo "round lock : $([[ -d "$LOCK_DIR" ]] && echo held || echo free)"
+  discover_roster
+  echo "roster     : ${#ACCOUNTS[@]} runnable account(s) (agents/*/ with 'era: 3')"
   [[ "$elapsed" -lt "$need" ]] && echo "verdict    : too soon" || echo "verdict    : due"
   exit 0
 fi
@@ -193,20 +209,10 @@ done
 [[ "$swept" -gt 0 ]] && log "swept $swept dead lock file(s)"
 
 # ── 5. roster, derived from the directories ──────────────────────────────────
-# `round.skip` parks an account out of the unattended sweep without deleting
-# it. Manual `cycle-one.sh <name>` still runs it -- that is how an Anthropic
-# arm comes back when the subscription can carry a round again.
-ACCOUNTS=()
-skipped=0
-for d in "$ROOT_DIR"/agents/*/ "$ROOT_DIR"/humans/*/; do
-  [[ -f "$d/personality.md" ]] || continue
-  if [[ -f "$d/round.skip" ]]; then
-    skipped=$(( skipped + 1 ))
-    continue
-  fi
-  ACCOUNTS+=( "$(basename "$d")" )
-done
-[[ "${#ACCOUNTS[@]}" -gt 0 ]] || fail_precondition "no accounts found"
+# Only Era 3 accounts (see discover_roster) are swept; a manual
+# `cycle-one.sh <name>` still runs any account directly.
+discover_roster
+[[ "${#ACCOUNTS[@]}" -gt 0 ]] || fail_precondition "no Era 3 accounts found"
 
 if [[ "$MODE" == "dry" ]]; then
   log "dry-run — every gate passed; would run ${#ACCOUNTS[@]} accounts ${PARALLEL}-way"
@@ -218,7 +224,6 @@ fi
 echo "$now_epoch" > "$STAMP"
 
 log "round start — ${#ACCOUNTS[@]} accounts, ${PARALLEL}-way, timeout ${ACCOUNT_TIMEOUT}s/account"
-[[ "$skipped" -gt 0 ]] && log "skipped $skipped account(s) with round.skip"
 
 # Housekeeping BEFORE the round, not after: it then runs even when the previous
 # round died, and it prunes before this round adds another ~35 MB. Keeping 2
@@ -231,7 +236,7 @@ if [[ "${CHECKPOINT_KEEP:-2}" != "0" ]]; then
 fi
 
 # ── 6. embedder ──────────────────────────────────────────────────────────────
-# Pre-warm before the fan-out. cycle-one.sh brackets its own ref-counted guard,
+# Pre-warm before the fan-out. Each cycle brackets its own ref-counted guard,
 # but with PARALLEL processes starting at once they serialise on the guard's
 # spinlock waiting for the first one to finish loading a 2.3GB model. Warming it
 # here makes the guard see an already-running daemon and treat it as external --
@@ -321,10 +326,16 @@ log "round done — ok=$ok failed=$bad timeout=$timedout"
 # LOCAL COMMIT ONLY, never a push. The round rewrites memory.md and
 # personality.md; left uncommitted they pile up until someone reviews fifteen
 # rounds at once. A local commit is trivially reversible and reaches no server.
+#
+# Until agent/archive/era-2 is committed, `git add agent/agents` would stage the
+# Era 2 roster's deletions on their own and history would record Era 2 as
+# deleted rather than archived. The owner commits the Era 3 changeset first.
 if [[ "$AUTO_COMMIT" == "1" ]]; then
   cd "$REPO_DIR" || exit 0
-  if [[ -n "$(git status --porcelain -- agent/agents agent/humans)" ]]; then
-    git add agent/agents agent/humans
+  if ! git ls-files --error-unmatch agent/archive/era-2/boundary.json >/dev/null 2>&1; then
+    log "auto-commit skipped: Era 2 archive not committed yet"
+  elif [[ -n "$(git status --porcelain -- agent/agents)" ]]; then
+    git add agent/agents
     git -c commit.gpgsign=false commit -q --no-verify -m \
       "chore(agent): unattended round $(date '+%Y-%m-%d %H:%M') — ok=$ok failed=$bad timeout=$timedout" \
       && log "committed round output (not pushed)"

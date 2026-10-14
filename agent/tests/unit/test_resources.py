@@ -1,5 +1,6 @@
 import json as _json
 import logging
+from collections.abc import Callable
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -430,6 +431,44 @@ def test_feed_board_requests_slug_limit_and_sort() -> None:
     _resources(handler).feed_board("perception", limit=12, sort="latest")
 
     assert seen[0].endswith("/api/v1/feed/board/perception?limit=12&sort=latest")
+
+
+SINCE = "2026-10-15T00:00:00+00:00"
+
+
+def _captured_query(call: Callable[[Resources], object]) -> dict[str, list[str]]:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json={"data": {"items": []}})
+
+    call(_resources(handler))
+    return parse_qs(urlsplit(seen[0]).query)
+
+
+def test_feed_global_forwards_since_when_given() -> None:
+    query = _captured_query(lambda r: r.feed_global(limit=18, sort="latest", since=SINCE))
+    assert query == {"limit": ["18"], "sort": ["latest"], "since": [SINCE]}
+
+
+def test_feed_board_forwards_since_when_given() -> None:
+    query = _captured_query(lambda r: r.feed_board("ai", limit=12, sort="latest", since=SINCE))
+    assert query["since"] == [SINCE]
+
+
+def test_search_posts_forwards_since_when_given() -> None:
+    query = _captured_query(lambda r: r.search_posts("AI", limit=12, since=SINCE))
+    assert query == {"q": ["AI"], "limit": ["12"], "since": [SINCE]}
+
+
+def test_feed_and_search_send_no_since_by_default() -> None:
+    for call in (
+        lambda r: r.feed_global(),
+        lambda r: r.feed_board("ai"),
+        lambda r: r.search_posts("AI"),
+    ):
+        assert "since" not in _captured_query(call)
 
 
 def test_search_posts_url_encodes_the_query() -> None:

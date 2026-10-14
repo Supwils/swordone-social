@@ -58,29 +58,49 @@ from ._runners import (
     RecordingRunner,
     ScriptedBackend,
     StubBackend,
-    TwoCallBackend,
+    make_persona,
 )
 
 runner = CliRunner()
 
-ZENITH_PERSONALITY = """# 测试用人格
+_ERA_START = "2000-01-01T00:00:00Z"
 
-## 身份
-- **Username:** zenith
-- **Display Name:** 测试
-- **Headline:** AI Agent
-- **Bio:** 一句话简介
-- **Follow Topics:** alpha,beta
 
-- **AI Backend:** claude
+@pytest.fixture(autouse=True)
+def _era_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`act`/`cycle`/`doctor` refuse to run without ERA_START. Every
+    `Settings(...)` built in this file reads it from the env; a date this far
+    back keeps every fake post inside the era. Tests about the unset case
+    `delenv` it again."""
+    monkeypatch.setenv("ERA_START", _ERA_START)
 
-## 发帖节律
-- 自由发挥，看心情
+
+def _personality(username: str, *, model: str = "claude:opus") -> str:
+    """A valid Era 3 persona file for `username` (the loader requires the
+    directory name to match it)."""
+    return f"""---
+username: {username}
+display_name: 测试
+bio: 一句话简介
+model: {model}
+board: ai
+topics: [alpha, beta]
+era: 3
+---
+# 测试用人格
+
+一个测试用的账号。
+
+## 最近
+- 一件旧事
 """
 
-_PROBABILISTIC_RHYTHM = ZENITH_PERSONALITY.replace(
-    "- 自由发挥，看心情", "- 每次触发有 60% 概率选择 post"
-)
+
+ZENITH_PERSONALITY = _personality("zenith")
+
+# The dream's reply: a new 最近 list, and one that parses as nothing at all.
+DREAM_REPLY = '{"recent": ["改写后的近况"]}'
+BAD_DREAM_REPLY = "我今天什么也不想写。"
 
 _INITIAL_MEMORY = "2026-08-01 | act | did a thing\n"
 
@@ -99,40 +119,11 @@ _SEARCH_HIT = {
 }
 
 
-def _valid_dream_candidate() -> str:
-    return ZENITH_PERSONALITY.replace("一句话简介", "改写后的简介")
-
-
-def _bad_username_dream_candidate() -> str:
-    """Dropped Follow Topics -- identity copy-back (spec §12) restores a
-    mangled Username, so that is no longer a structural reject."""
-    return ZENITH_PERSONALITY.replace(
-        "- **Follow Topics:** alpha,beta", "- **Follow Topics:** alpha"
-    )
-
-
 def _write_zenith(tmp_path: Path, *, personality: str = ZENITH_PERSONALITY) -> Path:
     directory = tmp_path / "agents" / "zenith"
     directory.mkdir(parents=True)
     (directory / "personality.md").write_text(personality, encoding="utf-8")
     (directory / "memory.md").write_text(_INITIAL_MEMORY, encoding="utf-8")
-    return directory
-
-
-def _write_zenith_with_read(tmp_path: Path, *, read: str) -> Path:
-    """Re-write the fixture account with a `Read` bullet.
-
-    The shipped roster has exactly one such account, so the niche path has to
-    be manufactured. The bullet is inserted next to `AI Backend` because
-    `loader.get_field` matches any `- **Field:** value` line wherever it sits.
-    """
-    directory = tmp_path / "agents" / "zenith"
-    (directory / "personality.md").write_text(
-        ZENITH_PERSONALITY.replace(
-            "- **AI Backend:** claude", f"- **AI Backend:** claude\n- **Read:** {read}"
-        ),
-        encoding="utf-8",
-    )
     return directory
 
 
@@ -187,18 +178,13 @@ def _hold_lock(tmp_agent: Path, name: str) -> None:
 
 
 def _set_last_dream(tmp_agent: Path, name: str, *, hours_ago: float) -> None:
-    """Writes the two on-disk cooldown markers `FilesystemDreamState` reads
-    (`dream/candidate.py`'s `check_cooldown`), with a memlines snapshot
-    matching the CURRENT memory.md so the delta is 0 -- well under
-    `DREAM_MIN_NEW_MEMORIES` (8), so the cooldown-override path never
-    fires and the account stays blocked."""
+    """Writes the `last_dream_<name>` marker `FilesystemDreamState` reads. The
+    fixture's memory lines are all dated before it, so the new-memories
+    override never fires and the account stays blocked."""
     state_dir = tmp_agent / ".agent-state"
     state_dir.mkdir(parents=True, exist_ok=True)
     at = int(time.time() - hours_ago * 3600)
     (state_dir / f"last_dream_{name}").write_text(str(at), encoding="utf-8")
-    memory_path = tmp_agent / "agents" / name / "memory.md"
-    memlines = memory_path.read_text(encoding="utf-8").count("\n")
-    (state_dir / f"last_dream_memlines_{name}").write_text(str(memlines), encoding="utf-8")
 
 
 @pytest.fixture
@@ -211,27 +197,18 @@ def tmp_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     `setattr` for the same name simply wins for that test).
     """
     _write_zenith(tmp_path)
-    # The two post windows are given DIFFERENT non-default values on purpose.
-    # Both default to 12, which is also `Resources.user_posts`' own default and
-    # both analysis modules' `DEFAULT_POST_LIMIT` -- so with the defaults in
-    # place `settings.rule_check_post_limit` and `settings.behavior_post_limit`
-    # are swappable inside `cli.py` with the whole suite green (standing
-    # constraint §4, on a config value; found by review, and the node layer had
-    # already got this right). 5 and 7 make the field each command actually
-    # reads observable at the wire. `act_similarity_window` (Phase B task 2)
-    # gets a THIRD distinct value, 9, for the same reason -- it is a fourth
-    # field defaulting to that same 12.
+    # `behavior_post_limit` and `post_duplicate_window` both default to 12
+    # (also `Resources.user_posts`' own default), so each gets a distinct
+    # non-default value: the field each command actually reads is then
+    # observable at the wire. `post_probability=100` and a high ceiling make
+    # the unseeded rhythm roll always MUST_POST, so a planned post is never
+    # vetoed by chance or by an earlier test command's post.
     settings = Settings(
         agent_root=tmp_path,
-        rule_check_post_limit=5,
         behavior_post_limit=7,
-        act_similarity_window=9,
-        # Phase B task 3. `1.0` rather than a value near the 0.15 default so
-        # the branch it selects is DETERMINISTIC: with the module default in
-        # place, `swil-agent act`'s unseeded `random.Random` would cross-read
-        # only ~15% of the time and the wiring test below would be a coin
-        # flip that usually passed for the wrong reason.
-        cross_read_prob=1.0,
+        post_duplicate_window=9,
+        post_probability=100,
+        post_ceiling_per_day=10,
     )
 
     monkeypatch.setattr(cli, "load_settings", lambda: settings)
@@ -261,15 +238,13 @@ def test_act_reports_the_outcome_name(tmp_agent: Path) -> None:
 def test_act_hands_run_act_an_embedder_and_the_configured_window(
     tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The act-path self-similarity sample (Phase B task 2) reaches the wire
-    from THIS command, not only from `cycle`.
+    """The duplicate guard's self-similarity sample reaches the wire from THIS
+    command, not only from `cycle`.
 
-    `embedder=None` here would leave every `swil-agent act` round out of the
-    calibration series while the whole suite stayed green -- nothing else in
-    this file looks at what `act` does with an embedder. The window is 9, the
-    fixture's `act_similarity_window`: neither the module default (12) nor
-    either sampler's (5 / 7), so reading the wrong `Settings` field is
-    visible here rather than being "12 either way".
+    `embedder=None` here would leave every `swil-agent act` round unguarded
+    while the whole suite stayed green. The window is 9, the fixture's
+    `post_duplicate_window`: neither the default (12) nor the behaviour
+    sampler's (7), so reading the wrong `Settings` field is visible here.
 
     Two prior posts, because `MIN_COMPARISON_CORPUS` is 2 -- a shorter corpus
     would take the skip path and never call the embedder, which would pass
@@ -288,38 +263,30 @@ def test_act_hands_run_act_an_embedder_and_the_configured_window(
     assert measured[0].metrics["comparedAgainst"] == 2
 
 
-def test_act_hands_run_act_the_configured_cross_read_probability(
+def test_an_unknown_account_exits_66(tmp_agent: Path) -> None:
+    result = runner.invoke(cli.app, ["act", "nosuchagent"])
+    assert result.exit_code == 66
+
+
+def _close_the_era(monkeypatch: pytest.MonkeyPatch) -> None:
+    unset = cli.load_settings().model_copy(update={"era_start": None})
+    monkeypatch.setattr(cli, "load_settings", lambda: unset)
+
+
+def test_act_without_era_start_exits_75_with_the_remedy_and_writes_nothing(
     tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Mutation this kills: dropping `cross_read_prob=settings.cross_read_prob`
-    from `cli.py`'s `run_act` call, leaving `swil-agent act` on the module
-    default while `swil-agent cycle` honoured the setting -- two commands
-    running two different experiments, with the whole suite green.
-
-    The fixture's probability is `1.0`, so a round for an account with a
-    `Read` bullet MUST leave its board; on the module default (0.15) it
-    usually would not. The account is given one here, since the shipped roster
-    has none and this command would otherwise take the no-op path.
-
-    `board_lookup` carries exactly ONE board besides the home one, so the pick
-    is deterministic even though `swil-agent act` seeds its `random.Random`
-    from entropy when no `--seed` is given.
-    """
-    _write_zenith_with_read(tmp_agent, read="living")
-    resources = FakeResources()
-    resources.board_lookup = {"living": "id-living", "market": "id-market"}
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: resources)
-
+    _close_the_era(monkeypatch)
     result = runner.invoke(cli.app, ["act", "zenith"])
-
-    assert result.exit_code == 0
-    rows = [e for e in resources.lab_events if "boardRead" in e.metrics]
-    assert [row.metrics["crossRead"] for row in rows] == [True]
-    assert rows[0].metrics["boardRead"] == "market"
-    assert rows[0].metrics["crossReadProb"] == 1.0
+    assert result.exit_code == 75
+    assert cli.ERA_START_REMEDY in result.output
+    assert _memory_unchanged(tmp_agent)
 
 
-def test_an_unknown_account_exits_66(tmp_agent: Path) -> None:
+def test_act_without_era_start_still_reports_an_unknown_account_as_66(
+    tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _close_the_era(monkeypatch)
     result = runner.invoke(cli.app, ["act", "nosuchagent"])
     assert result.exit_code == 66
 
@@ -335,10 +302,16 @@ def test_a_real_act_run_lands_the_plan_and_exits_0(tmp_agent: Path) -> None:
     the outcome is `landed_all` and a memory.md line IS appended -- the
     positive-path sibling of the dry-run inertness test above, proving
     `--dry-run`'s inertness is a real branch and not just the only path this
-    suite exercises."""
+    suite exercises.
+
+    `/100` pins the rhythm settings' forwarding: the fixture sets
+    `post_probability=100`, and a `run_act` left on its own default would
+    roll against 60 (and veto the post on most rolls)."""
     result = runner.invoke(cli.app, ["act", "zenith"])
     assert result.exit_code == 0
     assert "landed_all" in result.stdout
+    assert "policy=must_post" in result.stdout
+    assert "/100" in result.stdout
     assert not _memory_unchanged(tmp_agent)
 
 
@@ -382,7 +355,7 @@ def test_act_with_no_credentials_skips_with_the_remedy_and_exits_75(
 
     assert result.exit_code == 75
     assert "zenith" in result.stdout
-    assert "create-api-key" in result.stdout
+    assert "register" in result.stdout
     assert "SWIL_PASS" in result.stdout
     assert "Traceback" not in result.stdout
     assert result.exception is None or isinstance(result.exception, SystemExit)
@@ -405,7 +378,7 @@ def test_act_with_a_blank_api_key_file_skips_with_the_remedy_and_exits_75(
 
     assert result.exit_code == 75
     assert "zenith" in result.stdout
-    assert "create-api-key" in result.stdout
+    assert "register" in result.stdout
     assert "Traceback" not in result.stdout
 
 
@@ -424,10 +397,10 @@ def test_act_with_an_unparseable_persona_skips_with_the_remedy_and_exits_75(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`load_persona` raises `ValueError` (not `FileNotFoundError`) for a
-    personality.md that EXISTS but has no `- **Username:**` bullet
-    (persona/loader.py). That is a different failure than "no such
-    account" -- the file is right there -- so it must land on exit 75 with
-    a remedy naming the bullet, not exit 66 or a raw traceback."""
+    personality.md that EXISTS but is not a valid Era 3 file (no
+    frontmatter). That is a different failure than "no such account" -- the
+    file is right there -- so it must land on exit 75 with a remedy naming
+    the frontmatter, not exit 66 or a raw traceback."""
     directory = tmp_path / "agents" / "zenith"
     directory.mkdir(parents=True)
     (directory / "personality.md").write_text("# no bullets here at all\n", encoding="utf-8")
@@ -439,7 +412,7 @@ def test_act_with_an_unparseable_persona_skips_with_the_remedy_and_exits_75(
 
     assert result.exit_code == 75
     assert "zenith" in result.stdout
-    assert "Username" in result.stdout
+    assert "frontmatter" in result.stdout
     assert "Traceback" not in result.stdout
 
 
@@ -539,13 +512,11 @@ def test_act_an_unexpected_composition_failure_exits_75_and_logs_unexpected(
 def test_act_seed_makes_the_rhythm_roll_reproducible(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--seed` exists so the rhythm roll (a `random.Random` draw made
-    before the LLM is ever called, `persona/rhythm.py`) is reproducible --
-    without it, the shadow round could not compare Python's rhythm verdict
-    against Bash's on a probabilistic account. Two invocations with the
-    SAME seed against a persona whose rhythm section has a real "N% 概率选择
-    post" clause must report the identical rhythm decision both times."""
-    _write_zenith(tmp_path, personality=_PROBABILISTIC_RHYTHM)
+    """`--seed` makes the uniform rhythm roll (a `random.Random` draw against
+    `POST_PROBABILITY`, made before the LLM is called, `persona/rhythm.py`)
+    reproducible. Two dry runs with the SAME seed must print the identical
+    rhythm decision and plan."""
+    _write_zenith(tmp_path, personality=ZENITH_PERSONALITY)
     settings = Settings(agent_root=tmp_path)
     monkeypatch.setattr(cli, "load_settings", lambda: settings)
     monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: FakeResources())
@@ -605,7 +576,7 @@ def test_dream_with_no_credentials_skips_with_the_remedy_and_exits_75(
 
     assert result.exit_code == 75
     assert "zenith" in result.stdout
-    assert "create-api-key" in result.stdout
+    assert "register" in result.stdout
     assert "SWIL_PASS" in result.stdout
     assert "Traceback" not in result.stdout
     assert guard.up_calls == 1
@@ -628,7 +599,7 @@ def test_dream_with_a_blank_api_key_file_skips_with_the_remedy_and_exits_75(
 
     assert result.exit_code == 75
     assert "zenith" in result.stdout
-    assert "create-api-key" in result.stdout
+    assert "register" in result.stdout
     assert "Traceback" not in result.stdout
 
 
@@ -652,7 +623,7 @@ def test_dream_with_an_unparseable_persona_skips_with_the_remedy_and_exits_75(
 
     assert result.exit_code == 75
     assert "zenith" in result.stdout
-    assert "Username" in result.stdout
+    assert "frontmatter" in result.stdout
     assert "Traceback" not in result.stdout
     assert guard.up_calls == 0
     assert guard.down_calls == 0
@@ -706,7 +677,7 @@ def test_dream_logs_loudly_once_when_embedder_is_down_after_guard_up(
     """R10: `EmbedderGuard.up()` cannot fail loudly (`embedder-guard.sh`
     always exits 0), so a dead embedder must be surfaced by an explicit
     post-`up()` health probe, logged at ERROR -- once per CLI invocation,
-    not once per dream (that per-dream granularity is `evaluate_candidate`'s
+    not once per dream (that per-dream granularity is the snapshot upload's
     own WARN, which is deliberately a different, quieter signal). Blocking
     the account on cooldown keeps this test from needing a working
     backend/runner -- the probe fires before the cooldown check either way."""
@@ -721,57 +692,45 @@ def test_dream_logs_loudly_once_when_embedder_is_down_after_guard_up(
     assert "embedder" in errors[0].getMessage().lower()
 
 
-def test_dream_force_mode_accepts_and_reports_acceptance(
+def test_dream_force_mode_writes_and_reports_the_new_list(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Force mode (no `--auto`) always proceeds past cooldown -- a real,
-    end-to-end accepted dream, not just the cooldown-SKIP path the other
-    dream tests use to stay cheap. `drift_mode="scalar"` keeps this test
-    from needing a working aspect-distiller runner: the fake embedder
-    returns the SAME vector for every text, so the scalar cosine similarity
-    is 1.0, comfortably above the 0.82 accept threshold."""
-    _write_zenith(tmp_path)
-    settings = Settings(agent_root=tmp_path, drift_mode="scalar")
+    end-to-end dream that rewrites 最近, not just the cooldown-SKIP path the
+    other dream tests use to stay cheap."""
+    directory = _write_zenith(tmp_path)
+    settings = Settings(agent_root=tmp_path)
     monkeypatch.setattr(cli, "load_settings", lambda: settings)
     monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: FakeResources())
-    monkeypatch.setattr(
-        cli,
-        "_backend_for",
-        lambda persona, settings: TwoCallBackend(candidate_response=_valid_dream_candidate()),
-    )
+    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: StubBackend(DREAM_REPLY))
     monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
     monkeypatch.setattr(cli, "_guard_for", lambda settings: _FakeGuard())
 
     result = runner.invoke(cli.app, ["dream", "zenith"])
     assert result.exit_code == 0
-    assert "dream accepted" in result.stdout
+    assert "zenith: dream written -- 最近 updated (1 items)" in result.stdout
+    assert "改写后的近况" in (directory / "personality.md").read_text(encoding="utf-8")
 
 
-def test_dream_force_mode_rejects_a_structurally_bad_candidate(
+def test_dream_force_mode_reports_an_unparseable_reply_as_a_failed_dream(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`proceeded=True, accepted=False` -- the LLM ran and produced a
-    verdict, it just was not accepted (a mangled `Username` bullet fails
-    `persona/validators.py`'s structural check before the drift gate is
-    ever reached). Exit code is still 0 ("something ran"), matching `act`'s
-    own "attempted, whether it landed or not" shape."""
-    _write_zenith(tmp_path)
-    settings = Settings(agent_root=tmp_path, drift_mode="scalar")
+    """`proceeded=True, accepted=False` -- the LLM ran but its reply held no
+    usable list, so nothing was written. Exit code is still 0 ("something
+    ran"), matching `act`'s own "attempted, whether it landed or not"
+    shape."""
+    directory = _write_zenith(tmp_path)
+    settings = Settings(agent_root=tmp_path)
     monkeypatch.setattr(cli, "load_settings", lambda: settings)
     monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: FakeResources())
-    monkeypatch.setattr(
-        cli,
-        "_backend_for",
-        lambda persona, settings: TwoCallBackend(
-            candidate_response=_bad_username_dream_candidate()
-        ),
-    )
+    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: StubBackend(BAD_DREAM_REPLY))
     monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
     monkeypatch.setattr(cli, "_guard_for", lambda settings: _FakeGuard())
 
     result = runner.invoke(cli.app, ["dream", "zenith"])
     assert result.exit_code == 0
-    assert "dream rejected" in result.stdout
+    assert "zenith: dream failed -- unparseable dream output" in result.stdout
+    assert (directory / "personality.md").read_text(encoding="utf-8") == ZENITH_PERSONALITY
 
 
 def test_dream_does_not_log_when_embedder_is_healthy(
@@ -787,9 +746,9 @@ def test_dream_does_not_log_when_embedder_is_healthy(
 
 
 def _cycle_backend() -> ScriptedBackend:
-    """One backend object for a whole cycle: plan, rewrite candidate, diff
-    narrative -- in the order `run_cycle` spends them."""
-    return ScriptedBackend(_POST_PLAN, _valid_dream_candidate(), "梦把语气放软了")
+    """One backend object for a whole cycle: the plan, then the dream's new
+    list -- in the order `run_cycle` spends them."""
+    return ScriptedBackend(_POST_PLAN, DREAM_REPLY)
 
 
 @pytest.fixture
@@ -797,11 +756,9 @@ def tmp_cycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """`tmp_agent`'s sibling for the `cycle` command.
 
     Separate rather than a parameter on `tmp_agent` because a cycle needs a
-    backend that answers THREE different prompts in order (`StubBackend`
+    backend that answers TWO different prompts in order (`StubBackend`
     answers every prompt identically, which would feed the plan JSON to the
-    dream) and `drift_mode="scalar"`, so the constant-vector fake embedder
-    produces a cosine similarity of 1.0 and the gate accepts without a real
-    aspect distiller.
+    dream).
     """
     _write_zenith(tmp_path)
     _patch_cycle_seams(monkeypatch, tmp_path)
@@ -811,15 +768,12 @@ def tmp_cycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def _patch_cycle_seams(monkeypatch: pytest.MonkeyPatch, agent_root: Path) -> None:
     """Every network-, subprocess- and clock-facing seam a cycle reaches.
 
-    `_runner_for` is patched too, unlike in `tmp_agent`: the cycle's `gate`
-    node runs the aspect distiller under any `drift_mode` other than
-    `"scalar"`, and that distiller shells out through a REAL
-    `SubprocessRunner` -- three `claude` invocations at a 300s timeout each.
-    A test that forgets `drift_mode="scalar"` therefore hangs for minutes
-    instead of failing, which is how a five-second suite becomes a five-minute
-    one nobody can bisect. Belt as well as braces.
+    `_runner_for` is patched too: the world-context renderers shell out
+    through it, and a unit test must never spawn a real process.
     """
-    settings = Settings(agent_root=agent_root, drift_mode="scalar")
+    # The rhythm roll always lets the planned post through, even after an
+    # earlier command in the same test already posted today.
+    settings = Settings(agent_root=agent_root, post_probability=100, post_ceiling_per_day=10)
     monkeypatch.setattr(cli, "load_settings", lambda: settings)
     monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: FakeResources())
     monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: _cycle_backend())
@@ -839,10 +793,10 @@ def test_cycle_runs_the_act_and_the_dream_in_one_process_and_exits_0(tmp_cycle: 
 
     assert result.exit_code == 0
     assert "landed_all" in result.stdout
-    assert "dream accepted" in result.stdout
+    assert "dream written" in result.stdout
     assert not _memory_unchanged(tmp_cycle)
     personality = (tmp_cycle / "agents" / "zenith" / "personality.md").read_text(encoding="utf-8")
-    assert "改写后的简介" in personality
+    assert "改写后的近况" in personality
     assert (tmp_cycle / "agents" / "zenith" / "personality.archive.md").exists()
 
 
@@ -852,6 +806,20 @@ def test_cycle_an_unknown_account_exits_66(tmp_cycle: Path) -> None:
     result = runner.invoke(cli.app, ["cycle", "nosuchagent"])
     assert result.exit_code == 66
     assert "no such account: nosuchagent" in result.output
+
+
+def test_cycle_without_era_start_exits_75_with_the_remedy_and_never_runs(
+    tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _close_the_era(monkeypatch)
+
+    def _never(**_kwargs: object) -> object:
+        raise AssertionError("run_cycle must not start without ERA_START")
+
+    monkeypatch.setattr(cli, "run_cycle", _never)
+    result = runner.invoke(cli.app, ["cycle", "zenith", "--dry-run"])
+    assert result.exit_code == 75
+    assert cli.ERA_START_REMEDY in result.output
 
 
 def test_cycle_exits_75_when_the_platform_is_unreachable(
@@ -905,7 +873,7 @@ def test_cycle_with_no_credentials_skips_with_the_remedy_and_exits_75(
     result = runner.invoke(cli.app, ["cycle", "zenith"])
 
     assert result.exit_code == 75
-    assert "create-api-key" in result.stdout
+    assert "register" in result.stdout
     assert "Traceback" not in result.stdout
     assert guard.up_calls == 1
     assert guard.down_calls == 1
@@ -916,7 +884,7 @@ def test_cycle_an_unexpected_failure_exits_75_and_logs_unexpected(
 ) -> None:
     """Exit 1 is a fourth code neither `cycle-one.sh` nor the heartbeat can
     read, so even a genuine bug leaves through the 0/66/75 contract -- named
-    `UNEXPECTED` so it is never mistaken for something `create-api-key`
+    `UNEXPECTED` so it is never mistaken for something `register`
     fixes."""
 
     def _boom(persona: Persona, settings: Settings) -> FakeResources:
@@ -1097,24 +1065,18 @@ def test_a_cycles_logout_record_lands_in_the_act_log(
 def test_a_cycles_analysis_samplers_land_in_the_act_log(
     tmp_cycle: Path, round_log_level: None
 ) -> None:
-    """`rule_check` and `behavior_snapshot` measure the ACT phase, so their
-    records belong with it.
-
-    Bash gives neither a log file of its own -- `auto-run.sh:806` discards
-    `behavior-snapshot.sh`'s output entirely and `cycle-one.sh:45` leaves
-    `rule-check.sh` on the caller's stdout -- so this is a decision, not a
-    reproduction, and it is asserted in both directions: a `swil_agent.analysis`
-    prefix added to `_DREAM_LOG_SOURCES` would move a rule-adherence line into
-    the file an operator greps for dreams, and only this test would say so.
+    """`behavior_snapshot` measures the ACT phase, so its records belong with
+    it. Asserted in both directions: a `swil_agent.analysis` prefix added to
+    `_DREAM_LOG_SOURCES` would move the line into the file an operator greps
+    for dreams, and only this test would say so.
     """
     result = runner.invoke(cli.app, ["cycle", "zenith"])
     assert result.exit_code == 0
 
     act_lines = _round_log_lines(tmp_cycle, "auto-run.log")
     dream_lines = _round_log_lines(tmp_cycle, "dream.log")
-    for marker in ("rule-check:", "behavior-snapshot:"):
-        assert any(marker in line for line in act_lines), (marker, act_lines)
-        assert not any(marker in line for line in dream_lines), (marker, dream_lines)
+    assert any("behavior-snapshot:" in line for line in act_lines), act_lines
+    assert not any("behavior-snapshot:" in line for line in dream_lines), dream_lines
 
 
 def test_a_cycles_dream_deadline_fail_lands_in_the_dream_log(
@@ -1155,8 +1117,8 @@ def test_a_cycles_dream_deadline_fail_lands_in_the_dream_log(
 def test_a_cycles_embedder_probe_stays_in_the_dream_log(
     tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch, round_log_level: None
 ) -> None:
-    """The round-level embedder-down ERROR is about the drift gate, and
-    `swil-agent dream` already writes it to `dream.log`. A probe that changed
+    """The round-level embedder-down ERROR is about the dream's snapshot
+    upload, and `swil-agent dream` already writes it to `dream.log`. A probe that changed
     file depending on which command ran it is the kind of inconsistency
     nobody notices until they grep for it during an outage."""
     monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient(healthy=False))
@@ -1201,7 +1163,7 @@ def test_cycle_resume_continues_the_interrupted_run_without_re_acting(
     different thread, start a brand-new cycle, and re-post -- passing any
     test that only checks "the second invocation exited 0".
 
-    The interruption is injected at the `gate` node, which is past the whole
+    The interruption is injected at the `write` node, which is past the whole
     act phase and before any dream write, so the checkpoint the resume
     continues from is one where a post has already landed.
     """
@@ -1219,17 +1181,18 @@ def test_cycle_resume_continues_the_interrupted_run_without_re_acting(
     def _explode(**_kwargs: object) -> object:
         raise _InjectedBugError("interrupted mid-cycle")
 
-    monkeypatch.setattr(nodes_module, "gate_step", _explode)
+    monkeypatch.setattr(nodes_module, "write_step", _explode)
     first = runner.invoke(cli.app, ["cycle", "zenith"])
     assert first.exit_code == 75
     assert len(posts[0].created_posts) == 1
 
     # `undo()` reverts EVERY patch this shared `monkeypatch` made, the
     # fixture's included -- so the seams have to be reinstalled, not just the
-    # exploding gate removed. Left un-reinstalled, the second invocation would
+    # exploding write removed. Left un-reinstalled, the second invocation would
     # call the real `load_settings()`, the real `/health` probe and a real
     # `claude` subprocess.
     monkeypatch.undo()
+    monkeypatch.setenv("ERA_START", _ERA_START)
     _patch_cycle_seams(monkeypatch, tmp_cycle)
     monkeypatch.setattr(cli, "_resources_for", _recording_resources)
 
@@ -1267,43 +1230,12 @@ def test_cycle_resume_and_dry_run_are_mutually_exclusive(tmp_cycle: Path) -> Non
     assert "mutually exclusive" in result.stdout
 
 
-def test_cycle_reads_memory_by_the_directory_name_not_the_username(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The two identities diverge on this roster (CLAUDE.md, "stray
-    agents/<name> dir shadows a humans/ account"), and every other test in
-    this file uses an account where they coincide -- so a `read_memory` keyed
-    on the wrong one is invisible there.
-
-    Here the directory is `zenith_dir` and the `Username` bullet is `zenith`,
-    with NO `agents/zenith` directory at all: `GitPersonaSource.read_memory`
-    resolves its argument to a directory, so keying on the username cannot
-    silently read the wrong file -- it raises `FileNotFoundError` and the
-    account SKIPs. Which is the mild version of the same defect; on the real
-    roster, where both directories exist, it reads another account's memory
-    into this account's prompt.
-    """
-    directory = tmp_path / "agents" / "zenith_dir"
-    directory.mkdir(parents=True)
-    (directory / "personality.md").write_text(ZENITH_PERSONALITY, encoding="utf-8")
-    (directory / "memory.md").write_text(_INITIAL_MEMORY, encoding="utf-8")
-    _patch_cycle_seams(monkeypatch, tmp_path)
-
-    result = runner.invoke(cli.app, ["cycle", "zenith_dir"])
-
-    assert result.exit_code == 0, result.stdout
-    assert "landed_all" in result.stdout
-    # The act line landed in the DIRECTORY's own memory.md.
-    assert "hello from zenith" in (directory / "memory.md").read_text(encoding="utf-8")
-
-
 def test_cycle_auto_honours_the_dream_cooldown_and_force_does_not(
     tmp_cycle: Path,
 ) -> None:
     """`--auto` is spelled and defaulted exactly like `swil-agent dream`'s, so
-    the CLI has ONE meaning for the flag -- but `cycle-one.sh` passes
-    `--auto` by DEFAULT (`dream.sh --auto "$NAME"` unless `FORCE_DREAM=1`), so
-    a canary invocation that wants Bash's scheduling has to pass it here too.
+    the CLI has ONE meaning for the flag -- and the operator path
+    (`cycle-one.sh`) passes it explicitly.
 
     Both halves are asserted: without the force half, hard-coding `auto=True`
     survives, and without the `--auto` half, hard-coding `auto=False` does.
@@ -1319,31 +1251,28 @@ def test_cycle_auto_honours_the_dream_cooldown_and_force_does_not(
 
     forced = runner.invoke(cli.app, ["cycle", "zenith"])
     assert forced.exit_code == 0
-    assert "dream accepted" in forced.stdout
+    assert "dream written" in forced.stdout
     assert (tmp_cycle / "agents" / "zenith" / "personality.archive.md").exists()
 
 
 def test_cycle_seeds_the_rhythm_roll_from_the_seed_flag(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--seed` is what makes a shadow round's rhythm verdict comparable
-    against Bash's on a probabilistic account -- the roll happens before the
-    LLM is ever called.
+    """`--seed` makes a shadow round's rhythm verdict reproducible -- the
+    roll happens before the LLM is ever called.
 
     Pinned on the EXACT roll rather than on "two runs with the same seed
     agree": `random.Random(7).randint(1, 100)` is 42 and `random.Random(11)`
-    is 58, both fixed forever, where an UNSEEDED `random.Random()` would agree
-    with itself about half the time on a two-outcome rhythm and let the
-    mutation through on most runs.
+    is 58, both fixed forever.
     """
-    _write_zenith(tmp_path, personality=_PROBABILISTIC_RHYTHM)
+    _write_zenith(tmp_path, personality=ZENITH_PERSONALITY)
     _patch_cycle_seams(monkeypatch, tmp_path)
 
     seven = runner.invoke(cli.app, ["cycle", "zenith", "--dry-run", "--seed", "7"])
     eleven = runner.invoke(cli.app, ["cycle", "zenith", "--dry-run", "--seed", "11"])
 
-    assert "roll=42/60" in seven.stdout, seven.stdout
-    assert "roll=58/60" in eleven.stdout, eleven.stdout
+    assert "roll=42/100" in seven.stdout, seven.stdout
+    assert "roll=58/100" in eleven.stdout, eleven.stdout
 
 
 class _WorldContextClock(_real_datetime):
@@ -1418,20 +1347,11 @@ def test_cycle_feeds_the_planner_a_freshly_rendered_world_context(
 ) -> None:
     """The world context reaches the planner RENDERED, not read off disk.
 
-    This test used to assert the opposite -- that a cycle read
-    `context/now.md` and `context/feed_for_<Username>.md`, which `swil.sh
-    login` wrote. That stopped being true on 2026-08-19, when `cycle-one.sh`
-    began dispatching to `swil-agent cycle` and nothing was left calling
-    `swil.sh`: the files stopped being written and the runtime kept reading
-    them, so every account was planning against a world frozen at
-    2026-08-19 05:30 and a header naming `qiusai`. Both stale files are
-    planted here and both must be absent from the prompt.
-
-    The account's two identities still differ on purpose (`agents/zenith_dir`
-    with a `Username: zenith` bullet): the rendered `当前 Agent` line and the
-    follow-topics search must both key on the BULLET.
+    Stale `context/now.md` and `context/feed_for_<username>.md` files (which
+    nothing writes any more) are planted here and both must be absent from
+    the prompt.
     """
-    directory = tmp_path / "agents" / "zenith_dir"
+    directory = tmp_path / "agents" / "zenith"
     directory.mkdir(parents=True)
     (directory / "personality.md").write_text(ZENITH_PERSONALITY, encoding="utf-8")
     (directory / "memory.md").write_text(_INITIAL_MEMORY, encoding="utf-8")
@@ -1455,18 +1375,14 @@ def test_cycle_feeds_the_planner_a_freshly_rendered_world_context(
     monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: resources)
     monkeypatch.setattr(cli, "datetime", _WorldContextClock)
 
-    result = runner.invoke(cli.app, ["cycle", "zenith_dir", "--dry-run"])
+    result = runner.invoke(cli.app, ["cycle", "zenith", "--dry-run"])
 
     assert result.exit_code == 0
     plan_prompt = backends[0].calls[0].user
     assert "NOW-MARKER-9137" not in plan_prompt
     assert "FEED-MARKER-4471" not in plan_prompt
     assert "**今日日期：** 2026年09月27日 14:03" in plan_prompt
-    # An EXACT line, not a substring: the directory is `zenith_dir`, so
-    # `"... zenith" in prompt` is satisfied by `"... zenith_dir"` and a
-    # renderer keyed on the folder name walks straight past it.
     assert "**当前 Agent：** zenith" in plan_prompt.splitlines()
-    assert "**当前 Agent：** zenith_dir" not in plan_prompt
     assert "## #alpha" in plan_prompt
     assert "SEARCH-HIT-2208" in plan_prompt
     assert resources.search_calls == [("alpha", 12), ("beta", 12)]
@@ -1487,7 +1403,7 @@ def test_cycle_dates_every_block_of_the_prompt_from_one_clock_reading(
     boundary -- but "the property the comment asserts" and "the property a
     test measures" were two different things, which is the shape §4 is about.
     """
-    directory = tmp_path / "agents" / "zenith_dir"
+    directory = tmp_path / "agents" / "zenith"
     directory.mkdir(parents=True)
     (directory / "personality.md").write_text(ZENITH_PERSONALITY, encoding="utf-8")
     (directory / "memory.md").write_text(_INITIAL_MEMORY, encoding="utf-8")
@@ -1507,7 +1423,7 @@ def test_cycle_dates_every_block_of_the_prompt_from_one_clock_reading(
     monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: resources)
     monkeypatch.setattr(cli, "datetime", _advancing_clock())
 
-    result = runner.invoke(cli.app, ["cycle", "zenith_dir", "--dry-run"])
+    result = runner.invoke(cli.app, ["cycle", "zenith", "--dry-run"])
 
     assert result.exit_code == 0
     _assert_prompt_carries_one_clock_reading(backends[0].calls[0].user)
@@ -1547,7 +1463,7 @@ def test_cycle_budget_caps_what_the_guardrails_let_through(
     monkeypatch.setattr(
         cli,
         "_backend_for",
-        lambda persona, settings: ScriptedBackend(three_likes, _valid_dream_candidate(), "叙述"),
+        lambda persona, settings: ScriptedBackend(three_likes, DREAM_REPLY),
     )
 
     capped = runner.invoke(cli.app, ["cycle", "zenith", "--budget", "1"])
@@ -1576,7 +1492,7 @@ def test_cycle_carries_the_unsplash_key_down_to_the_executor(
     monkeypatch.setattr(
         cli,
         "load_settings",
-        lambda: Settings(agent_root=tmp_path, drift_mode="scalar", unsplash_access_key="KEY-4471"),
+        lambda: Settings(agent_root=tmp_path, unsplash_access_key="KEY-4471", post_probability=100),
     )
 
     seen: list[str] = []
@@ -1612,7 +1528,7 @@ def test_cycle_reports_a_partial_round_as_landed_over_attempted(
     monkeypatch.setattr(
         cli,
         "_backend_for",
-        lambda persona, settings: ScriptedBackend(two_likes, _valid_dream_candidate(), "叙述"),
+        lambda persona, settings: ScriptedBackend(two_likes, DREAM_REPLY),
     )
     monkeypatch.setattr(
         cli,
@@ -1629,25 +1545,21 @@ def test_cycle_reports_a_partial_round_as_landed_over_attempted(
 # ── cycle: the two reporting projections ──────────────────────────────────
 
 
-def test_the_dream_report_follows_the_write_not_the_verdict() -> None:
+def test_the_dream_report_follows_the_write() -> None:
     """`accepted` answers "did `personality.md` actually change", which is
-    `written` -- a claim about the FILE -- and never `verdict.accepted`, which
-    is a claim about the gate. The two coincide on every path the graph
-    currently takes, which is exactly why the choice needs its own pin: the
-    write node's dry-run guard already returns `written=False` under an
-    ACCEPTED verdict, and it becomes reachable the moment anyone routes a
-    shadow round through the dream phase.
-    """
-    from swil_agent.models import DreamVerdict
-
+    `written` -- a claim about the FILE -- never `proceeded` or the presence
+    of a parsed list. The write node's dry-run guard returns `written=False`
+    with a list in hand, and a refused write does the same."""
     state = {
         "proceeded": True,
-        "verdict": DreamVerdict(accepted=True, reason="ok"),
+        "recent": ["一件新事"],
         "written": False,
+        "dream_reason": "file too large",
     }
     result = cli._dream_result_of(state)  # type: ignore[arg-type]
     assert result.accepted is False
-    assert result.reason == "ok"
+    assert result.reason == "file too large"
+    assert result.recent == ["一件新事"]
 
 
 def test_a_cycle_with_no_outcome_yet_is_not_reported_as_a_failed_round() -> None:
@@ -1664,60 +1576,18 @@ def test_a_cycle_with_no_outcome_yet_is_not_reported_as_a_failed_round() -> None
     assert cli._act_result_of({}) is None
 
 
-def test_cycle_resume_looks_up_the_thread_by_the_directory_name(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The ONE identity site in the cycle wiring that is not otherwise pinned
-    to the directory name, on the documented folder-vs-username hazard.
-
-    `thread_id` is `tenant:<directory>:<round>` -- built by `run_cycle` from
-    `agent_dir_name(persona)` -- so a `--resume` that looked the thread up by
-    the `Username` bullet finds nothing, reports "no checkpointed cycle to
-    resume", and quietly turns every resume on a divergent-name account into a
-    SKIP. On this roster the two identities genuinely diverge.
-
-    Every other cycle test uses an account where they coincide, so the lookup
-    key is indiscriminable there: this one gives the directory `zenith_dir`
-    and the bullet `zenith`.
-    """
-    from swil_agent.graph import nodes as nodes_module
-
-    directory = tmp_path / "agents" / "zenith_dir"
-    directory.mkdir(parents=True)
-    (directory / "personality.md").write_text(ZENITH_PERSONALITY, encoding="utf-8")
-    (directory / "memory.md").write_text(_INITIAL_MEMORY, encoding="utf-8")
-    _patch_cycle_seams(monkeypatch, tmp_path)
-
-    def _explode(**_kwargs: object) -> object:
-        raise _InjectedBugError("interrupted mid-cycle")
-
-    monkeypatch.setattr(nodes_module, "gate_step", _explode)
-    first = runner.invoke(cli.app, ["cycle", "zenith_dir"])
-    assert first.exit_code == 75
-
-    monkeypatch.undo()
-    _patch_cycle_seams(monkeypatch, tmp_path)
-    second = runner.invoke(cli.app, ["cycle", "zenith_dir", "--resume"])
-
-    assert second.exit_code == 0, second.stdout
-    assert "no checkpointed cycle to resume" not in second.stdout
-
-
 def test_cycle_dry_run_never_starts_or_probes_the_embedder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """A shadow round is routed away from the dream phase, so it reaches no
-    `gate` node and needs no vectors.
+    """A shadow round is routed away from the dream phase, so it needs no
+    vectors.
 
     Two costs, both real. `EmbedderGuard.up()` shells out to
     `embedder-guard.sh`, which writes `.agent-state/embedder_guard/*` and
     `logs/embedder.log` and `nohup`s the bge-m3 daemon (up to 150s of startup)
-    if nothing is serving -- during the round whose exit criterion is "nothing
-    to revert; Python never wrote". And the post-`up()` health probe logs ONE
-    ERROR per invocation saying the drift gate is off for every dream this
-    invocation runs: across 23 accounts that is 23 alarming lines in
-    `dream.log`, about dreams that never happen, in the very log stage 3 is
-    read from.
+    if nothing is serving -- during a round that is supposed to write
+    nothing. And the post-`up()` health probe logs ONE ERROR per invocation
+    into `dream.log`, about dreams that never happen.
 
     The guard is a REAL `_FakeGuard` here rather than the fixture's, so
     "never started" is observed rather than assumed -- `_patch_cycle_seams`
@@ -1741,8 +1611,8 @@ def test_cycle_dry_run_never_starts_or_probes_the_embedder(
 def test_a_real_cycle_still_brackets_the_embedder_guard(
     tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The complement: a non-dry cycle DOES reach the gate, so it keeps
-    `cycle-one.sh`'s `up`/`down` bracket exactly once each. Without this,
+    """The complement: a non-dry cycle DOES reach the dream phase, so it
+    keeps the `up`/`down` bracket exactly once each. Without this,
     skipping the guard unconditionally passes the dry-run test above."""
     guard = _FakeGuard()
     monkeypatch.setattr(cli, "_guard_for", lambda settings: guard)
@@ -1760,7 +1630,7 @@ def test_cycle_with_an_unparseable_persona_skips_with_the_remedy_and_exits_75(
     """The `cycle` sibling of `act`'s and `dream`'s own version. Two `try`
     blocks, not one, so exit 66 can only ever mean "this account directory
     does not exist": a personality.md that EXISTS but will not parse is a
-    setup problem (75, with the bullet named), not a missing account."""
+    setup problem (75, with the frontmatter named), not a missing account."""
     directory = tmp_path / "agents" / "zenith"
     directory.mkdir(parents=True)
     (directory / "personality.md").write_text("# no bullets here at all\n", encoding="utf-8")
@@ -1770,7 +1640,7 @@ def test_cycle_with_an_unparseable_persona_skips_with_the_remedy_and_exits_75(
     result = runner.invoke(cli.app, ["cycle", "zenith"])
 
     assert result.exit_code == 75
-    assert "Username" in result.stdout
+    assert "frontmatter" in result.stdout
     assert "Traceback" not in result.stdout
 
 
@@ -1971,7 +1841,7 @@ def test_persona_source_for_returns_a_working_git_persona_source(tmp_path: Path)
 
 def test_backend_for_builds_the_claude_backend_for_a_claude_persona(tmp_path: Path) -> None:
     settings = Settings(agent_root=tmp_path)
-    persona = Persona(username="zenith", directory=tmp_path, backend="claude", raw="")
+    persona = make_persona(username="zenith", directory=tmp_path, backend="claude")
     backend = cli._backend_for(persona, settings)
     assert backend.name == "claude"
 
@@ -1988,31 +1858,17 @@ def test_guard_for_builds_a_real_embedder_guard(tmp_path: Path) -> None:
     assert isinstance(guard, EmbedderGuard)
 
 
-# ── analysis / QA commands (Plan 4) ──────────────────────────────────────
+# ── analysis / QA commands ───────────────────────────────────────────────
 #
-# All four are observability, so the interesting assertions are about what
-# does NOT change the exit code. Bash swallows every one of these at its call
-# site; the rule under test throughout is "a measurement outage exits 0, a
-# setup failure exits 75, and only a missing account exits 66".
+# All are observability, so the interesting assertions are about what does
+# NOT change the exit code: "a measurement outage exits 0, a setup failure
+# exits 75, and only a missing account exits 66".
 
-# A hashtag band the fixture's own post satisfies, so `rule-check` has
-# something real to emit rather than the empty result every "no parseable
-# rule" path also produces.
-_RULED_PERSONALITY = ZENITH_PERSONALITY.replace(
-    "## 发帖节律",
-    "## 行为规则\n- 每帖 hashtag 2～3 个\n\n## 发帖节律",
-)
 _TAGGED_POST = {"id": "p1", "text": "写完了 #alpha #beta"}
 
-
-# Every other account in this file is `agents/zenith` with `Username: zenith`,
-# which cannot tell a command that passed the CLI argument from one that
-# passed the `Username` bullet -- and the two DO diverge on the real roster
-# (CLAUDE.md, "stray agents/<name> dir shadows a humans/ account"). The
-# sampler tests use this one instead: the directory is `zenith_dir`, the
-# bullet is still `zenith`, and every wire call is keyed on the bullet while
-# `personality.md` / `api_key.txt` are found under the directory.
-_SAMPLER_DIR = "zenith_dir"
+# The loader requires the directory name to match `username`, so the
+# sampler account is the fixture's own `agents/zenith`.
+_SAMPLER_DIR = "zenith"
 
 
 def _write_sampler_account(tmp_agent: Path, *, personality: str = ZENITH_PERSONALITY) -> Path:
@@ -2058,90 +1914,6 @@ def _sampling_resources(monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> Fa
     return resources
 
 
-def test_rule_check_emits_one_event_per_rule_and_exits_0(
-    tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The account is `agents/zenith_dir` and its `Username` bullet is
-    `zenith`: the posts are fetched and the event filed under the BULLET,
-    while the personality and the key are read from the DIRECTORY."""
-    _key(_write_sampler_account(tmp_agent, personality=_RULED_PERSONALITY))
-    resources = _sampling_resources(monkeypatch)
-
-    result = runner.invoke(cli.app, ["rule-check", _SAMPLER_DIR])
-
-    assert result.exit_code == 0
-    assert "1 event(s) emitted" in result.stdout
-    assert [event.type for event in resources.lab_events] == ["rule_check"]
-    # 5 is `rule_check_post_limit`; 7 is `behavior_post_limit`. Reading the
-    # wrong `Settings` field is visible here, not merely "12 either way".
-    assert resources.user_posts_calls == [("zenith", 5)]
-
-
-def test_rule_check_honours_an_explicit_limit(
-    tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`--limit` overrides `RULE_CHECK_POST_LIMIT`. 4 is neither the Bash
-    default (12) nor `Resources.user_posts`' own, so a dropped flag shows."""
-    _key(_write_sampler_account(tmp_agent, personality=_RULED_PERSONALITY))
-    resources = _sampling_resources(monkeypatch)
-
-    result = runner.invoke(cli.app, ["rule-check", _SAMPLER_DIR, "--limit", "4"])
-
-    assert result.exit_code == 0
-    assert resources.user_posts_calls == [("zenith", 4)]
-
-
-def test_rule_check_without_an_api_key_emits_nothing_and_still_exits_0(
-    tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`rule-check.sh:38` skips a key-less account and exits 0, and
-    `cycle-one.sh:45` swallows the code anyway. A non-zero here would make an
-    unkeyed account look like a failed round to anything branching on it."""
-    resources = _sampling_resources(monkeypatch)
-
-    result = runner.invoke(cli.app, ["rule-check", "zenith"])
-
-    assert result.exit_code == 0
-    assert "0 event(s) emitted" in result.stdout
-    assert resources.lab_events == []
-
-
-def test_rule_check_survives_an_unreachable_platform(
-    tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`curl ... || echo ''` (rule-check.sh:41-43): a dead platform degrades
-    to an empty sample, never to a `flagged` event. Reporting 0% adherence
-    because the network was down is the one failure this whole module is
-    careful about."""
-    _key(_write_sampler_account(tmp_agent, personality=_RULED_PERSONALITY))
-    resources = _sampling_resources(monkeypatch)
-    resources.fail("user_posts")
-
-    result = runner.invoke(cli.app, ["rule-check", _SAMPLER_DIR])
-
-    assert result.exit_code == 0
-    assert resources.lab_events == []
-
-
-def test_rule_check_on_an_unknown_account_exits_66(tmp_agent: Path) -> None:
-    result = runner.invoke(cli.app, ["rule-check", "nosuchagent"])
-    assert result.exit_code == 66
-
-
-def test_rule_check_with_no_credentials_exits_75(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A SETUP failure, not a measurement outage: nothing was sampled at all.
-    `_resources_for` runs for real here -- no `api_key.txt`, no `SWIL_PASS`."""
-    _write_zenith(tmp_path)
-    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
-
-    result = runner.invoke(cli.app, ["rule-check", "zenith"])
-
-    assert result.exit_code == 75
-    assert "SKIP zenith" in result.stdout
-
-
 def test_behavior_snapshot_ships_the_vector_and_exits_0(
     tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2152,9 +1924,8 @@ def test_behavior_snapshot_ships_the_vector_and_exits_0(
 
     assert result.exit_code == 0
     assert "ok id=behavior-1" in result.stdout
-    # Fetched and filed under the `Username` BULLET, not the directory the
-    # command was invoked with -- the two differ on this account. The window is
-    # 7 (`behavior_post_limit`), never 5 (`rule_check_post_limit`).
+    # Fetched and filed under the username. The window is 7
+    # (`behavior_post_limit`), not the default 12.
     assert resources.user_posts_calls == [("zenith", 7)]
     assert len(resources.behavior_snapshots) == 1
     username, payload = resources.behavior_snapshots[0]
@@ -2206,12 +1977,9 @@ def test_behavior_snapshot_with_a_dead_embedder_fails_open_and_exits_0(
 def test_behavior_snapshot_does_not_start_the_embedder_daemon(
     tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Parity with Bash, and it is a real difference from `dream`: neither
-    `behavior-snapshot.sh` nor `auto-run.sh:806` brackets
-    `embedder-guard.sh`, so a heartbeat round samples nothing whenever the
-    daemon happens to be down. Reproduced rather than improved, so the two
-    runtimes' fidelity series have the same gaps; the docstring says so out
-    loud so nobody reads the no-op as a bug."""
+    """A real difference from `dream`: the standalone sampler does not
+    bracket the embedder guard, so it samples nothing whenever the daemon
+    happens to be down. Said out loud so nobody reads the no-op as a bug."""
     _key(tmp_agent / "agents" / "zenith")
     _sampling_resources(monkeypatch)
     guard = _FakeGuard()
@@ -2242,39 +2010,24 @@ def test_behavior_snapshot_on_an_unknown_account_exits_66(tmp_agent: Path) -> No
 
 # ── intervention ──────────────────────────────────────────────────────────
 
-# Folder name and `Username` bullet DIFFER for every intervention test, and
-# the pair is copied off the live roster (`agent/agents/quant/personality.md`
-# carries `- **Username:** shujupai`). `POST /agents/{username}/events`
-# requires the actor to BE that account, so the bullet is what has to reach
-# the route -- and 4 of the 23 real accounts diverge (`quant`/`shujupai`,
-# `sketch`/`diannaokun`, `vex`/`weijian`, `zenith`/`xuansi`).
-#
-# The `tmp_agent` fixture's own account has folder == username, which is why
-# the first version of `test_intervention_records_the_event_against_the_
-# username_bullet` could not fail: `username=name` and `username=persona.
-# username` both produced `"zenith"`. The two sibling files added alongside
-# it (`test_cycle_analysis_steps.py`, `test_cycle_parity.py`) already carry
-# this pattern; this block now matches them (standing constraint §4).
-INTERVENTION_DIR = "quant_dir"
+# A second account, distinct from the `tmp_agent` fixture's own `zenith`, so
+# a command that filed the event under the wrong account is visible. The
+# loader requires the directory name to match `username`.
+INTERVENTION_DIR = "shujupai"
 INTERVENTION_USERNAME = "shujupai"
 
 
 def _write_intervention_account(root: Path) -> Path:
     directory = root / "agents" / INTERVENTION_DIR
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "personality.md").write_text(
-        ZENITH_PERSONALITY.replace(
-            "- **Username:** zenith", f"- **Username:** {INTERVENTION_USERNAME}"
-        ),
-        encoding="utf-8",
-    )
+    (directory / "personality.md").write_text(_personality(INTERVENTION_USERNAME), encoding="utf-8")
     (directory / "memory.md").write_text(_INITIAL_MEMORY, encoding="utf-8")
     return directory
 
 
 @pytest.fixture
 def tmp_intervention_agent(tmp_agent: Path) -> Path:
-    """`tmp_agent` plus one account whose folder is NOT its username."""
+    """`tmp_agent` plus a second account, `shujupai`."""
     _write_intervention_account(tmp_agent)
     return tmp_agent
 
@@ -2483,12 +2236,8 @@ def test_intervention_records_the_event_against_the_username_bullet(
     tmp_intervention_agent: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`POST /agents/{username}/events` requires the actor to BE that account,
-    so the username BULLET decides where the record lands -- not the folder
-    name, which diverges from it on this roster.
-
-    The folder here is `quant_dir` and the bullet is `shujupai`, so posting
-    to the positional argument is a 404/403 that points the operator at the
-    server rather than at the bug."""
+    so the persona's username decides where the record lands. The fixture's
+    other account (`zenith`) must not receive it."""
     resources = _intervention_resources(monkeypatch)
 
     result = runner.invoke(cli.app, _intervention_args())
@@ -2723,7 +2472,7 @@ def test_intervention_without_any_credential_exits_75_with_a_remedy(
     assert result.exit_code == 75
     assert f"SKIP {INTERVENTION_DIR}" in output
     assert INTERVENTION_USERNAME in output
-    assert "create-api-key" in output
+    assert "register" in output
     assert "SWIL_PASS" in output
     assert "Traceback" not in output
 
@@ -2796,9 +2545,8 @@ def test_population_metric_without_a_name_uses_the_first_keyed_account(
     tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The route is global, so the argument picks a CREDENTIAL, not a
-    subject. `agents/` is searched before `humans/`, glob-sorted -- so the
-    keyed `humans/aardvark` here must LOSE to `agents/zenith`, which is why
-    the human's name sorts first."""
+    subject. Only `agents/` is searched: a leftover keyed `humans/aardvark`
+    (which sorts first) must never be picked."""
     _key(tmp_agent / "agents" / "zenith")
     human = tmp_agent / "humans" / "aardvark"
     human.mkdir(parents=True)
@@ -2829,7 +2577,7 @@ def test_population_metric_on_a_keyless_account_exits_75_with_a_remedy(
 ) -> None:
     result = runner.invoke(cli.app, ["population-metric", "zenith"])
     assert result.exit_code == 75
-    assert "create-api-key" in result.stdout
+    assert "register" in result.stdout
 
 
 def test_an_empty_name_is_a_name_not_an_absent_one(tmp_agent: Path) -> None:
@@ -2982,14 +2730,14 @@ def test_resources_for_key_sends_the_bearer_token_and_nothing_else(tmp_path: Pat
     assert seen == [("/api/v1/agents/population-metric", "Bearer k-secret")]
 
 
-@pytest.mark.parametrize("command", ["rule-check", "behavior-snapshot"])
+@pytest.mark.parametrize("command", ["behavior-snapshot"])
 def test_an_unparseable_persona_skips_with_the_remedy_and_exits_75(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
 ) -> None:
     """`load_persona` raises `ValueError`, not `FileNotFoundError`, for a
-    personality.md that EXISTS but states no `Username` bullet. The file is
-    right there, so this is 75-with-a-remedy and never 66 -- the same
-    distinction `act`, `dream` and `cycle` each carry their own test for."""
+    personality.md that EXISTS but has no frontmatter. The file is right
+    there, so this is 75-with-a-remedy and never 66 -- the same distinction
+    `act`, `dream` and `cycle` each carry their own test for."""
     directory = tmp_path / "agents" / "zenith"
     directory.mkdir(parents=True)
     (directory / "personality.md").write_text("# no bullets here at all\n", encoding="utf-8")
@@ -2999,7 +2747,7 @@ def test_an_unparseable_persona_skips_with_the_remedy_and_exits_75(
     result = runner.invoke(cli.app, [command, "zenith"])
 
     assert result.exit_code == 75
-    assert "Username" in result.stdout
+    assert "frontmatter" in result.stdout
     assert "Traceback" not in result.stdout
 
 
@@ -3075,21 +2823,18 @@ def test_population_metric_never_borrows_another_accounts_key(
     harmless for this global route today, and exactly the habit that is not
     harmless the first time a per-account route reuses the helper.
     """
-    human = tmp_agent / "humans" / "aardvark"
-    human.mkdir(parents=True)
-    _key(human)  # a keyed account exists -- just not the one that was named
+    other = tmp_agent / "agents" / "aardvark"
+    other.mkdir(parents=True)
+    _key(other)  # a keyed account exists -- just not the one that was named
     monkeypatch.setattr(cli, "_resources_for_key", lambda directory, settings: FakeResources())
 
     result = runner.invoke(cli.app, ["population-metric", "zenith"])
 
     assert result.exit_code == 75
-    assert "create-api-key" in result.stdout
+    assert "register" in result.stdout
 
 
-@pytest.mark.parametrize(
-    ("command", "marker"),
-    [("rule-check", "rule-check:"), ("behavior-snapshot", "behavior-snapshot:")],
-)
+@pytest.mark.parametrize(("command", "marker"), [("behavior-snapshot", "behavior-snapshot:")])
 def test_the_standalone_samplers_write_to_the_act_log(
     tmp_agent: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3097,10 +2842,10 @@ def test_the_standalone_samplers_write_to_the_act_log(
     command: str,
     marker: str,
 ) -> None:
-    """Same destination the cycle gives them, for the same reason: both
-    measure the ACT phase's posts. A standalone invocation that logged to
-    `dream.log` would split one account's adherence history across two files
-    depending on how it happened to be sampled."""
+    """Same destination the cycle gives it, for the same reason: it
+    measures the ACT phase's posts. A standalone invocation that logged to
+    `dream.log` would split one account's history across two files depending
+    on how it happened to be sampled."""
     _sampling_resources(monkeypatch)
 
     result = runner.invoke(cli.app, [command, "zenith"])
@@ -3265,8 +3010,8 @@ def test_dream_a_missing_backend_binary_exits_75_with_a_remedy(tmp_agent: Path) 
     programming error rather than a fixable setup problem.
 
     Mutation this catches: making `BackendBinaryMissingError` a SUBCLASS of
-    `BackendUnavailableError`. `dream/round.py`'s `_generate_candidate`
-    catches that type and degrades to `""`, so the missing binary would be
+    `BackendUnavailableError`. `dream/round.py`'s `dream_step` catches that
+    type and degrades to `""`, so the missing binary would be
     reported as "LLM returned empty" and the command would exit 0 -- the
     "whole round silently drops every account on one backend" shape
     CLAUDE.md already records."""
@@ -3311,7 +3056,7 @@ def test_a_dream_writes_dream_log_and_leaves_auto_run_log_alone(
     (auto-run.log 1.0MB, dream.log 234KB) -- not two names for one.
 
     `_attach_round_log` hardcoded `auto-run.log` for BOTH commands, so Python
-    dreams appended dream verdicts into the act log while `dream.log` stayed
+    dreams appended dream lines into the act log while `dream.log` stayed
     empty. Nothing caught it: deleting the `dream` command's
     `_attach_round_log` call broke ZERO tests, because the only assertions
     that existed were act-path ones.
@@ -3324,13 +3069,13 @@ def test_a_dream_writes_dream_log_and_leaves_auto_run_log_alone(
       * swapping the two constants' values.
     """
     _write_zenith(tmp_path)
-    settings = Settings(agent_root=tmp_path, drift_mode="scalar")
+    settings = Settings(agent_root=tmp_path)
     monkeypatch.setattr(cli, "load_settings", lambda: settings)
     monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: FakeResources())
     monkeypatch.setattr(
         cli,
         "_backend_for",
-        lambda persona, settings: TwoCallBackend(candidate_response=_valid_dream_candidate()),
+        lambda persona, settings: StubBackend(DREAM_REPLY),
     )
     monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
     monkeypatch.setattr(cli, "_guard_for", lambda settings: _FakeGuard())
@@ -3367,7 +3112,7 @@ def test_the_two_log_filenames_are_the_ones_the_scripts_use() -> None:
     assert cli.DREAM_LOG_FILENAME == "dream.log"
 
 
-# ── doctor / measure-status / echo-calibrate / non-prod (spec §11) ─────────
+# ── doctor / measure-status / non-prod (spec §11) ──────────────────────────
 
 
 _PRODUCTION_URL = "https://swil-social-api-production.up.railway.app"
@@ -3385,6 +3130,7 @@ def _doctor_ready(
     monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
     monkeypatch.setattr(cli, "_on_path", lambda name: True)
     monkeypatch.setattr(cli, "_heartbeat_launchctl_status", lambda: "not loaded")
+    monkeypatch.setattr(cli, "_since_probe", lambda settings: (True, "ok"))
 
 
 def test_doctor_exits_75_when_url_is_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3417,6 +3163,60 @@ def test_doctor_exits_75_when_claude_is_missing_from_path(
     result = runner.invoke(cli.app, ["doctor"])
     assert result.exit_code == 75
     assert "claude" in result.stdout
+
+
+def test_doctor_fails_when_era_start_is_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("ERA_START")
+    _doctor_ready(monkeypatch, tmp_path)
+    result = runner.invoke(cli.app, ["doctor"])
+    assert result.exit_code == 75
+    assert "ERA_START: FAIL (unset)" in result.stdout
+    assert cli.ERA_START_REMEDY in result.stdout
+
+
+def test_doctor_warns_when_era_start_is_in_the_future_and_stays_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ERA_START", "2999-01-01T00:00:00")
+    _doctor_ready(monkeypatch, tmp_path)
+    result = runner.invoke(cli.app, ["doctor"])
+    assert result.exit_code == 0
+    assert "ERA_START: 2999-01-01T00:00:00+00:00" in result.stdout
+    assert "WARN: ERA_START is in the future" in result.stdout
+
+
+def test_doctor_reports_a_past_era_start_without_a_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _doctor_ready(monkeypatch, tmp_path)
+    result = runner.invoke(cli.app, ["doctor"])
+    assert result.exit_code == 0
+    assert "ERA_START: 2000-01-01T00:00:00+00:00" in result.stdout
+    assert "in the future" not in result.stdout
+
+
+def test_doctor_checks_the_cli_of_every_roster_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _doctor_ready(monkeypatch, tmp_path)
+    _write_era3(tmp_path, "aa", "codex:gpt-5.6-luna")
+    _write_era3(tmp_path, "bb", "grok:grok-4.6")
+    _write_era3(tmp_path, "cc", "cursor:gemini-3.7-flash-high")
+    _write_era3(tmp_path, "dd", "claude:claude-haiku-5-5")
+    _write_era3(tmp_path, "ee", "claude:claude-opus-5-5")
+    checked: list[str] = []
+
+    def on_path(name: str) -> bool:
+        checked.append(name)
+        return name != "cursor-agent"
+
+    monkeypatch.setattr(cli, "_on_path", on_path)
+    result = runner.invoke(cli.app, ["doctor"])
+    assert checked == ["claude", "uv", "codex", "grok", "cursor-agent"]
+    assert "cursor-agent: not on PATH" in result.stdout
+    assert result.exit_code == 75
 
 
 def test_doctor_missing_launchctl_is_not_a_fail(
@@ -3489,40 +3289,12 @@ def test_measure_status_exits_75_on_api_fail(
     )
 
 
-def test_echo_calibrate_does_not_write_echo_detect(
-    tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Spec §11: never writes ECHO_DETECT. Calibration is read-only."""
-    env_path = tmp_agent / ".env"
-    env_path.write_text("ECHO_DETECT=0\nECHO_VARIANCE_THRESHOLD=0.04\n", encoding="utf-8")
-    resources = FakeResources()
-    resources.user_post_items = [{"text": "one"}, {"text": "two"}, {"text": "three"}]
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: resources)
-    before = env_path.read_text(encoding="utf-8")
-
-    result = runner.invoke(cli.app, ["echo-calibrate", "zenith"])
-
-    assert result.exit_code == 0
-    assert env_path.read_text(encoding="utf-8") == before
-    assert not (tmp_agent / ".agent-state" / "echo_flag_zenith").exists()
-    output = result.stdout
-    assert "pairwise" in output.lower() or "variance" in output.lower()
-    assert "0.04" in output
-    assert "ECHO_DETECT=1" not in output or "not written" in output.lower()
-
-
-def test_echo_calibrate_exits_75_when_the_embedder_is_down(
-    tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient(healthy=False))
-    result = runner.invoke(cli.app, ["echo-calibrate", "zenith"])
-    assert result.exit_code == 75
-    assert "embedder" in (result.stdout + result.stderr).lower()
-
-
-def test_echo_calibrate_on_an_unknown_account_exits_66(tmp_agent: Path) -> None:
-    result = runner.invoke(cli.app, ["echo-calibrate", "nosuchagent"])
-    assert result.exit_code == 66
+@pytest.mark.parametrize("command", ["rule-check", "echo-calibrate"])
+def test_the_retired_era_2_commands_are_gone(tmp_agent: Path, command: str) -> None:
+    """The rule check and the echo-chamber calibration measured Era 2's
+    persona format; neither has anything to read in Era 3."""
+    result = runner.invoke(cli.app, [command, "zenith"])
+    assert result.exit_code == 2
 
 
 def test_require_non_prod_refuses_act_against_the_production_host_without_the_override(
@@ -3565,8 +3337,222 @@ def test_require_non_prod_refuses_cycle_against_the_production_host(
     monkeypatch.setattr(
         cli,
         "load_settings",
-        lambda: Settings(agent_root=tmp_cycle, swil_url=_PRODUCTION_URL, drift_mode="scalar"),
+        lambda: Settings(agent_root=tmp_cycle, swil_url=_PRODUCTION_URL),
     )
     result = runner.invoke(cli.app, ["cycle", "zenith", "--dry-run"])
     assert result.exit_code == 75
     assert "--i-mean-production" in result.stdout + result.stderr
+
+
+def test_the_roster_count_reads_agents_only(tmp_path: Path) -> None:
+    """Era 3 has one cohort; a missing `agents/` is an empty roster and a
+    leftover `humans/` tree is not counted."""
+    assert cli._roster_count(tmp_path) == 0
+    _write_zenith(tmp_path)
+    human = tmp_path / "humans" / "aardvark"
+    human.mkdir(parents=True)
+    (human / "personality.md").write_text(ZENITH_PERSONALITY, encoding="utf-8")
+    assert cli._roster_count(tmp_path) == 1
+
+
+# ── Era 3: since probe, --smoke, register ───────────────────────────────────
+
+
+def _since_transport(items: list[object], status: int = 200) -> httpx.MockTransport:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(status, json={"data": {"items": items}})
+
+    transport = httpx.MockTransport(handler)
+    transport.seen = seen  # type: ignore[attr-defined]
+    return transport
+
+
+def test_since_probe_passes_when_server_returns_nothing(tmp_path: Path) -> None:
+    transport = _since_transport([])
+    ok, _ = cli._since_probe(Settings(agent_root=tmp_path), transport=transport)
+    assert ok
+    request = transport.seen[0]  # type: ignore[attr-defined]
+    assert request.url.params["since"] == "2999-01-01T00:00:00Z"
+    assert request.url.params["limit"] == "1"
+
+
+def test_since_probe_fails_when_server_ignores_since(tmp_path: Path) -> None:
+    ok, msg = cli._since_probe(
+        Settings(agent_root=tmp_path), transport=_since_transport([{"id": "p1"}])
+    )
+    assert not ok and "deploy the backend first" in msg
+
+
+def test_since_probe_fails_on_http_error_and_bad_shape(tmp_path: Path) -> None:
+    ok, msg = cli._since_probe(Settings(agent_root=tmp_path), transport=_since_transport([], 500))
+    assert not ok and "500" in msg
+
+    def bad(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[1])
+
+    ok, msg = cli._since_probe(Settings(agent_root=tmp_path), transport=httpx.MockTransport(bad))
+    assert not ok and "shape" in msg
+
+
+def test_since_probe_fails_when_unreachable(tmp_path: Path) -> None:
+    def boom(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused")
+
+    ok, msg = cli._since_probe(Settings(agent_root=tmp_path), transport=httpx.MockTransport(boom))
+    assert not ok and "unreachable" in msg
+
+
+def test_doctor_exits_75_when_since_probe_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _doctor_ready(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "_since_probe", lambda settings: (False, "server ignores `since`"))
+    result = runner.invoke(cli.app, ["doctor"])
+    assert result.exit_code == 75
+    assert "since probe: FAIL" in result.stdout
+
+
+_ERA3 = """---
+username: {name}
+display_name: {name}
+model: {model}
+board: life-science
+topics: [health]
+era: 3
+---
+# {name}
+
+一段人设。
+
+## 最近
+- 一条
+"""
+
+
+def _write_era3(root: Path, name: str, model: str) -> None:
+    directory = root / "agents" / name
+    directory.mkdir(parents=True)
+    (directory / "personality.md").write_text(
+        _ERA3.format(name=name, model=model), encoding="utf-8"
+    )
+
+
+def test_smoke_with_no_era3_accounts_is_not_a_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _doctor_ready(monkeypatch, tmp_path)
+    legacy = tmp_path / "agents" / "old"
+    legacy.mkdir(parents=True)
+    (legacy / "personality.md").write_text("# old\n- **Username:** old\n", encoding="utf-8")
+    result = runner.invoke(cli.app, ["doctor", "--smoke"])
+    assert result.exit_code == 0
+    assert "no Era 3 accounts" in result.stdout
+
+
+def test_smoke_reports_each_distinct_arm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _doctor_ready(monkeypatch, tmp_path)
+    _write_era3(tmp_path, "aa", "claude:claude-haiku-5-5")
+    _write_era3(tmp_path, "bb", "claude:claude-haiku-5-5")
+    _write_era3(tmp_path, "cc", "codex:gpt-5.6-luna")
+    requests: list[object] = []
+
+    class Backend:
+        def __init__(self, reply: str) -> None:
+            self.reply = reply
+
+        def complete(self, req: object) -> str:
+            requests.append(req)
+            return self.reply
+
+    def fake_backend(persona: Persona, settings: Settings) -> object:
+        if persona.backend == "codex":
+            raise RuntimeError("codex missing")
+        return Backend("ok")
+
+    monkeypatch.setattr(cli, "_backend_for", fake_backend)
+    result = runner.invoke(cli.app, ["doctor", "--smoke"])
+    assert "smoke claude:claude-haiku-5-5: OK" in result.stdout
+    assert "smoke codex:gpt-5.6-luna: FAIL (codex missing)" in result.stdout
+    assert len(requests) == 1  # two claude accounts, one distinct arm
+    assert result.exit_code == 75
+
+
+def test_smoke_empty_reply_is_a_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _doctor_ready(monkeypatch, tmp_path)
+    _write_era3(tmp_path, "aa", "claude:claude-haiku-5-5")
+
+    class Silent:
+        def complete(self, req: object) -> str:
+            return "  "
+
+    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: Silent())
+    result = runner.invoke(cli.app, ["doctor", "--smoke"])
+    assert "FAIL (empty reply)" in result.stdout
+    assert result.exit_code == 75
+
+
+def test_register_command_dry_run_wires_through(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_era3(tmp_path, "aa", "claude:claude-haiku-5-5")
+    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
+    result = runner.invoke(cli.app, ["register", "aa", "--dry-run"])
+    assert result.exit_code == 0
+    assert "[dry-run] POST /auth/register" in result.stdout
+
+
+def test_register_command_unknown_account_exits_66(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
+    result = runner.invoke(cli.app, ["register", "ghost", "--dry-run"])
+    assert result.exit_code == 66
+
+
+def test_register_command_failures_exit_75(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
+    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise cli.RegisterError("embedder down")
+
+    monkeypatch.setattr(cli, "register_account", fail)
+    result = runner.invoke(cli.app, ["register", "aa"])
+    assert result.exit_code == 75
+    assert "embedder down" in result.stdout
+
+
+@pytest.mark.parametrize(("argv", "expected"), [([], False), (["--adopt"], True)])
+def test_register_command_forwards_adopt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argv: list[str], expected: bool
+) -> None:
+    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
+    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
+    seen: dict[str, object] = {}
+
+    def record(*args: object, **kwargs: object) -> None:
+        seen.update(kwargs)
+
+    monkeypatch.setattr(cli, "register_account", record)
+    result = runner.invoke(cli.app, ["register", "aa", *argv])
+    assert result.exit_code == 0
+    assert seen["adopt"] is expected
+
+
+def test_register_command_refuses_an_existing_user_without_adopt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
+    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
+
+    def refuse(*args: object, adopt: bool, **kwargs: object) -> None:
+        if not adopt:
+            raise cli.RegisterError("@aa already exists on the server. Pass --adopt")
+
+    monkeypatch.setattr(cli, "register_account", refuse)
+    result = runner.invoke(cli.app, ["register", "aa"])
+    assert result.exit_code == 75
+    assert "--adopt" in result.stdout

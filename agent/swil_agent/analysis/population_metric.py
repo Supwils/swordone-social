@@ -1,7 +1,6 @@
 """One population-cohesion sample, triggered and timestamped.
 
-Port of `agent/scripts/population-metric.sh` (frozen; that script, not any
-prose about it, is the contract). The SERVER computes the metric from the
+The SERVER computes the metric from the
 latest personality and behavior snapshots (`recordPopulationMetric`,
 server/src/modules/agents/agents.population.ts:231-245); this only triggers
 and reports it. Intended to run daily so `/lab`'s homogenization trend has
@@ -33,11 +32,8 @@ logger = logging.getLogger(__name__)
 
 API_KEY_FILENAME: Final = "api_key.txt"
 
-# `for base in agents humans` (population-metric.sh:26, :41). Order is
-# load-bearing for the no-argument case: it decides which account's key is
-# used, and `agents/` is searched first here exactly as `dream.sh::_find_dir`
-# does.
-COHORTS: Final = ("agents", "humans")
+# Era 3 has one cohort: every account lives under `agents/`.
+ACCOUNTS_DIR: Final = "agents"
 
 
 class PopulationMetricResult(BaseModel):
@@ -63,48 +59,22 @@ class PopulationMetricResult(BaseModel):
 def find_account_with_api_key(agent_root: Path, name: str | None = None) -> Path | None:
     """The account directory whose `api_key.txt` will authorise the call.
 
-    With a `name`: `agents/<name>` then `humans/<name>`, and the file must
-    EXIST -- `find_key` tests `-f .../api_key.txt`, not `-d .../<name>`
-    (population-metric.sh:25-34). So a real account with no key resolves to
-    nothing here and produces the same "no account with api_key.txt found"
-    as a name nobody has ever used. That conflation is the script's, kept.
+    With a `name`: `agents/<name>`, and the key file must exist -- a real
+    account with no key resolves to nothing, the same as an unknown name.
+    Without one: the first `agents/*/` directory (sorted) that has a key.
 
-    Without one: the first `agents/*/` then `humans/*/` directory that has
-    one, in sorted order -- bash's `*/` glob expands sorted, and the account
-    names are all ASCII, so `sorted()` matches it.
-
-    A missing cohort directory is skipped rather than raising: an unexpanded
-    `.../agents/*/` glob simply fails bash's `-f` test.
-
-    Two mutants of this function are EQUIVALENT today and are recorded here
-    rather than left for someone to rediscover (standing constraint §7):
-
-      * `sorted(COHORTS)` == `COHORTS`, because "agents" < "humans". The
-        property that actually matters -- agents are searched FIRST -- is
-        pinned by `test_agents_shadows_humans_for_the_same_name`. Expires if
-        a cohort is renamed or a third one is added.
-      * dropping `if p.is_dir()`, because the very next test is
-        `(p / "api_key.txt").is_file()`, which is False for every
-        non-directory. The filter stays because it is what bash's `*/` glob
-        means. Expires the moment anything reads `p.name` or a path under
-        `p` BEFORE that inner test.
-
-    Returns None rather than raising, because "no keyed account" is the
-    script's own `exit 1` path and the CLI, not this function, owns exit
-    codes.
+    Returns None rather than raising: "no keyed account" is an exit code the
+    CLI owns, not this function.
     """
-    for cohort in COHORTS:
-        base = agent_root / cohort
-        if name is not None:
-            candidate = base / name
-            if (candidate / API_KEY_FILENAME).is_file():
-                return candidate
-            continue
-        if not base.is_dir():
-            continue
-        for directory in sorted(p for p in base.iterdir() if p.is_dir()):
-            if (directory / API_KEY_FILENAME).is_file():
-                return directory
+    base = agent_root / ACCOUNTS_DIR
+    if name is not None:
+        candidate = base / name
+        return candidate if (candidate / API_KEY_FILENAME).is_file() else None
+    if not base.is_dir():
+        return None
+    for directory in sorted(p for p in base.iterdir() if p.is_dir()):
+        if (directory / API_KEY_FILENAME).is_file():
+            return directory
     return None
 
 
@@ -133,8 +103,7 @@ def run_population_metric(resources: Resources) -> PopulationMetricResult:
     try:
         data = resources.record_population_metric()
     except (ApiError, WriteNotVerifiedError) as exc:
-        # `server rejected — $RESP` (population-metric.sh:69-70). The
-        # exception's OWN message, never a hardcoded guess -- an auth
+        # The exception's OWN message, never a hardcoded guess -- an auth
         # failure and an unreachable host are both "rejected" otherwise.
         logger.warning("population-metric: server rejected — %s", exc)
         return PopulationMetricResult(ok=False, reason=str(exc))

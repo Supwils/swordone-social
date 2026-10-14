@@ -1,34 +1,19 @@
-"""Act-path self-similarity, SHADOW ONLY (Phase B task 2).
+"""Act-path near-duplicate guard (`act/round.py`'s `similarity_step` and
+`apply_duplicate_guard`).
 
-The act path -- the half of the cycle that decides and posts -- has no guard
-on what it emits. `liushang` has been collapsing onto one recycled phrase
-since 2026-07-22: the dream gate rejects its personality rewrites round after
-round and cannot touch its posts, because nothing between "the model produced
-this text" and "the text is on the platform" ever looks at what the account
-already said.
+Before a post executes it is embedded and compared with the account's OWN
+last `POST_DUPLICATE_WINDOW` posts; at max cosine >= `POST_DUPLICATE_THRESHOLD`
+the post is dropped as a guardrail veto. Every candidate files one lab event,
+dropped or not. Properties pinned here:
 
-This file pins the MEASUREMENT of that, and pins equally hard that it is only
-a measurement. Three properties carry most of the weight:
+  * The corpus is the account's own recent posts, never the feed -- pinned on
+    the embedder's INPUTS (`RecordingEmbedder` refuses unregistered texts).
+  * The guard fails open: embedder down, too few priors, a failed fetch or
+    any unexpected error leaves the post in place.
+  * `None` is not `0.0`: an unmeasured candidate records `maxSim: null`.
 
-  * The corpus is the account's OWN recent posts. A candidate compared against
-    the feed measures roster homogenisation -- a real quantity, computed
-    population-wide by `/lab`'s Feature 3, but a different one with a
-    different distribution and therefore a different threshold. That mutation
-    produces entirely plausible numbers and calibrates the wrong guard, so it
-    is pinned on the embedder's INPUTS, never on the similarity it returns:
-    standing constraint §4, and the reason `RecordingEmbedder` below refuses
-    a text it was not told about instead of handing back a placeholder.
-  * Nothing about the round changes. Asserted on the recorded API call, not
-    on a return value.
-  * `None` is not `0.0`. An account with nothing to compare against records
-    "not computed"; recording `0.0` would put a fabricated "maximally
-    diverse" point into the calibration sample this series exists to collect.
-
-Vectors are ONE-DIMENSIONAL throughout. The daemon returns L2-normalised
-vectors, so over one dimension the dot product IS the cosine similarity and a
-fixture can pin an exact expected value without hand-normalising anything --
-the same trick `test_gate.py`, `test_drift.py` and `test_drift_measurement.py`
-already use.
+Vectors are ONE-DIMENSIONAL throughout: over one dimension the dot product of
+normalised vectors IS the cosine, so a fixture can pin an exact value.
 """
 
 from __future__ import annotations
@@ -42,10 +27,11 @@ from typing import Any
 
 import pytest
 
-from swil_agent.act import round as act_round
 from swil_agent.act.round import (
-    DEFAULT_ACT_SIMILARITY_WINDOW,
+    DEFAULT_POST_DUPLICATE_THRESHOLD,
+    DEFAULT_POST_DUPLICATE_WINDOW,
     MIN_COMPARISON_CORPUS,
+    apply_duplicate_guard,
     candidate_post_text,
     execute_step,
     measure_act_similarity,
@@ -57,10 +43,15 @@ from swil_agent.api.client import ApiError
 from swil_agent.api.dto import LabEvent
 from swil_agent.config import Settings
 from swil_agent.embedder.client import EmbedderUnavailable
-from swil_agent.graph.nodes import CycleDeps, make_execute_node
-from swil_agent.models import Action, ActSimilarity, Persona, Plan
+from swil_agent.models import Action, ActOutcome, ActSimilarity, Persona, Plan
 
-from ._runners import FakePersonaSource, FakeResources, FakeState, RecordingRunner, StubBackend
+from ._runners import (
+    FakePersonaSource,
+    FakeResources,
+    FakeState,
+    StubBackend,
+    make_persona,
+)
 
 NOW = datetime(2026, 8, 19, 10, 0, 0)
 CAPTURED_AT = datetime(2026, 8, 19, 10, 0, 0, tzinfo=UTC)
@@ -193,7 +184,7 @@ class TracingResources(FakeResources):
 def _persona(tmp_path: Path, *, username: str = USERNAME, dir_name: str = DIR_NAME) -> Persona:
     directory = tmp_path / "agents" / dir_name
     directory.mkdir(parents=True, exist_ok=True)
-    return Persona(username=username, directory=directory, backend="claude", raw="PERSONA")
+    return make_persona(username=username, directory=directory, prompt="PERSONA")
 
 
 def _own_posts(*texts: str) -> list[dict[str, Any]]:
@@ -216,17 +207,19 @@ def _run_execute(
     resources: FakeResources,
     embedder: Any,
     actions: list[Action] | None = None,
-    window: int = DEFAULT_ACT_SIMILARITY_WINDOW,
+    window: int = DEFAULT_POST_DUPLICATE_WINDOW,
+    threshold: float = DEFAULT_POST_DUPLICATE_THRESHOLD,
     dry_run: bool = False,
-) -> None:
-    execute_step(
+) -> Any:
+    return execute_step(
         resources=resources,
         persona=_persona(tmp_path),
         actions=actions if actions is not None else [Action(kind="post", text=CANDIDATE)],
         agent_name=DIR_NAME,
         now=NOW,
         embedder=embedder,
-        similarity_window=window,
+        duplicate_window=window,
+        duplicate_threshold=threshold,
         dry_run=dry_run,
     )
 
@@ -263,39 +256,179 @@ def test_similarity_is_computed_against_the_accounts_own_recent_posts(tmp_path: 
     assert embedder.embedded == [[CANDIDATE, NEAR, FAR]]
     assert FEED not in embedder.embedded[0]
     assert FEED_TWO not in embedder.embedded[0]
-    assert resources.user_posts_calls == [(USERNAME, DEFAULT_ACT_SIMILARITY_WINDOW)]
+    assert resources.user_posts_calls == [(USERNAME, DEFAULT_POST_DUPLICATE_WINDOW)]
     event = _similarity_events(resources)[0]
     assert event.metrics["maxSim"] == pytest.approx(EXPECTED_MAX_SIM)
     assert event.metrics["comparedAgainst"] == 2
 
 
-def test_shadow_mode_never_changes_the_posted_text(tmp_path: Path) -> None:
-    """Assert on the recorded API call, not on the return value. Plan 2's most
-    expensive defects were all invisible in return values.
+# ── the guard ────────────────────────────────────────────────────────────
 
-    Driven at the WORST case for a shadow claim: the candidate is registered
-    to the same vector as one of the priors, so `max_sim` is 1.0 -- the
-    reading a future guard would veto or re-roll on. Two rounds, identical in
-    every respect except that one has an embedder and one does not, must reach
-    `create_post` with byte-identical arguments and in the same number.
-    """
-    identical = {CANDIDATE: [1.0], NEAR: [1.0], FAR: FAR_VECTOR}
+DUPLICATE = {CANDIDATE: [1.0], NEAR: [0.95], FAR: [0.3]}
+"""max_sim 0.95: above the 0.92 default."""
 
-    measured = TracingResources()
-    measured.user_post_items = _own_posts(NEAR, FAR)
-    embedder = RecordingEmbedder(identical)
-    _run_execute(tmp_path, resources=measured, embedder=embedder)
+DISTINCT = {CANDIDATE: [1.0], NEAR: [0.80], FAR: [0.3]}
+"""max_sim 0.80: below the 0.92 default."""
 
-    unmeasured = TracingResources()
-    unmeasured.user_post_items = _own_posts(NEAR, FAR)
-    _run_execute(tmp_path, resources=unmeasured, embedder=None)
 
-    assert _similarity_events(measured)[0].metrics["maxSim"] == pytest.approx(1.0)
-    assert measured.created_posts == unmeasured.created_posts
-    assert [p.text for p in measured.created_posts] == [CANDIDATE]
-    assert measured.calls == unmeasured.calls
-    # The measurement is the ONLY difference between the two rounds.
-    assert _similarity_events(unmeasured) == []
+def test_a_near_duplicate_post_is_dropped_and_its_event_says_so(tmp_path: Path) -> None:
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+
+    step = _run_execute(tmp_path, resources=resources, embedder=RecordingEmbedder(DUPLICATE))
+
+    assert resources.created_posts == []
+    assert [v.action.kind for v in step.vetoed] == ["post"]
+    assert step.vetoed[0].reason == "near-duplicate of a recent post (max_sim 0.950 >= 0.92)"
+    event = _similarity_events(resources)[0]
+    assert event.metrics["maxSim"] == pytest.approx(0.95)
+    assert event.metrics["dropped"] is True
+    assert event.metrics["threshold"] == DEFAULT_POST_DUPLICATE_THRESHOLD
+
+
+def test_a_distinct_post_is_kept_and_its_event_says_so(tmp_path: Path) -> None:
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+
+    step = _run_execute(tmp_path, resources=resources, embedder=RecordingEmbedder(DISTINCT))
+
+    assert [p.text for p in resources.created_posts] == [CANDIDATE]
+    assert step.vetoed == []
+    assert step.emptied is False
+    event = _similarity_events(resources)[0]
+    assert event.metrics["maxSim"] == pytest.approx(0.80)
+    assert event.metrics["dropped"] is False
+    assert event.metrics["threshold"] == DEFAULT_POST_DUPLICATE_THRESHOLD
+
+
+def test_a_similarity_exactly_at_the_threshold_is_dropped(tmp_path: Path) -> None:
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+
+    step = _run_execute(
+        tmp_path, resources=resources, embedder=RecordingEmbedder(DUPLICATE), threshold=0.95
+    )
+
+    assert resources.created_posts == []
+    assert len(step.vetoed) == 1
+
+
+def test_the_threshold_is_the_one_passed_in(tmp_path: Path) -> None:
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+
+    _run_execute(
+        tmp_path, resources=resources, embedder=RecordingEmbedder(DUPLICATE), threshold=0.99
+    )
+
+    assert [p.text for p in resources.created_posts] == [CANDIDATE]
+    assert _similarity_events(resources)[0].metrics["threshold"] == 0.99
+
+
+def test_an_embedder_outage_keeps_the_post(tmp_path: Path) -> None:
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+
+    step = _run_execute(tmp_path, resources=resources, embedder=RecordingEmbedder(fails=True))
+
+    assert [p.text for p in resources.created_posts] == [CANDIDATE]
+    assert step.vetoed == []
+    assert _similarity_events(resources)[0].metrics["dropped"] is False
+
+
+def test_the_other_actions_of_the_round_still_execute(tmp_path: Path) -> None:
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+    like = Action(kind="like", post_id="a" * 24)
+
+    step = _run_execute(
+        tmp_path,
+        resources=resources,
+        embedder=RecordingEmbedder(DUPLICATE),
+        actions=[Action(kind="post", text=CANDIDATE), like],
+    )
+
+    assert resources.created_posts == []
+    assert resources.liked == ["a" * 24]
+    assert step.actions == [like]
+    assert step.emptied is False
+    assert (step.attempted, step.landed) == (1, 1)
+
+
+def test_a_round_left_empty_becomes_nothing(tmp_path: Path) -> None:
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+    persona_dir = tmp_path / "agents" / DIR_NAME
+
+    step = _run_execute(tmp_path, resources=resources, embedder=RecordingEmbedder(DUPLICATE))
+
+    assert [a.kind for a in step.actions] == ["nothing"]
+    assert step.emptied is True
+    assert (step.attempted, step.landed) == (1, 1)
+    assert resources.get_boards_calls == 0
+    assert not (persona_dir / "memory.md").exists()
+
+
+def test_run_act_reports_a_guard_emptied_round_as_vetoed_empty(tmp_path: Path) -> None:
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+    resources.notification_items = [{"id": "n1", "type": "comment", "post": {"id": "p"}}]
+
+    result = run_act(
+        persona=_persona(tmp_path),
+        resources=resources,
+        backend=StubBackend('{"plan":[{"action":"post","text":"' + CANDIDATE + '"}]}'),
+        memory_text="",
+        agent_root=tmp_path,
+        now=NOW,
+        rng=random.Random(0),
+        health_check=lambda: True,
+        embedder=RecordingEmbedder(DUPLICATE),
+    )
+
+    assert result.outcome is ActOutcome.VETOED_EMPTY
+    assert [v.action.kind for v in result.vetoed] == ["post"]
+    assert result.vetoed[0].reason.startswith("near-duplicate of a recent post")
+    assert resources.created_posts == []
+    assert resources.marked_read == []
+    assert result.grants_dream is True
+
+
+def test_run_act_appends_the_duplicate_veto_after_the_guardrail_vetoes(tmp_path: Path) -> None:
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+    plan = (
+        '{"plan":[{"action":"post","text":"' + CANDIDATE + '"},'
+        '{"action":"post","text":"second"},'
+        '{"action":"like","postId":"' + "a" * 24 + '"}]}'
+    )
+
+    result = run_act(
+        persona=_persona(tmp_path),
+        resources=resources,
+        backend=StubBackend(plan),
+        memory_text="",
+        agent_root=tmp_path,
+        now=NOW,
+        rng=random.Random(0),
+        health_check=lambda: True,
+        embedder=RecordingEmbedder(DUPLICATE),
+    )
+
+    assert [v.reason for v in result.vetoed] == [
+        "only one post per round",
+        "near-duplicate of a recent post (max_sim 0.950 >= 0.92)",
+    ]
+    assert result.outcome is ActOutcome.LANDED_ALL
+    assert resources.liked == ["a" * 24]
+
+
+def test_apply_duplicate_guard_is_the_identity_without_a_drop() -> None:
+    actions = [Action(kind="post", text=CANDIDATE)]
+    for sim in (None, ActSimilarity(max_sim=0.5, compared_against=2), ActSimilarity()):
+        kept, vetoed = apply_duplicate_guard(actions, sim, threshold=0.92)
+        assert kept == actions
+        assert vetoed == []
 
 
 def test_fewer_than_two_prior_posts_yields_max_sim_none_not_zero(tmp_path: Path) -> None:
@@ -309,9 +442,8 @@ def test_fewer_than_two_prior_posts_yields_max_sim_none_not_zero(tmp_path: Path)
     from "the measurement failed".
 
     `embedder_ok` is True on both: no embed was attempted, so no outage was
-    observed -- identical semantics to `DriftMeasurement.embedder_ok`, which
-    is what lets `embedder_ok is False` mean "embedder outage" on both series
-    rather than one thing on one panel and another on the other.
+    observed -- `embedder_ok is False` means "embedder outage" and nothing
+    else.
 
     Kills: returning `0.0` (or `max_sim` omitted from a corpus-too-small
     branch that then computes a similarity anyway).
@@ -431,9 +563,8 @@ def test_an_unreachable_embedder_records_no_number_and_says_so() -> None:
 
 def test_an_oversized_window_degrades_instead_of_aborting_the_round() -> None:
     """`EmbedderClient.embed` raises `ValueError`, not `EmbedderUnavailable`,
-    for a batch above `MAX_BATCH` -- which an `ACT_SIMILARITY_WINDOW` above 63
-    produces. A config typo must cost the measurement, never the round that
-    was about to post.
+    for a batch above `MAX_BATCH`. That must cost the measurement, never the
+    round that was about to post.
     """
 
     class OversizedBatchEmbedder:
@@ -578,7 +709,14 @@ def test_the_lab_events_metrics_are_flat_scalars(tmp_path: Path) -> None:
     assert event.phase == "act"
     assert event.outcome == "success"
     assert event.action is None, "the sampler posted nothing; the action facet belongs to the write"
-    assert set(event.metrics) == {"maxSim", "comparedAgainst", "embedderOk", "window"}
+    assert set(event.metrics) == {
+        "maxSim",
+        "comparedAgainst",
+        "embedderOk",
+        "window",
+        "threshold",
+        "dropped",
+    }
     for key, value in event.metrics.items():
         assert isinstance(value, str | int | float | bool) or value is None, key
         assert not isinstance(value, dict | list), key
@@ -726,12 +864,11 @@ def test_run_act_without_an_embedder_is_the_step_it_always_was(tmp_path: Path) -
 
 
 def test_run_act_with_an_embedder_takes_the_sample(tmp_path: Path) -> None:
-    """The direct path (`swil-agent act`) reaches the sampler through
-    `execute_step`, with the window `cli.py` hands it.
+    """The direct path (`swil-agent act`) reaches the guard through
+    `execute_step`, with the window and threshold `cli.py` hands it.
 
-    `window=3` is neither the module default nor the `Settings` default, so a
-    `similarity_window` argument dropped anywhere between `run_act` and
-    `resources.user_posts` shows up as a 12 here.
+    `duplicate_window=3` is neither default, so an argument dropped anywhere
+    between `run_act` and `resources.user_posts` shows up as a 12 here.
     """
     resources = TracingResources()
     resources.user_post_items = _own_posts(NEAR, FAR)
@@ -747,11 +884,14 @@ def test_run_act_with_an_embedder_takes_the_sample(tmp_path: Path) -> None:
         rng=random.Random(0),
         health_check=lambda: True,
         embedder=embedder,
-        similarity_window=3,
+        duplicate_window=3,
+        duplicate_threshold=0.4,
     )
 
     assert resources.user_posts_calls == [(USERNAME, 3)]
     assert embedder.embedded == [[CANDIDATE, NEAR, FAR]]
+    assert resources.created_posts == []
+    assert _similarity_events(resources)[0].metrics["threshold"] == 0.4
 
 
 def test_the_graph_execute_node_takes_the_sample_too(tmp_path: Path) -> None:
@@ -760,9 +900,11 @@ def test_the_graph_execute_node_takes_the_sample_too(tmp_path: Path) -> None:
     `run_act` is not its composition -- `graph/nodes.py`'s execute node calls
     `execute_step` directly -- so a sampler placed in `run_act`'s body would
     exclude every production round from the calibration series while every
-    direct-path test stayed green (ruling R4 / standing constraint §5). The
-    window comes from `deps.settings`, pinned at 5 here: neither default.
+    direct-path test stayed green. The window and threshold come from
+    `deps.settings`, pinned at 5 and 0.4 here: neither default.
     """
+    from swil_agent.graph.nodes import CycleDeps, make_execute_node
+
     resources = TracingResources()
     resources.user_post_items = _own_posts(NEAR, FAR)
     embedder = RecordingEmbedder()
@@ -771,10 +913,11 @@ def test_the_graph_execute_node_takes_the_sample_too(tmp_path: Path) -> None:
         resources=resources,
         backend=StubBackend('{"plan":[{"action":"nothing"}]}'),
         persona_source=FakePersonaSource(),
-        runner=RecordingRunner(),
         embedder=embedder,
         dream_state=FakeState(),
-        settings=Settings(agent_root=tmp_path, act_similarity_window=5),
+        settings=Settings(
+            agent_root=tmp_path, post_duplicate_window=5, post_duplicate_threshold=0.4
+        ),
         agent_root=tmp_path,
         health_check=lambda: True,
         memory_text="",
@@ -782,11 +925,16 @@ def test_the_graph_execute_node_takes_the_sample_too(tmp_path: Path) -> None:
         captured_at=CAPTURED_AT,
     )
 
-    make_execute_node(deps)({"persona": persona, "actions": [Action(kind="post", text=CANDIDATE)]})
+    update = make_execute_node(deps)(
+        {"persona": persona, "actions": [Action(kind="post", text=CANDIDATE)], "vetoed": []}
+    )
 
     assert resources.user_posts_calls == [(USERNAME, 5)]
     assert embedder.embedded == [[CANDIDATE, NEAR, FAR]]
     assert _similarity_events(resources)[0].metrics["window"] == 5
+    assert resources.created_posts == []
+    assert update["outcome"] is ActOutcome.VETOED_EMPTY
+    assert [v.action.kind for v in update["vetoed"]] == ["post"]
 
 
 # ── it can never cost a round ────────────────────────────────────────────
@@ -859,50 +1007,13 @@ def test_a_lab_event_outage_cannot_fail_the_sampler(
 # ── configuration ────────────────────────────────────────────────────────
 
 
-def test_the_window_default_matches_settings_in_both_directions() -> None:
-    """`ACT_SIMILARITY_WINDOW` is the env spelling; the module constant is
-    what `execute_step` falls back to. The same treatment
-    `rule_check`/`behavior_snapshot`'s `DEFAULT_POST_LIMIT` pair gets, and for
-    the same reason: `act/` sits above `config` in spec §5.2's dependency
-    order, so the two literals cannot import each other and can only be kept
-    equal by a test.
-
-    12 is checked against `behavior_snapshot`'s own window rather than against
-    the brief's prose -- reusing that window is what lets "how repetitive was
-    this post" and "what does this account's recent voice look like" be read
-    against each other.
-    """
-    from swil_agent.analysis import behavior_snapshot as behavior_module
-
+def test_the_window_and_threshold_defaults_match_settings() -> None:
+    """`act/` sits below `config`, so the module constants and the `Settings`
+    defaults cannot import each other and are kept equal here."""
     settings = Settings()
-    assert settings.act_similarity_window == DEFAULT_ACT_SIMILARITY_WINDOW
-    assert settings.act_similarity_window == behavior_module.DEFAULT_POST_LIMIT
-    assert DEFAULT_ACT_SIMILARITY_WINDOW == 12
-    assert Settings(act_similarity_window=7).act_similarity_window == 7
-
-
-def test_no_act_similarity_threshold_exists_yet() -> None:
-    """This task is SHADOW ONLY and the threshold belongs to the later task
-    that turns the guard on, after a calibration gate fits it to this series.
-
-    A threshold sitting in `Settings` unused is an invitation to set one
-    before there is any data to set it from -- which is how
-    `ECHO_VARIANCE_THRESHOLD` came to be 0.04 against a real measured range of
-    0.001-0.011, i.e. a value that flags every account on every dream.
-    """
-    assert not hasattr(Settings(), "act_similarity_threshold")
-    assert "act_similarity_threshold" not in Settings.model_fields
-    # The module namespace too (fix round 1, review Minor 4). Checking
-    # `Settings` alone leaves the obvious other home -- a module-level
-    # constant beside `DEFAULT_ACT_SIMILARITY_WINDOW` -- unguarded, and a
-    # threshold there would be no less of an invitation to set one. Nothing
-    # matches today; this keeps it that way.
-    threshold_names = [
-        name
-        for name in vars(act_round)
-        if "threshold" in name.lower() and "similarity" in name.lower()
-    ]
-    assert threshold_names == []
+    assert settings.post_duplicate_window == DEFAULT_POST_DUPLICATE_WINDOW == 12
+    assert settings.post_duplicate_threshold == DEFAULT_POST_DUPLICATE_THRESHOLD == 0.92
+    assert Settings(post_duplicate_window=7).post_duplicate_window == 7
 
 
 def test_act_similarity_is_a_frozen_record_with_a_none_default() -> None:
@@ -915,15 +1026,14 @@ def test_act_similarity_is_a_frozen_record_with_a_none_default() -> None:
     assert sim.max_sim is None
     assert sim.compared_against == 0
     assert sim.embedder_ok is True
+    assert sim.dropped is False
     with pytest.raises(Exception, match="frozen"):
         sim.max_sim = 0.9  # type: ignore[misc]
 
 
 def test_the_plan_type_still_carries_no_similarity(tmp_path: Path) -> None:
-    """Shadow means the round's own types are untouched: nothing in `Plan` or
-    the executed actions learns about this number, so nothing downstream can
-    quietly start branching on it before the calibration task lands.
-    """
+    """The guard reports through `vetoed` and the lab event; `Plan` and
+    `Action` stay free of the measurement."""
     assert "similarity" not in Plan.model_fields
     assert "max_sim" not in Action.model_fields
 
@@ -983,3 +1093,15 @@ def test_the_summary_the_server_queries_on_is_the_summary_this_module_files(
         "commit -- otherwise the collapse watch silently reports basis: 'length-only' "
         "for every account, which reads as 'the window predates the sampler'."
     )
+
+
+def test_a_dropped_candidate_keeps_the_summary_the_server_queries_on(tmp_path: Path) -> None:
+    """Metric (b) is computed over candidates, dropped ones included, so a
+    dropped row must still match the collapse endpoint's summary."""
+    resources = FakeResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+    _run_execute(tmp_path, resources=resources, embedder=RecordingEmbedder(DUPLICATE))
+
+    event = _similarity_events(resources)[0]
+    assert event.metrics["dropped"] is True
+    assert event.summary == "act self-similarity measured"

@@ -31,9 +31,7 @@ from swil_agent.models import (
     Action,
     ActionResult,
     ActOutcome,
-    AspectSims,
-    AspectVectors,
-    DreamVerdict,
+    CooldownDecision,
     Persona,
     Plan,
     RhythmDecision,
@@ -41,9 +39,11 @@ from swil_agent.models import (
     VetoedAction,
 )
 
+from ._runners import make_persona
+
 
 def _persona(tmp_path: Path) -> Persona:
-    return Persona(username="zenith", directory=tmp_path / "agents" / "zenith")
+    return make_persona(username="zenith", directory=tmp_path / "agents" / "zenith")
 
 
 def _full_state(tmp_path: Path) -> CycleState:
@@ -56,7 +56,6 @@ def _full_state(tmp_path: Path) -> CycleState:
     registrations corrupts a distinct field, and the per-field loop in the
     strict test below names which.
     """
-    aspect_sims = AspectSims(values=0.7, style=0.8, topic=0.75)
     return {
         "tenant": "builtin",
         "agent": "zenith",
@@ -74,9 +73,7 @@ def _full_state(tmp_path: Path) -> CycleState:
         ],
         "outcome": ActOutcome.LANDED_ALL,
         "round_index": 1,
-        "aspect_sims": aspect_sims,
-        "verdict": DreamVerdict(accepted=True, reason="ok", sims=aspect_sims),
-        "dream_attempt": 1,
+        "recent": ["一件新事", "另一件"],
     }
 
 
@@ -118,25 +115,25 @@ def test_the_allowlist_is_explicit_and_closed(tmp_path: Path) -> None:
     OBSERVABLE consequence of the allowlist being explicit and closed: a type
     that is NOT on it is refused. Measured against langgraph 1.2.11:
 
-      * explicit allowlist -> an unregistered `AspectVectors` comes back as a
-        plain `dict` (logged: "Blocked deserialization ... not in
+      * explicit allowlist -> an unregistered model comes back as a plain
+        `dict` (logged: "Blocked deserialization ... not in
         allowed_msgpack_modules");
-      * the library default -> the same value comes back as a real
-        `AspectVectors` (logged: "Deserializing unregistered type ... will be
-        blocked in a future version").
+      * the library default -> the same value comes back as the real model
+        (logged: "Deserializing unregistered type ... will be blocked in a
+        future version").
 
-    `AspectVectors` is the right probe precisely because it is NOT reachable
+    `CooldownDecision` is the right probe precisely because it is NOT reachable
     from `CycleState` -- `test_the_derived_registration_covers_every_model_
     reachable_from_cycle_state` is what keeps that true, so the two tests
     fail together rather than drifting apart.
     """
-    assert AspectVectors not in REGISTERED_TYPES, (
-        "AspectVectors became reachable from CycleState; pick another "
+    assert CooldownDecision not in REGISTERED_TYPES, (
+        "CooldownDecision became reachable from CycleState; pick another "
         "unregistered probe, or this test proves nothing"
     )
     saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
 
-    payload = {"probe": AspectVectors(values=[1.0], style=[2.0], topic=[3.0])}
+    payload = {"probe": CooldownDecision(proceed=True, reason="probe")}
     restored = saver.serde.loads_typed(saver.serde.dumps_typed(payload))
 
     assert type(restored["probe"]) is dict, (
@@ -218,8 +215,6 @@ def test_the_derived_registration_covers_every_model_reachable_from_cycle_state(
         Action,
         VetoedAction,
         ActionResult,
-        AspectSims,
-        DreamVerdict,
         RhythmDecision,
         ActOutcome,
         RhythmPolicy,

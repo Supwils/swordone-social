@@ -17,9 +17,8 @@
   available, not at 3am whether or not the lid is open" -- so wake-and-boot
   behaviour needs no wake hook and no third-party sleepwatcher.
 
-  KeepAlive is deliberately ABSENT. The old com.swil.heartbeat.plist sets it
-  because heartbeat.sh is a `while true` daemon; this script is one-shot, and
-  KeepAlive would relaunch it in a tight loop forever.
+  KeepAlive is deliberately ABSENT: this script is one-shot, and KeepAlive
+  would relaunch it in a tight loop forever.
 
   Install:
     cp agent/launchd/com.swil.round.plist ~/Library/LaunchAgents/

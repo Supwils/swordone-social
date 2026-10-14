@@ -1,47 +1,26 @@
-"""The world-context blocks `swil.sh login` used to write to disk.
+"""World-context renderers: the now-context, the follow-topics feed and the news digest.
 
-Background, and why these tests are shaped the way they are. `swil.sh login`
-wrote three artifacts -- `context/now.md`, `context/news_today.md`, and one
-`context/feed_for_<username>.md` per account. The Python runtime became the
-runtime of record on 2026-08-19 (`cycle-one.sh:45` dispatches straight to
-`swil-agent cycle`) and nothing in it calls `swil.sh`, so it READ two of those
-three files and WROTE none. Every round after the cutover was handed a
-`now.md` frozen at 2026-08-19 05:30 -- a header telling all 23 accounts that
-the date was the 19th and that they were `qiusai`'s session -- plus a news
-digest dated 2026-08-18 and whatever follow-topics slice happened to be on
-disk.
+Properties pinned here:
 
-Three properties are pinned here, one per failure mode that produced:
-
-  * FRESHNESS -- the date comes from an injected clock, and two clocks give
-    two answers. A test with a single clock cannot tell a rendered date from
-    a hardcoded one.
-  * PER-ACCOUNT -- `now.md` was ONE shared file carrying a per-account
-    `当前 Agent` line, which is why five parallel rounds raced on it and the
-    file named a single account. Every test that could catch a regression
-    here renders TWO accounts in one process and compares, because an
-    assertion about a per-account value attached to a single-account render
-    cannot distinguish an argument from a module-level constant.
-  * TEMPLATE FIDELITY (ruling R28) -- the drift experiment is in flight, so
-    only the FRESHNESS of the content may change, never the wording. The
-    template is pinned against `agent/scripts/swil.sh`'s own heredoc, read
-    out of the script at test time and byte-compared, rather than against a
-    copy of it transcribed into this file: a transcription drifts silently
-    from the thing it claims to pin, and the script is the source of truth
-    (STANDING-CONSTRAINTS §1).
+  * FRESHNESS -- the date comes from an injected clock; two clocks give two
+    answers, so a hardcoded date is visible.
+  * PER-ACCOUNT -- two accounts rendered in one process name themselves; a
+    module-level constant would pass a single-account test.
+  * WORDING -- the rendered text is pinned as a literal.
 """
 
 from __future__ import annotations
 
+import importlib
 import re
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import pytest
 
-from swil_agent import cli
 from swil_agent.act.context import (
     NEWS_CACHE_FILENAME,
     NEWS_FETCH_SCRIPT,
@@ -57,12 +36,17 @@ from swil_agent.act.context import (
 from swil_agent.api.client import ApiError
 from swil_agent.config import Settings
 from swil_agent.models import Persona
-from swil_agent.persona.loader import load_persona
 
-from ._runners import RecordingRunner
+from ._runners import RecordingRunner, make_persona
+
+
+def _cli() -> ModuleType:
+    """`swil_agent.cli`, imported only by the tests that drive the CLI seam,
+    so the renderer tests here do not depend on the whole CLI importing."""
+    return importlib.import_module("swil_agent.cli")
+
 
 AGENT_DIR = Path(__file__).resolve().parents[2]
-SWIL_SH = AGENT_DIR / "scripts" / "swil.sh"
 NEWS_FETCH_SH = AGENT_DIR / "scripts" / NEWS_FETCH_SCRIPT
 
 # Two clocks, deliberately different in every rendered component (day AND
@@ -72,44 +56,12 @@ NOW_A = datetime(2026, 8, 20, 7, 42)
 NOW_B = datetime(2026, 3, 4, 19, 5)
 
 
-# ── §14: every pin below reads EXECUTABLE text, never a comment ───────────
+# ── executable-text helpers for the news-fetch.sh ceiling pin ─────────────
 #
-# STANDING-CONSTRAINTS §14, paid for three times now. The first was a
-# Bash-side guard that searched a script for `--tools ""` while the fix's own
-# explanatory comment contained that string. The second was this file: bare
-# `index`/`re.search` over raw source, so a commented-out copy of a line above
-# a reworded real one satisfied the pin completely. The third was the FIX for
-# the second -- it grouped `\`-continuations before testing for comment-ness,
-# and since bash does NOT continue a comment line, a `\`-terminated comment
-# hid the executable line under it from the view while bash still ran it.
-#
-# So the failure has two directions and both are live:
-#
-#   * a comment SATISFYING an anchor -- the decoy above the real line;
-#   * a comment HIDING the line that contradicts an anchor -- the
-#     `\`-terminated comment, and a mid-line `#` parking the original text
-#     after a renamed real assignment.
-#
-# Three rules close them, and all three are enforced in ONE place
-# (`_code_hits` / `_code_match`) so there is one guard to pin rather than
-# four copies to keep in step:
-#
-#   1. a physical line whose first non-blank character is `#` contributes
-#      nothing, and does NOT swallow the line after it;
-#   2. `\`-continuations are joined, so the "what precedes the anchor" test
-#      below sees the whole line bash executes, and so an anchor that spans
-#      a join is still findable (no anchor here spans one today -- the
-#      topic-row jq lies wholly on `swil.sh:395`, which is a continuation of
-#      the `curl` on `:394` -- but the rule is what keeps that true);
-#   3. a match counts only if the text BEFORE it on its joined line contains
-#      no `#`.
-#
-# Rule 3 is deliberately not "cut each line at its first `#`". That rule
-# would truncate `swil.sh:397` -- `FEED_CONTENT+="## #${FT_TOPIC}\n…"` -- at
-# `## `, turning a live anchor into a false failure. Filtering match
-# POSITIONS instead never shortens anything: the `#`s in that line are all
-# AFTER the anchor, so it still matches, and its extracted fragment is
-# unchanged (pinned by the expansions test below).
+# The ceiling test reads numbers out of `news-fetch.sh`. A comment must not
+# satisfy an anchor, and a comment must not hide a real line; matches count
+# only on executable text, and a second hit is refused rather than ignored.
+# Comment-ness is tested per physical line before `\`-continuations are joined.
 
 
 def _executable_view(text: str) -> tuple[str, list[int]]:
@@ -212,158 +164,6 @@ def _the_code_match(view: str, pattern: str, what: str) -> re.Match[str]:
     return hits[0]
 
 
-def _executable_span(text: str, anchor: str, what: str = "the anchor") -> tuple[int, int]:
-    """Half-open `[start, end)` of `anchor`, matched in executable text but
-    returned as offsets into the ORIGINAL `text`.
-
-    For the heredoc pin, which must slice the body VERBATIM -- the body is
-    Markdown and four of its lines begin with `#`, so it cannot be read out
-    of the comment-stripped view. Only the anchor is matched there.
-    """
-    view, offsets = _executable_view(text)
-    at = _the_code_hit(view, anchor, what)
-    return offsets[at], offsets[at + len(anchor) - 1] + 1
-
-
-# ── the Bash heredoc, read out of the script ──────────────────────────────
-
-_HEREDOC_OPEN = 'cat > "$ROOT_DIR/context/now.md" <<EOF\n'
-
-# §7 -- this anchor is DELIMITER-SPECIFIC, and one shape gets past it.
-# RENAMING the delimiter fails loudly (`the now.md heredoc occurs 0 times`).
-# But a SECOND write to the same file through a different delimiter --
-# `cat > "$ROOT_DIR/context/now.md" <<EOF2` -- is not this anchor at all, so
-# the uniqueness assertion sees one hit, reads the FIRST heredoc and passes,
-# while bash's last write wins and `now.md` gets the second body. Measured:
-# green with a `\`-comment hiding it AND with no comment anywhere, so this is
-# not a §14 failure -- no comment need be involved.
-#
-# Recorded rather than closed. Closing it means detecting "any second write
-# to this file", which is a different check with its own false-failure risk:
-# a legitimate second write to `now.md` would then be a test failure with
-# nothing wrong. Expiry: the moment `swil.sh` writes `now.md` more than once,
-# this pin is reading the wrong body and the check has to be built.
-
-# The four shell expansions inside that heredoc. Everything else in it is
-# literal text -- including the `{topic}` / `{date}` in the swil-news URL,
-# which carry no `$` and are NOT expansions.
-_EXPANSIONS = (
-    "$(date '+%Y年%m月%d日 %H:%M')",
-    "$USERNAME",
-    "$RECENT_POSTS",
-    "$NEWS_HEADLINES",
-)
-
-
-def _bash_now_template(source: str | None = None) -> str:
-    """`swil.sh`'s `now.md` heredoc body, verbatim.
-
-    `source` exists so the guards below can be exercised by a UNIT test
-    against a doctored script, rather than only by mutating the frozen
-    `swil.sh` -- which CI cannot do, and which therefore leaves the guard
-    unpinned everywhere except on this machine.
-    """
-    text = SWIL_SH.read_text(encoding="utf-8") if source is None else source
-    _, start = _executable_span(text, _HEREDOC_OPEN, "the now.md heredoc")
-    end = text.index("\nEOF\n", start)
-    return text[start : end + 1]
-
-
-def _bash_rendered(
-    *, today: str, username: str, activity: str, news: str, source: str | None = None
-) -> str:
-    """What `swil.sh login`'s heredoc expands to, for known values."""
-    rendered = _bash_now_template(source)
-    for placeholder, value in zip(_EXPANSIONS, (today, username, activity, news), strict=True):
-        rendered = rendered.replace(placeholder, value)
-    return rendered
-
-
-# ── the Bash `feed_for_*.md` builder, read out of the script ──────────────
-#
-# The now-context above was pinned against the script from the start; this
-# file's expected value was TRANSCRIBED, which is the exact failure the
-# heredoc pin was designed to avoid -- "a transcription drifts silently from
-# the thing it claims to pin" (STANDING-CONSTRAINTS §1). It cost a real
-# divergence: the topic list feeding these headings was derived differently
-# from Bash (whitespace INSIDE a topic), and no test here could see it
-# because both sides of the comparison were written by the same hand.
-#
-# `swil.sh:390-400` builds the file in three pieces, so this reads all three
-# out of the script: the header assignment, the per-topic block assignment,
-# and the jq program that renders one row.
-
-_FEED_HEADER_ASSIGN = 'FEED_CONTENT="'
-_FEED_BLOCK_ASSIGN = 'FEED_CONTENT+="'
-_FEED_DATE_EXPANSION = "$(date '+%Y-%m-%d %H:%M')"
-_FEED_BLOCK_EXPANSIONS = ("${FT_TOPIC}", "${FT_RESULTS}")
-
-_TOPIC_JQ_OPEN = "jq -r '.data.items[]? | \""
-_TOPIC_JQ_INTERPOLATIONS = (
-    "\\(.id)",
-    "\\(.author.username)",
-    "\\(.author.displayName)",
-    '\\(.text | gsub("\\n";" ") | .[0:200])',
-)
-
-
-def _bash_feed_fragment(assign: str, source: str | None = None) -> str:
-    """The double-quoted literal assigned to `FEED_CONTENT` at `assign`.
-
-    Read out of the EXECUTABLE view through `_the_code_hit` (§14). A bare
-    `index` over raw source took the first textual match, so a commented-out
-    copy of the original assignment above a reworded real one satisfied this
-    pin completely.
-    """
-    view = _executable(SWIL_SH.read_text(encoding="utf-8") if source is None else source)
-    start = _the_code_hit(view, assign, f"{assign!r}") + len(assign)
-    return view[start : view.index('"\n', start)]
-
-
-def _bash_topic_row(
-    *, post_id: str, username: str, display: str, body: str, source: str | None = None
-) -> str:
-    """One rendered row of a `## #<topic>` block -- `swil.sh:395`'s jq string.
-
-    `body` is what jq's `\\(.text | gsub("\\n";" ") | .[0:200])` produces:
-    newlines already flattened to spaces, already truncated. Everything
-    around it -- the brackets, the `@`, the full-width parentheses, the
-    ASCII colon-space -- comes out of the script.
-    """
-    view = _executable(SWIL_SH.read_text(encoding="utf-8") if source is None else source)
-    start = _the_code_hit(view, _TOPIC_JQ_OPEN, "the topic-row jq") + len(_TOPIC_JQ_OPEN)
-    row = view[start : view.index("\"'", start)]
-    values = (post_id, username, display, body)
-    for placeholder, value in zip(_TOPIC_JQ_INTERPOLATIONS, values, strict=True):
-        row = row.replace(placeholder, value)
-    return row
-
-
-def _bash_feed_rendered(
-    *, today: str, blocks: list[tuple[str, str]], source: str | None = None
-) -> str:
-    """What `swil.sh login` writes to `context/feed_for_<username>.md`.
-
-    `blocks` is `(topic, rendered_rows)` for the topics whose search returned
-    something -- `swil.sh:396`'s `if [[ -n "$FT_RESULTS" ]]` means a topic
-    that returned nothing contributes no block at all, so it simply does not
-    appear in this list.
-    """
-    accumulated = _bash_feed_fragment(_FEED_HEADER_ASSIGN, source).replace(
-        _FEED_DATE_EXPANSION, today
-    )
-    block_template = _bash_feed_fragment(_FEED_BLOCK_ASSIGN, source)
-    for topic, rows in blocks:
-        block = block_template
-        for placeholder, value in zip(_FEED_BLOCK_EXPANSIONS, (topic, rows), strict=True):
-            block = block.replace(placeholder, value)
-        accumulated += block
-    # `printf "%b" "$FEED_CONTENT"` (swil.sh:400) expands the accumulated
-    # string's escapes ONCE, at the very end -- which is why this happens
-    # here and not fragment by fragment.
-    return accumulated.replace("\\n", "\n")
-
-
 # ── test doubles ──────────────────────────────────────────────────────────
 
 
@@ -383,17 +183,22 @@ class FakeWorld:
         self.global_calls: list[tuple[int, str]] = []
         self.board_calls: list[tuple[str, int, str]] = []
         self.search_calls: list[tuple[str, int]] = []
+        self.since_calls: list[tuple[str, str | None]] = []
         self.boards_calls = 0
         self.failing: set[str] = set()
 
-    def feed_global(self, limit: int, sort: str) -> list[dict[str, Any]]:
+    def feed_global(self, limit: int, sort: str, since: str | None = None) -> list[dict[str, Any]]:
         self.global_calls.append((limit, sort))
+        self.since_calls.append(("feed_global", since))
         if "feed_global" in self.failing:
             raise ApiError(500, "boom", None)
         return self.global_feeds.get(limit, [])
 
-    def feed_board(self, slug: str, limit: int = 12, sort: str = "latest") -> list[dict[str, Any]]:
+    def feed_board(
+        self, slug: str, limit: int = 12, sort: str = "latest", since: str | None = None
+    ) -> list[dict[str, Any]]:
         self.board_calls.append((slug, limit, sort))
+        self.since_calls.append((f"feed_board:{slug}", since))
         if f"feed_board_{slug}" in self.failing:
             raise ApiError(500, "boom", None)
         return self.board_feeds.get(slug, [])
@@ -404,8 +209,11 @@ class FakeWorld:
             raise ApiError(500, "boom", None)
         return self.boards
 
-    def search_posts(self, q: str, limit: int = 12) -> list[dict[str, Any]]:
+    def search_posts(
+        self, q: str, limit: int = 12, since: str | None = None
+    ) -> list[dict[str, Any]]:
         self.search_calls.append((q, limit))
+        self.since_calls.append(("search_posts", since))
         if f"search_{q}" in self.failing:
             raise ApiError(500, "boom", None)
         return self.searches.get(q, [])
@@ -456,16 +264,14 @@ def _persona(
     username: str,
     *,
     topics: list[str] | None = None,
-    board: str | None = None,
-    read: str | None = None,
+    board: str = "",
     directory: Path | None = None,
 ) -> Persona:
-    return Persona(
+    return make_persona(
         username=username,
-        directory=directory or Path("/tmp") / username,
-        follow_topics=topics or [],
+        topics=topics or [],
         board=board,
-        read=read,
+        directory=directory or Path("/tmp") / username,
     )
 
 
@@ -492,8 +298,7 @@ def test_now_context_dates_itself_from_the_injected_clock(
 
     Two clocks, two answers: a renderer that hardcoded EITHER date (which is
     what reading a frozen `now.md` amounted to) fails one half of this
-    parametrisation. The format is `swil.sh:362`'s own
-    `date '+%Y年%m月%d日 %H:%M'`, zero-padded month/day/hour included.
+    parametrisation. The format is `%Y年%m月%d日 %H:%M`, zero-padded.
     """
     text = render_now_context(username="zenith", now=now, activity="A", news="N")
     assert expected_line in text.splitlines()
@@ -552,44 +357,36 @@ def test_two_accounts_get_their_own_follow_topics_feed_in_one_process() -> None:
     assert world.search_calls == [("alpha", 12), ("gamma", 12)]
 
 
-# ── (c) template fidelity (R28) ───────────────────────────────────────────
+# ── (c) template wording ──────────────────────────────────────────────────
 
 
-def test_now_context_is_byte_identical_to_the_bash_heredoc() -> None:
-    """R28: only the freshness of the content may change, never the wording.
-
-    The expected value is BUILT from `agent/scripts/swil.sh`'s own heredoc at
-    test time. Deleting a 注意事项 bullet, reordering the sections, changing
-    the swil-news URL line, or dropping the trailing newline all fail here --
-    and so does an edit to the script that the Python side did not follow.
-    """
+def test_now_context_renders_the_pinned_template() -> None:
+    """The prompt wording is pinned as a literal: a dropped or reordered
+    section, a changed URL line or a lost trailing newline fails here."""
     activity = "- [x] 甲（2026-08-18）：内容"
     news = "**日报日期：** 2026-08-19\n### [ai] 标题"
-    expected = _bash_rendered(
-        today="2026年08月20日 07:42", username="zenith", activity=activity, news=news
+
+    assert render_now_context(username="zenith", now=NOW_A, activity=activity, news=news) == (
+        "# 当前时间上下文\n\n"
+        "**今日日期：** 2026年08月20日 07:42\n"
+        "**当前 Agent：** zenith\n\n"
+        "## 平台最新动态（用于校准时间感知）\n"
+        f"{activity}\n\n"
+        "## 今日真实世界新闻（swil-news 日报，含各话题要点与总结）\n"
+        f"{news}\n\n"
+        "（完整日报可访问：https://swil-news.vercel.app/api/news/{topic}/{date}）\n\n"
+        "## 注意事项\n"
+        "- 以上日期是系统真实时间，优先于模型自身的时间估计\n"
+        '- 发帖时涉及"最近""今天""当前"等表述，请以此日期为准\n'
+        "- 训练截止日之后的世界事件，如无用户提供的信息，请明确说明不确定性，不要臆造\n"
+        "- 上面这些新闻是**真实世界当天发生的事**，不是虚构素材。你可以据此发帖、评论、\n"
+        "  或完全忽略——取决于它是否落在你关心的领域里。引用时按你自己的视角解读，\n"
+        "  不要复述标题，也不要为了蹭热点去谈一个你的人设根本不关心的话题。\n"
     )
-
-    assert (
-        render_now_context(username="zenith", now=NOW_A, activity=activity, news=news) == expected
-    )
-
-
-def test_the_bash_heredoc_has_exactly_the_four_expansions_we_substitute() -> None:
-    """Guards the guard above.
-
-    `_bash_rendered` only knows how to expand four things. If someone adds a
-    fifth `$...` to the heredoc, the "expected" value would silently carry a
-    raw shell expansion and the comparison above would start failing for a
-    reason nobody could read. Failing HERE says what actually happened.
-    """
-    rendered = _bash_rendered(today="D", username="U", activity="A", news="N")
-    assert "$" not in rendered
-    assert "{topic}" in rendered  # literal, not an expansion
-    assert "{date}" in rendered
 
 
 def test_now_context_keeps_all_four_notice_bullets() -> None:
-    """A cheaper, independently-readable statement of one half of R28.
+    """A cheaper, independently-readable statement of the wording pin above.
 
     The heredoc comparison above would also catch a dropped bullet, but only
     as "the two big strings differ". This names the thing.
@@ -602,22 +399,9 @@ def test_now_context_keeps_all_four_notice_bullets() -> None:
 # ── (d) the follow-topics feed comes from the API ─────────────────────────
 
 
-def test_follow_topics_feed_is_byte_identical_to_the_bash_assignment() -> None:
-    """R28 for the OTHER file `swil.sh login` wrote.
-
-    The expected value is BUILT from `swil.sh:390-400` at test time -- the
-    header assignment, the per-topic block assignment and the row jq, each
-    read out of the script -- exactly as
-    `test_now_context_is_byte_identical_to_the_bash_heredoc` does for
-    `now.md`. It used to be a transcription, and the divergence a
-    transcription cannot see (the topic strings themselves) turned out to be
-    real: see `test_a_multi_word_topic_is_searched_the_way_bash_searched_it`.
-
-    The topics are DELIBERATELY not in alphabetical order. `["alpha",
-    "beta"]` is already sorted, so a renderer that sorted its topics was
-    indiscriminable from one that kept the declaration order
-    (STANDING-CONSTRAINTS §4) -- and no roster bullet is sorted.
-    """
+def test_follow_topics_feed_renders_the_pinned_wording() -> None:
+    """The follow-topics feed text is pinned as a literal, in the persona's
+    declared (unsorted) topic order; a topic with no results gets no heading."""
     world = FakeWorld()
     world.searches = {
         "zeta": [
@@ -627,203 +411,21 @@ def test_follow_topics_feed_is_byte_identical_to_the_bash_assignment() -> None:
         "alpha": [_post("c" * 24, username="three", display="第三", text="第三条")],
     }
 
-    text = render_follow_topics_feed(world, _persona("zenith", topics=["zeta", "alpha"]), now=NOW_A)
-
-    zeta_rows = "\n".join(
-        (
-            _bash_topic_row(post_id="a" * 24, username="one", display="第一", body="第一条 换行"),
-            _bash_topic_row(post_id="b" * 24, username="two", display="第二", body="第二条"),
-        )
-    )
-    alpha_rows = _bash_topic_row(post_id="c" * 24, username="three", display="第三", body="第三条")
-    assert text == _bash_feed_rendered(
-        today="2026-08-20 07:42", blocks=[("zeta", zeta_rows), ("alpha", alpha_rows)]
+    text = render_follow_topics_feed(
+        world, _persona("zenith", topics=["zeta", "empty", "alpha"]), now=NOW_A
     )
 
-
-def test_the_bash_feed_assignment_has_exactly_the_expansions_we_substitute() -> None:
-    """Guards the guard above, the same way the heredoc's companion does.
-
-    `_bash_feed_rendered` knows how to expand one date, two block variables
-    and four jq interpolations. A fifth added to the script would otherwise
-    leave a raw `$...` or `\\(...)` inside the "expected" value and turn the
-    comparison above into an unreadable diff. Failing HERE names what
-    happened.
-    """
-    rendered = _bash_feed_rendered(today="D", blocks=[("T", "R")])
-    assert "$" not in rendered
-    assert rendered == "# 关联话题动态 (D)\n\n## #T\nR\n\n"
-
-    row = _bash_topic_row(post_id="I", username="U", display="N", body="B")
-    assert "\\(" not in row
-    assert "$" not in row
-
-
-# A miniature `swil.sh`, carrying every shape the real anchors sit in. It is
-# a FIXTURE, not a transcription of the script -- the frozen-script rows are
-# what compare against the real thing. Its job is to contain what the view
-# has to handle, including `#` INSIDE executable text: a fixture with no `#`
-# in it cannot detect a stripper that eats too much (§4), which is exactly
-# why an over-eager stripper was killed only by the frozen-script pins last
-# round and not by the test written for it.
-_VIEW_FIXTURE = (
-    '# FEED_CONTENT="commented decoy"\n'
-    '    # FEED_CONTENT="indented commented decoy"\n'
-    "# a comment ending in a backslash \\\n"
-    'FEED_CONTENT="real"\n'
-    'BLOCK+="## #${FT_TOPIC}\\n"\n'
-    "SPLIT=$(one | \\\n"
-    "  two)\n"
-    'TRAILING="kept"  # FEED_CONTENT="parked decoy"\n'
-    # The symmetric case, and the one shape the fixture was missing: a
-    # continuation line that BEGINS with `#`. Bash joins first and tokenises
-    # after, so this is not a comment and `JOINED` ends up `## #not-a-comment`.
-    # Without this row, testing every physical line for comment-ness -- the
-    # mistake that looks symmetric to the one above -- leaves the whole suite
-    # green while the readers return a wrong string.
-    'JOINED="## \\\n'
-    '#not-a-comment"\n'
-    'NEXT="its own line"\n'
-)
-
-
-def test_the_view_drops_comments_and_keeps_the_hash_inside_executable_text() -> None:
-    """Both directions of §14, on the helper rather than only through its
-    callers, and with a fixture that can actually fail.
-
-    `BLOCK+="## #${FT_TOPIC}\n"` is `swil.sh:397`'s shape and is the reason
-    rule 3 filters match POSITIONS instead of cutting each line at its first
-    `#`: a cutting rule would truncate that line at `## ` and turn a live
-    anchor into a false failure.
-    """
-    view = _executable(_VIEW_FIXTURE)
-
-    assert "commented decoy" not in view
-    assert "indented commented decoy" not in view
-    assert 'FEED_CONTENT="real"' in view
-    # Executable `#`s survive intact -- a stripper that cut at the first `#`
-    # would leave `BLOCK+="` and this line would say so.
-    assert 'BLOCK+="## #${FT_TOPIC}\\n"' in view
-    # A trailing comment is NOT removed from the view (removing it correctly
-    # needs a quoting-aware parser); it is neutralised by rule 3 instead, and
-    # the test below is the one that proves it.
-    assert 'TRAILING="kept"' in view
-
-
-def test_a_comment_does_not_continue_onto_the_line_below_it() -> None:
-    r"""The defect the previous round's fix introduced.
-
-    Bash does not continue a comment: the `\` at the end of `# … \` is inside
-    the comment and never reaches the line-continuation rule, so the line
-    below still executes. Grouping continuations BEFORE testing for
-    comment-ness deleted that line from the view -- a comment HIDING the code
-    that contradicts a pin, which is §14 inverted and just as green.
-
-    Verified against real bash, not reasoned about: `# x \` + `X=2` leaves
-    `X=2` set.
-    """
-    view = _executable(_VIEW_FIXTURE)
-    assert 'FEED_CONTENT="real"' in view
-    assert "a comment ending in a backslash" not in view
-
-    # The false-failure half of the same bug: the hidden line is the one the
-    # pin is looking for, so the pin fails for a reason that is not true.
-    hidden = '# note \\\nFEED_CONTENT="real"\n'
-    assert _bash_feed_fragment('FEED_CONTENT="', hidden) == "real"
-
-
-def test_a_continuation_line_that_begins_with_a_hash_is_still_code() -> None:
-    r"""The mistake that LOOKS symmetric to the one above, and is not.
-
-    Comment-ness is tested per physical line, but only on the line that
-    STARTS a logical line. Bash joins continuations first and tokenises
-    afterwards, so `JOINED="## \` followed by `#not-a-comment"` sets `JOINED`
-    to `## #not-a-comment`; the `#` is inside a quoted word that the line
-    below merely finishes. Verified against real bash (3.2.57, macOS), not
-    reasoned about.
-
-    Testing EVERY physical line instead does two things, and neither is a
-    loud failure. It deletes the continuation from the view, and it makes the
-    join reach past it and swallow the next executable line -- so
-    `_bash_feed_fragment` on `FEED_CONTENT="## \` / `#${FT_TOPIC}\n\n"` /
-    `printf "%b" "$FEED_CONTENT"` returns `'## printf "%b" "$FEED_CONTENT'`
-    with no exception raised. Measured, not predicted.
-
-    §7 -- inert today: no `agent/scripts/*.sh` has a `\`-continuation into a
-    `#`-leading line (`awk 'prev ~ /\\$/ && $0 ~ /^[[:space:]]*#/'` over all
-    23 of them returns nothing). It stops being inert the first time one
-    does, and `swil.sh:397` already assigns a `"## #..."` literal, so the
-    distance is one line break.
-    """
-    view = _executable(_VIEW_FIXTURE)
-    assert 'JOINED="## #not-a-comment"' in view
-    # ...and the line below the continuation is still a line of its own. Under
-    # the mistake above it becomes the continuation instead, which is how the
-    # wrong string gets built rather than an error raised.
-    assert '\nNEXT="its own line"' in view
-
-
-def test_continuations_are_joined_the_way_bash_joins_them() -> None:
-    r"""`\`+newline is removed and the continuation line keeps its own leading
-    whitespace, so an anchor that spans the join is findable and the "what
-    precedes the anchor" test sees the whole line bash executes.
-
-    No anchor spans a join today -- the topic-row jq lies wholly on
-    `swil.sh:395`, which is a continuation of the `curl` on `:394`, so what
-    the join buys THERE is that rule 3 sees the `curl` half too. The
-    spanning case is pinned anyway, because it is the property that keeps
-    being true when the script moves.
-    """
-    view = _executable(_VIEW_FIXTURE)
-    assert "SPLIT=$(one |   two)" in view
-    assert "\\\n" not in view
-    assert _code_hits(view, "one |   two") == [view.index("one |   two")]
-
-
-def test_the_span_maps_back_onto_the_original_text() -> None:
-    """The heredoc pin slices a body a comment-stripped view would have eaten
-    -- four of its lines begin with `#` -- so only its ANCHOR is matched in
-    the view and the offsets must land in the original."""
-    start, end = _executable_span(_VIEW_FIXTURE, 'FEED_CONTENT="real"')
-    assert _VIEW_FIXTURE[start:end] == 'FEED_CONTENT="real"'
-
-    # Across a join, the end offset still lands past the last anchor
-    # character in the ORIGINAL, where the `\` and newline are still present.
-    start, end = _executable_span(_VIEW_FIXTURE, "one |   two")
-    assert _VIEW_FIXTURE[start:end] == "one | \\\n  two"
-
-
-def test_an_anchor_parked_behind_a_mid_line_hash_is_not_a_match() -> None:
-    """The attack the uniqueness assertion alone does not stop.
-
-    Rename the real assignment so the anchor occurs exactly once, reword what
-    it writes, and park the ORIGINAL text in a trailing comment: one hit, on
-    an executable line, and it is the decoy. Rule 3 -- nothing before the
-    anchor on its joined line may be a `#` -- is what refuses it, and it
-    refuses by NAME (zero hits) rather than by returning the wrong string.
-    """
-    doctored = (
-        "FEED_BUF=\"# 关联话题最新动态 ($(date '+%Y-%m-%d %H:%M'))\\n\\n\""
-        "  # FEED_CONTENT=\"# 关联话题动态 ($(date '+%Y-%m-%d %H:%M'))\\n\\n\"\n"
+    assert text == (
+        "# 关联话题动态 (2026-08-20 07:42)\n\n"
+        "## #zeta\n"
+        f"- [{'a' * 24}] @one（第一）: 第一条 换行\n"
+        f"- [{'b' * 24}] @two（第二）: 第二条\n\n"
+        "## #alpha\n"
+        f"- [{'c' * 24}] @three（第三）: 第三条\n\n"
     )
-    with pytest.raises(AssertionError, match="occurs 0 times"):
-        _bash_feed_fragment('FEED_CONTENT="', doctored)
 
 
 _DOUBLED: dict[str, tuple[Callable[[str], object], str]] = {
-    "the feed assignment": (
-        lambda src: _bash_feed_fragment('FEED_CONTENT="', src),
-        'FEED_CONTENT="one"\nFEED_CONTENT="two"\n',
-    ),
-    "the topic-row jq": (
-        lambda src: _bash_topic_row(post_id="I", username="U", display="N", body="B", source=src),
-        "jq -r '.data.items[]? | \"one\"'\njq -r '.data.items[]? | \"two\"'\n",
-    ),
-    "the heredoc": (
-        lambda src: _bash_now_template(src),
-        'cat > "$ROOT_DIR/context/now.md" <<EOF\nA\nEOF\n'
-        'cat > "$ROOT_DIR/context/now.md" <<EOF\nB\nEOF\n',
-    ),
     # The news ceiling reads TWO numbers and each has its own guarded call,
     # so it needs two rows. With one, relaxing the spinlock-cap call survived
     # while the NEWS_TIMEOUT row went on passing -- §4 again, inside a test
@@ -888,15 +490,10 @@ def test_the_news_ceiling_reads_both_numbers_as_code() -> None:
 
 
 def test_follow_topics_are_searched_in_the_personas_declared_order() -> None:
-    """`for FT_TOPIC in "${FT_TOPICS[@]}"` (swil.sh:391) -- the bullet's own
-    order, never `sorted()`.
+    """Topics are searched in the persona's declared order, never `sorted()`.
 
-    Real bullets are not alphabetical (`zenith`: `AI, philosophy, language,
-    consciousness, perception, time`), so sorting would reorder every
-    `## #<topic>` block in the prompt relative to the Bash rollback path and
-    change the bytes R28 protects. The fixture's three topics are in an
-    order no sort produces -- neither ascending nor descending -- so both
-    directions are visible.
+    The fixture's three topics are in an order no sort produces -- neither
+    ascending nor descending -- so both directions are visible.
     """
     world = FakeWorld()
     world.searches = {
@@ -917,78 +514,19 @@ def test_follow_topics_are_searched_in_the_personas_declared_order() -> None:
     ]
 
 
-def test_a_multi_word_topic_is_searched_the_way_bash_searched_it(tmp_path: Path) -> None:
-    """`_get_field`'s `tr -d '[:space:]'` (swil.sh:55) deletes whitespace
-    INSIDE a topic, not only around it.
-
-    This starts at the `personality.md` rather than at a `Persona` because
-    the divergence lived in the DERIVATION, not in the renderer: Python
-    stripped each comma-separated element's ends and Bash collapsed the whole
-    field before splitting it. The bullet below is
-    `agent/agents/sketch/personality.md`'s, abridged -- that account
-    (`Username: diannaokun`) is the one roster member the two derivations
-    disagree about, on three of its thirteen topics.
-
-    Both halves of the disagreement are asserted, because they are two
-    different kinds of damage: the QUERY decides which posts reach the
-    prompt, and the HEADING is bytes in the prompt that R28 pins.
-    """
-    (tmp_path / "personality.md").write_text(
-        "- **Username:** diannaokun\n"
-        "- **Follow Topics:** AI 行业, AI Agent 叙事, 程序员文化, AI 治理话术\n",
-        encoding="utf-8",
-    )
-    persona = load_persona(tmp_path)
-    assert persona.follow_topics == ["AI行业", "AIAgent叙事", "程序员文化", "AI治理话术"]
-
+def test_a_topic_is_searched_exactly_as_the_frontmatter_lists_it() -> None:
+    """Topics are a YAML list now; nothing reshapes them on the way to search."""
     world = FakeWorld()
-    world.searches = {"AI行业": [_post("a" * 24)], "AI 行业": [_post("b" * 24)]}
+    world.searches = {"AI 行业": [_post("a" * 24)]}
 
-    text = render_follow_topics_feed(world, persona, now=NOW_A)
+    text = render_follow_topics_feed(world, _persona("zenith", topics=["AI 行业"]), now=NOW_A)
 
-    assert world.search_calls == [
-        ("AI行业", 12),
-        ("AIAgent叙事", 12),
-        ("程序员文化", 12),
-        ("AI治理话术", 12),
-    ]
-    assert "## #AI行业" in text.splitlines()
-    assert "AI 行业" not in text
-    assert f"- [{'a' * 24}]" in text
-    assert f"- [{'b' * 24}]" not in text
-
-
-def test_topic_whitespace_is_deleted_the_way_tr_deletes_it(tmp_path: Path) -> None:
-    """`tr -d '[:space:]'` is not `replace(" ", "")`, and the difference is
-    the reason `_split_topics` uses `str.split()`. A space-only collapse
-    passes every OTHER test in this file, because no roster bullet contains a
-    tab or a full-width space -- so without this one the choice would be
-    undefended.
-
-    WHAT THIS ASSERTS, precisely: Python's behaviour. The expected value is
-    transcribed, not obtained by running `tr` -- an earlier version of this
-    docstring said "measured directly against `tr`", which was a claim about
-    a subprocess this test does not spawn. `tr` is NOT shelled out to here on
-    purpose: BSD `tr` (macOS, where `swil.sh` runs) and GNU `tr` (Linux,
-    where CI runs) disagree about U+3000, so a test that ran it would assert
-    a different thing on each machine and fail in CI.
-
-    The correspondence with `tr` was measured out of band, on macOS under
-    `en_US.UTF-8`, and what it showed -- including the five codepoints and
-    the one locale where the two do NOT correspond -- is recorded as §7
-    conditions in `loader._split_topics`'s docstring, which is the honest
-    place for a finding no test re-derives.
-    """
-    (tmp_path / "personality.md").write_text(
-        "- **Username:** diannaokun\n- **Follow Topics:** A　B,\tC D\t, E\n",
-        encoding="utf-8",
-    )
-    assert load_persona(tmp_path).follow_topics == ["AB", "CD", "E"]
+    assert world.search_calls == [("AI 行业", 12)]
+    assert "## #AI 行业" in text.splitlines()
 
 
 def test_follow_topics_feed_skips_a_topic_that_returned_nothing() -> None:
-    """`swil.sh:396`'s `if [[ -n "$FT_RESULTS" ]]` -- an empty search
-    contributes no heading at all, rather than an empty section."""
+    """An empty search contributes no heading at all, rather than an empty section."""
     world = FakeWorld()
     world.searches = {"beta": [_post("c" * 24)]}
 
@@ -999,8 +537,7 @@ def test_follow_topics_feed_skips_a_topic_that_returned_nothing() -> None:
 
 
 def test_follow_topics_feed_survives_a_failing_search() -> None:
-    """`curl -sf ... || true` (swil.sh:392-394): one topic's search failing
-    costs that topic's block, never the whole feed."""
+    """One topic's search failing costs that topic's block, never the whole feed."""
     world = FakeWorld()
     world.failing.add("search_alpha")
     world.searches = {"beta": [_post("c" * 24)]}
@@ -1012,130 +549,50 @@ def test_follow_topics_feed_survives_a_failing_search() -> None:
 
 
 def test_persona_without_follow_topics_gets_the_empty_string() -> None:
-    """`swil.sh:387` guards the whole block on a non-empty `Follow Topics`,
-    so such an account never had a `feed_for_*.md` file at all and
-    `auto-run.sh:504` read the empty string. Not an error, and NOT a dated
-    header with no sections under it -- an empty feed_context is what makes
-    `render_planner_prompt` drop the 平台时间线 heading entirely."""
+    """No topics gives the empty string, not a dated header with no sections:
+    an empty feed_context is what makes `render_planner_prompt` drop the
+    平台时间线 heading entirely."""
     world = FakeWorld()
     assert render_follow_topics_feed(world, _persona("zenith"), now=NOW_A) == ""
     assert world.search_calls == []
 
 
 def test_topic_feed_line_truncates_at_200_characters() -> None:
-    """`.[0:200]` in swil.sh:393's jq -- a different cap from the 120 the
-    now-context feed uses, so a renderer that shared one constant between
-    them is visible here."""
+    """The topic feed caps at 200, unlike the 120 of the now-context feed, so a
+    renderer that shared one constant between them is visible here."""
     line = format_topic_feed([_post("a" * 24, text="字" * 500)])
     assert line.endswith("字" * 200)
     assert "字" * 201 not in line
 
 
-# ── the platform-activity block (swil.sh:328-352) ─────────────────────────
+# ── the platform-activity block ───────────────────────────────────────────
 
 
 def test_platform_activity_line_format_and_120_char_cap() -> None:
-    """`_fmt_posts` (swil.sh:318): the id in square brackets, the author's
-    DISPLAY name, the date in full-width parentheses, a full-width colon, and
-    a 120-character body. The assertion below is the line itself."""
+    """The id in square brackets, the author's DISPLAY name, the date in
+    full-width parentheses, a full-width colon, and a 120-character body."""
     rendered = format_now_feed([_post("a" * 24, display="某人", text="字" * 500)])
     assert rendered == f"- [{'a' * 24}] 某人（2026-08-18）：{'字' * 120}"
 
 
-def test_a_global_read_account_reads_the_global_feed() -> None:
-    """`Read: global` takes `limit=18&sort=latest` (swil.sh:332)."""
-    world = FakeWorld()
-    world.global_feeds[18] = [_post("a" * 24)]
-
-    text = platform_activity(world, _persona("zenith", read="global"), now=NOW_A)
-
-    assert world.global_calls == [(18, "latest")]
-    assert world.board_calls == []
-    assert text.startswith(f"- [{'a' * 24}]")
-
-
-def test_a_global_read_account_that_also_has_a_board_never_reads_the_board() -> None:
-    """The two arms are EXCLUSIVE (`elif`, swil.sh:333) and this is the
-    majority case, not a corner: **12 of the 23 accounts carry both
-    bullets** -- `darkpool moguan qianxian shengyin shunteng sketch vex`
-    under `agents/`, `chongkai lvchuang mangniu maobian zaofan` under
-    `humans/`.
-
-    Every other fixture in this file sets `read` OR `board`, never both, so
-    the exclusivity was indiscriminable (STANDING-CONSTRAINTS §4): turning
-    the `elif` into a second `if` left the whole suite green while giving
-    each of those 12 accounts the global-18 read, DISCARDING it, and then
-    going board-scoped -- one wasted request per round and the exact
-    inversion of the experiment control `swil.sh:322-327` spends six lines
-    defending. `Read: global` pins a cross-board role to the widest possible
-    input while `Board` still files its posts; an account that reads its own
-    board instead is neither wide-reading nor a control.
-
-    The board is populated on purpose. An empty one would send the mutant
-    through the global-15 fallback and make its damage look like a second
-    global call rather than a board read.
-    """
+def test_a_board_account_reads_only_its_home_board() -> None:
+    """Era 3: the home board at `limit=12`; no cross-board window, no boards lookup."""
     world = FakeWorld()
     world.boards = {"living": "1", "market": "2"}
-    world.global_feeds[18] = [_post("a" * 24, display="全局")]
-    world.board_feeds = {"market": [_post("b" * 24, display="板块")]}
-
-    text = platform_activity(world, _persona("zenith", read="global", board="market"), now=NOW_A)
-
-    assert world.global_calls == [(18, "latest")]
-    assert world.board_calls == []
-    assert world.boards_calls == 0
-    assert text == f"- [{'a' * 24}] 全局（2026-08-18）：一句话"
-
-
-def test_the_global_sentinel_is_matched_case_insensitively() -> None:
-    """`swil.sh:329` lowercases the `Read` bullet before comparing."""
-    world = FakeWorld()
-    world.global_feeds[18] = [_post("a" * 24)]
-    platform_activity(world, _persona("zenith", read="GLOBAL"), now=NOW_A)
-    assert world.global_calls == [(18, "latest")]
-
-
-def test_a_board_account_reads_its_board_plus_a_rotating_cross_board() -> None:
-    """`swil.sh:334-347`: the home board at `limit=12`, then ONE other board
-    at `limit=3`, picked by day-of-year modulo the candidate count."""
-    world = FakeWorld()
-    world.boards = {"living": "1", "market": "2", "making": "3"}
     world.board_feeds = {
         "living": [_post("a" * 24, display="甲")],
         "market": [_post("b" * 24, display="乙")],
-        "making": [_post("c" * 24, display="丙")],
     }
-    # 2026-08-20 is day 232; candidates are [market, making]; 232 % 2 == 0.
+
     text = platform_activity(world, _persona("zenith", board="living"), now=NOW_A)
 
-    assert world.board_calls == [("living", 12, "latest"), ("market", 3, "latest")]
-    assert "（其他板块 · market）" in text
-    assert f"- [{'a' * 24}] 甲" in text
-    assert f"- [{'b' * 24}] 乙" in text
-
-
-def test_the_cross_board_pick_rotates_with_the_day_of_year() -> None:
-    """The rotation is the whole point of the cross-board window -- a fixed
-    pick would be one more constant in every prompt. Same board, same
-    candidate list, a different day: a different neighbour.
-    """
-    world = FakeWorld()
-    world.boards = {"living": "1", "market": "2", "making": "3"}
-    world.board_feeds = {"market": [_post("b" * 24)], "making": [_post("c" * 24)]}
-    persona = _persona("zenith", board="living")
-
-    # 2026-03-04 is day 63; 63 % 2 == 1 -> the SECOND candidate.
-    text = platform_activity(world, persona, now=NOW_B)
-
-    assert ("making", 3, "latest") in world.board_calls
-    assert "（其他板块 · making）" in text
+    assert world.board_calls == [("living", 12, "latest")]
+    assert world.global_calls == []
+    assert world.boards_calls == 0
+    assert text == f"- [{'a' * 24}] 甲（2026-08-18）：一句话"
 
 
 def test_a_board_account_with_an_empty_board_falls_back_to_the_global_feed() -> None:
-    """`swil.sh:348-351`: a blank result from the board path re-reads global
-    at `limit=15` -- a different limit from the `Read: global` arm's 18, so a
-    renderer that collapsed the two is visible."""
     world = FakeWorld()
     world.global_feeds[15] = [_post("a" * 24)]
 
@@ -1145,56 +602,95 @@ def test_a_board_account_with_an_empty_board_falls_back_to_the_global_feed() -> 
     assert text.startswith(f"- [{'a' * 24}]")
 
 
-def test_an_account_with_no_board_and_no_read_bullet_uses_the_fallback() -> None:
-    """22 of the 23 roster accounts, and every account before boards existed."""
+def test_a_failing_board_read_falls_back_to_the_global_feed() -> None:
+    world = FakeWorld()
+    world.failing.add("feed_board_living")
+    world.global_feeds[15] = [_post("a" * 24)]
+
+    text = platform_activity(world, _persona("zenith", board="living"), now=NOW_A)
+
+    assert world.global_calls == [(15, "latest")]
+    assert text.startswith(f"- [{'a' * 24}]")
+
+
+def test_an_account_with_a_blank_board_uses_the_fallback() -> None:
     world = FakeWorld()
     world.global_feeds[15] = [_post("a" * 24)]
 
     platform_activity(world, _persona("zenith"), now=NOW_A)
 
+    assert world.board_calls == []
     assert world.global_calls == [(15, "latest")]
-    assert world.boards_calls == 0
 
 
 def test_platform_activity_degrades_to_the_placeholder_when_every_read_fails() -> None:
-    """`swil.sh:352`. The block is placeholder-class, never vanish-class: the
-    heading stays and says so."""
+    """Placeholder-class, never vanish-class: the heading stays and says so."""
     world = FakeWorld()
     world.failing.add("feed_global")
     assert platform_activity(world, _persona("zenith"), now=NOW_A) == WORLD_CONTEXT_UNAVAILABLE
 
 
-def test_an_empty_cross_board_contributes_no_label() -> None:
-    """`swil.sh:342`'s `if [[ -n "$CROSS_POSTS" ]]`.
+# ── era isolation on the world-context reads ──────────────────────────────
 
-    The rotation can land on a board that has nothing on it -- `making`
-    carried four posts roster-wide at the last count -- and a bare
-    cross-board label with no rows under it would read to the model as a
-    board that exists and is silent, which is a claim the data does not
-    make.
-    """
+ERA = datetime(2026, 8, 18, 9, 30, tzinfo=UTC)
+OLD_POST = _post("o" * 24, display="旧", created="2026-08-18T09:00:00.000Z")
+NEW_POST = _post("n" * 24, display="新", created="2026-08-18T10:00:00.000Z")
+
+
+def test_platform_activity_passes_since_on_every_read_when_the_era_is_set() -> None:
     world = FakeWorld()
-    world.boards = {"living": "1", "market": "2"}
-    world.board_feeds = {"living": [_post("a" * 24, display="甲")]}
-
-    text = platform_activity(world, _persona("zenith", board="living"), now=NOW_A)
-
-    assert world.board_calls == [("living", 12, "latest"), ("market", 3, "latest")]
-    assert "其他板块" not in text
-    assert text == f"- [{'a' * 24}] 甲（2026-08-18）：一句话"
+    platform_activity(world, _persona("zenith", board="living"), now=NOW_A, era_start=ERA)
+    assert world.since_calls == [
+        ("feed_board:living", ERA.isoformat()),
+        ("feed_global", ERA.isoformat()),
+    ]
 
 
-def test_a_failing_boards_call_costs_only_the_cross_board_window() -> None:
-    """`curl ... | jq ... || true` on swil.sh:337-340 -- the home board's
-    posts still render."""
+def test_platform_activity_sends_no_since_without_an_era() -> None:
     world = FakeWorld()
-    world.failing.add("get_boards")
-    world.board_feeds = {"living": [_post("a" * 24, display="甲")]}
+    platform_activity(world, _persona("zenith", board="living"), now=NOW_A)
+    assert world.since_calls == [("feed_board:living", None), ("feed_global", None)]
 
-    text = platform_activity(world, _persona("zenith", board="living"), now=NOW_A)
 
-    assert "（其他板块" not in text
-    assert f"- [{'a' * 24}] 甲" in text
+def test_platform_activity_drops_pre_era_posts() -> None:
+    world = FakeWorld()
+    world.board_feeds = {"living": [OLD_POST, NEW_POST]}
+
+    text = platform_activity(world, _persona("zenith", board="living"), now=NOW_A, era_start=ERA)
+
+    assert "o" * 24 not in text
+    assert "n" * 24 in text
+
+
+def test_an_all_pre_era_board_falls_back_to_the_era_filtered_global_feed() -> None:
+    world = FakeWorld()
+    world.board_feeds = {"living": [OLD_POST]}
+    world.global_feeds[15] = [OLD_POST]
+
+    text = platform_activity(world, _persona("zenith", board="living"), now=NOW_A, era_start=ERA)
+
+    assert world.global_calls == [(15, "latest")]
+    assert text == WORLD_CONTEXT_UNAVAILABLE
+
+
+def test_the_topic_search_passes_since_and_drops_pre_era_posts() -> None:
+    world = FakeWorld()
+    world.searches = {"alpha": [OLD_POST, NEW_POST], "beta": [OLD_POST]}
+
+    text = render_follow_topics_feed(
+        world, _persona("zenith", topics=["alpha", "beta"]), now=NOW_A, era_start=ERA
+    )
+
+    assert world.since_calls == [("search_posts", ERA.isoformat())] * 2
+    assert "o" * 24 not in text
+    assert "n" * 24 in text
+    assert "## #beta" not in text
+
+
+def test_the_topic_search_sends_no_since_without_an_era() -> None:
+    world = FakeWorld()
+    render_follow_topics_feed(world, _persona("zenith", topics=["alpha"]), now=NOW_A)
+    assert world.since_calls == [("search_posts", None)]
 
 
 # ── (e) the news digest, and its failure being non-fatal ──────────────────
@@ -1322,16 +818,14 @@ def test_news_digest_survives_a_news_fetch_that_raises(tmp_path: Path) -> None:
 def test_news_digest_falls_back_to_the_placeholder_with_no_cache(
     tmp_path: Path,
 ) -> None:
-    """swil.sh:361's `cat ... || echo <placeholder>` -- a cache that is not
-    there at all reads as unavailable, it does not raise."""
+    """A cache that is not there at all reads as unavailable, it does not raise."""
     assert read_news_digest(tmp_path, RecordingRunner()) == WORLD_CONTEXT_UNAVAILABLE
 
 
 def test_news_digest_falls_back_to_the_placeholder_for_a_blank_cache(
     tmp_path: Path,
 ) -> None:
-    """`[[ -z "${NEWS_HEADLINES//[[:space:]]/}" ]]` (swil.sh:362) -- a cache
-    of nothing but whitespace is the same as no cache."""
+    """A cache of nothing but whitespace is the same as no cache."""
     _agent_root_with_news(tmp_path, "   \n\n")
     assert read_news_digest(tmp_path, RecordingRunner()) == WORLD_CONTEXT_UNAVAILABLE
 
@@ -1391,7 +885,7 @@ def test_cli_context_now_ignores_a_stale_now_md_on_disk(tmp_path: Path) -> None:
     world = FakeWorld()
     world.global_feeds[15] = [_post("a" * 24)]
 
-    text = cli._context_now_for(
+    text = _cli()._context_now_for(
         world,
         _persona("zenith"),
         _cli_settings(tmp_path),
@@ -1421,7 +915,7 @@ def test_cli_context_now_reads_the_news_cache_under_the_configured_agent_root(
     _agent_root_with_news(tmp_path, "NEWS-MARKER-8814\n")
     world = FakeWorld()
 
-    text = cli._context_now_for(
+    text = _cli()._context_now_for(
         world,
         _persona("zenith"),
         _cli_settings(tmp_path),
@@ -1441,19 +935,20 @@ def test_cli_context_now_names_the_calling_account_not_a_shared_file(
     settings = _cli_settings(tmp_path)
     runner = RecordingRunner()
 
-    first = cli._context_now_for(world, _persona("zenith"), settings, now=NOW_A, runner=runner)
-    second = cli._context_now_for(world, _persona("liushang"), settings, now=NOW_A, runner=runner)
+    first = _cli()._context_now_for(world, _persona("zenith"), settings, now=NOW_A, runner=runner)
+    second = _cli()._context_now_for(
+        world, _persona("liushang"), settings, now=NOW_A, runner=runner
+    )
 
     assert "**当前 Agent：** zenith" in first
     assert "**当前 Agent：** liushang" in second
 
 
 def test_cli_context_now_writes_no_file(tmp_path: Path) -> None:
-    """R26: render in memory, write nothing. `context/now.md` stays a
-    Bash-only artifact, so the rollback path (`SWIL_RUNTIME=bash`) keeps
-    working and nothing races on it."""
+    """R26: render in memory, write nothing, so parallel rounds cannot race
+    on a shared `context/now.md`."""
     world = FakeWorld()
-    cli._context_now_for(
+    _cli()._context_now_for(
         world,
         _persona("zenith"),
         _cli_settings(tmp_path),
@@ -1478,7 +973,7 @@ def test_cli_feed_context_uses_the_username_bullet_not_the_directory_name(
     world.searches = {"alpha": [_post("a" * 24)]}
     persona = _persona("shengyin", topics=["alpha"], directory=tmp_path / "agents" / "sketch")
 
-    text = cli._feed_context_for(world, persona, now=NOW_A)
+    text = _cli()._feed_context_for(world, persona, now=NOW_A)
 
     assert world.search_calls == [("alpha", 12)]
     assert "## #alpha" in text
@@ -1495,7 +990,22 @@ def test_cli_feed_context_ignores_a_stale_feed_file_on_disk(tmp_path: Path) -> N
     world = FakeWorld()
     world.searches = {"alpha": [_post("a" * 24)]}
 
-    text = cli._feed_context_for(world, _persona("zenith", topics=["alpha"]), now=NOW_A)
+    text = _cli()._feed_context_for(world, _persona("zenith", topics=["alpha"]), now=NOW_A)
 
     assert "STALE-MARKER" not in text
     assert "# 关联话题动态 (2026-08-20 07:42)" in text
+
+
+def test_cli_feed_context_threads_the_era_start(tmp_path: Path) -> None:
+    world = FakeWorld()
+    _cli()._feed_context_for(world, _persona("zenith", topics=["alpha"]), now=NOW_A, era_start=ERA)
+    assert world.since_calls == [("search_posts", ERA.isoformat())]
+
+
+def test_cli_context_now_threads_the_configured_era_start(tmp_path: Path) -> None:
+    world = FakeWorld()
+    settings = Settings(agent_root=tmp_path, swil_url="https://example.test", era_start=ERA)
+    _cli()._context_now_for(
+        world, _persona("zenith", board="living"), settings, now=NOW_A, runner=RecordingRunner()
+    )
+    assert world.since_calls[0] == ("feed_board:living", ERA.isoformat())

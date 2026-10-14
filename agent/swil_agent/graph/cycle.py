@@ -1,57 +1,38 @@
-"""The cycle graph: spec §5.4's nine nodes, Plan 4's two observability nodes
-and the population-cohesion tail, wired together, plus the two things that
-wrap a whole run -- the lease and the checkpointer.
+"""The cycle graph: the act nodes, the dream nodes and the population-cohesion
+tail, wired together, plus the two things that wrap a whole run -- the lease
+and the checkpointer.
 
 ```
 login → plan → guardrail → execute → behavior_snapshot ─┐
           │        │                                     │
-          │        └ (veto / empty) ────────────────────→ rule_check → dream
-          │                                                             │
-          └ (offline / dead backend) ──────────────────────→ logout      ↓
-                                                                 gate → write → snapshot
-                                                                  └ (reject) → keep original
+          │        └ (veto / empty) ───────────────────→ dream → write → snapshot
+          │                                                 │
+          └ (offline / dead backend) ───────→ logout ←──────┘ (no list)
 
   ... every path ends: → logout → population_metric → END
 ```
 
 `population_metric` is the cycle's tail: EVERY path reaches `logout`, and
 `logout -> population_metric -> END` is unconditional, so one
-population-cohesion sample lands per cycle. It sits after `logout` rather
-than before it because `logout` is the ACCOUNT's terminal record and this is
-a reading of the whole population -- see `make_population_metric_node`.
+population-cohesion sample lands per cycle. It sits after `logout` because
+`logout` is the ACCOUNT's terminal record and this is a reading of the whole
+population -- see `make_population_metric_node`.
 
-`behavior_snapshot` and `rule_check` are the two steps `cycle-one.sh` and
-`auto-run.sh` perform and Plan 3's cycle did not (spec §15.1 row 21). Their
-POSITIONS are contracts, not layout: `behavior_snapshot` is the act phase's
-tail (`auto-run.sh:806`, once per act round), and `rule_check` is the dream
-phase's HEAD (`cycle-one.sh:45`) because the dream rewrites the very
-`personality.md` it parses its rules out of. Both are fail-soft and both are
-skipped entirely under `--dry-run`.
+`behavior_snapshot` is the act phase's tail (once per act round); it is
+fail-soft and skipped entirely under `--dry-run`.
 
-Plus two loops, both **default OFF** (`CycleConfig`): loop 3 sends
-`behavior_snapshot` back to `login` for another act round (`max_rounds`),
-loop 2 sends a rejected `gate` back to `dream` for one more candidate
-(`max_dream_attempts`) -- back to `dream`, NOT to `rule_check`, so a retried
-dream cannot file a second, identical `rule_check` event. They are
-built rather than omitted so enabling one is a config change instead of a
-topology change -- but a graph that loops by DEFAULT doubles every account's
-LLM spend, so both defaults are 1 and
-`test_the_default_configuration_takes_neither_loop` is what keeps them there.
+Loop 3 (**default OFF**, `CycleConfig.max_rounds`) sends `behavior_snapshot`
+back to `login` for another act round. It is built rather than omitted so
+enabling it is a config change instead of a topology change -- but a graph
+that loops by DEFAULT multiplies every account's spend, so the default is 1.
 
 **Where the business logic is not.** Every decision this module makes about
 *whether* something may happen is delegated: "does this outcome still grant a
 dream" is `ActResult.grants_dream` (design spec §7.1), constructed here rather
 than reimplemented, so the graph and the CLI cannot answer it differently.
-What is left is routing.
-
-**The rejected dream is NOT routed around the write.** `gate → write →
-snapshot` is unconditional (outside loop 2), because `write_step` and
-`snapshot_step` guard INTERNALLY on `verdict.accepted` and `written`. §5.4's
-"(reject) → keep original → snapshot" IS that path: `write_step` under a
-rejecting verdict keeps the original. Branching here instead would move the
-constitution layer's decision into an edge, where deleting the guard costs
-nothing and defeating the gate costs one mis-drawn arrow (standing constraint
-§5; the same reasoning `run_dream` records for itself).
+What is left is routing. `dream` routes to `write` only when it produced a
+list, and `write_step` / `snapshot_step` still guard internally on `recent`
+and `written`, so a mis-drawn edge writes nothing.
 
 **No node declares a `timeout=`.** Measured 2026-08-18 (spec §5.4 as
 corrected): `compile()` raises `ValueError: Node timeouts are only supported
@@ -79,26 +60,22 @@ account post again over its own ceiling. `run_cycle` refuses `max_rounds > 1`
 against a single frozen `CycleDeps` rather than letting that happen quietly.
 
 **The lease wraps the whole cycle, and both halves of it.** A cycle acts AND
-dreams, and Bash locks those separately (`lock_<name>`, auto-run.sh:407;
-`dream_lock_<name>`, dream.sh:460), so both leases are held for the whole run
--- a `dream.sh` that only checked its own lock would otherwise rewrite
-`personality.md` under a cycle that is dreaming. It is held by this function
-and not by a node: a context manager cannot span nodes, and `login_step`'s own
-lock is deliberately discarded by the login node for exactly that reason.
+dreams, and the two phases lock separately (`lock_<name>`,
+`dream_lock_<name>`), so both leases are held for the whole run -- a dream
+that only checked its own lock would otherwise rewrite `personality.md`
+under a cycle that is dreaming. It is held by this function and not by a node: a context manager
+cannot span nodes, and
+`login_step`'s own lock is deliberately discarded by the login node for exactly that reason.
 
 **`heartbeat()` is called from here, between nodes.** `run_cycle` drives the
 graph with `stream(stream_mode="values")` rather than `invoke`, and beats both
 leases after every superstep -- so each beat immediately precedes the next
 node's execution and the 1800s staleness window restarts at that node's start.
 Without any caller, a cycle running longer than `LEASE_TTL_SECONDS` has its
-lock file reclaimed by the next Bash round WHILE STILL HOLDING IT, and both
-runtimes act on the same account. The residual gap is a SINGLE node that
-outruns the window on its own: the `gate` node's cold-cache worst case is
-~6x 300s = ~1800s (spec §15.1 row 15). Beating from inside a node would
-require the node layer to know about leases, which is the coupling §5.4's
-split exists to avoid; a background thread would beat during a long node but
-would write to the lease's `sqlite3.Connection` from a second thread. Recorded
-rather than solved here.
+lock file reclaimed by the next round WHILE STILL HOLDING IT. No single node
+outruns the window on its own: the longest is one LLM call capped at 300s.
+The dream's `write_recent` holds no lock of its own and relies on this lease
+for `dream_lock_<name>`.
 """
 
 from __future__ import annotations
@@ -131,13 +108,11 @@ from swil_agent.graph.nodes import (
     make_behavior_snapshot_node,
     make_dream_node,
     make_execute_node,
-    make_gate_node,
     make_guardrail_node,
     make_login_node,
     make_logout_node,
     make_plan_node,
     make_population_metric_node,
-    make_rule_check_node,
     make_snapshot_node,
     make_write_node,
 )
@@ -152,9 +127,7 @@ PLAN: Final = "plan"
 GUARDRAIL: Final = "guardrail"
 EXECUTE: Final = "execute"
 BEHAVIOR_SNAPSHOT: Final = "behavior_snapshot"
-RULE_CHECK: Final = "rule_check"
 DREAM: Final = "dream"
-GATE: Final = "gate"
 WRITE: Final = "write"
 SNAPSHOT: Final = "snapshot"
 LOGOUT: Final = "logout"
@@ -210,7 +183,7 @@ POPULATION_METRIC: Final = "population_metric"
 # `bool` and swallows `httpx.HTTPError` itself, so a flaky probe yields
 # `online=False` -> `ActOutcome.OFFLINE`, a legitimate round outcome, not an
 # exception. Retrying it would also diverge from Bash, which probes exactly
-# once per round in Main (`auto-run.sh:833-840`) for the whole roster.
+# once per round in Main for the whole roster.
 LOGIN_RETRY: Final = RetryPolicy(max_attempts=2, retry_on=(TransportError,))
 
 # `plan` gets NO retry, and that is the measured answer rather than an
@@ -244,7 +217,6 @@ PLAN_RETRY: Final = RetryPolicy(max_attempts=1)
 # retry instead.
 EXECUTE_RETRY: Final = RetryPolicy(max_attempts=2, retry_on=(TransportError,))
 DREAM_RETRY: Final = RetryPolicy(max_attempts=1)
-GATE_RETRY: Final = RetryPolicy(max_attempts=1)
 
 # `snapshot` is fail-soft and must never block the cycle -- and it already is,
 # INSIDE the step: `snapshot_step` catches `(EmbedderUnavailable,
@@ -259,16 +231,12 @@ GATE_RETRY: Final = RetryPolicy(max_attempts=1)
 # round, and the step already fails open on it.
 SNAPSHOT_RETRY: Final = RetryPolicy(max_attempts=2, retry_on=(TransportError,))
 
-# Both loops OFF. `max_rounds=1` is one act round; `max_dream_attempts=1` is
-# one dream, i.e. no retry. Two is the ceiling §5.4 allows for the dream
-# ("max 1 retry"); more is refused rather than silently tripling the spend.
+# Loop 3 OFF: one act round per cycle.
 DEFAULT_MAX_ROUNDS: Final = 1
-DEFAULT_MAX_DREAM_ATTEMPTS: Final = 1
-MAX_DREAM_ATTEMPTS_CEILING: Final = 2
 
-# LangGraph's own default. Every extra round costs 4 supersteps and every
-# extra dream attempt 2, so the derived limit only ever exceeds this for
-# configurations that turn a loop on.
+# LangGraph's own default. Every extra act round costs 5 supersteps, so the
+# derived limit only ever exceeds this for a configuration that turns loop 3
+# on.
 _DEFAULT_RECURSION_LIMIT: Final = 25
 
 # `%Y%m%dT%H%M%S` and not `isoformat()`: `thread_id` splits on `":"`, and an
@@ -282,24 +250,14 @@ _LEASE_KINDS: Final[tuple[LeaseKind, ...]] = ("act", "dream")
 
 @dataclass(frozen=True)
 class CycleConfig:
-    """The two loop bounds. Validated at construction, because every invalid
-    value here is an expensive one -- an unbounded act loop is an unbounded
-    number of posts, and an unbounded dream loop is an unbounded number of
-    LLM calls."""
+    """The act-loop bound. Validated at construction: an unbounded act loop is
+    an unbounded number of posts."""
 
     max_rounds: int = DEFAULT_MAX_ROUNDS
-    max_dream_attempts: int = DEFAULT_MAX_DREAM_ATTEMPTS
 
     def __post_init__(self) -> None:
         if self.max_rounds < 1:
             raise ValueError("max_rounds must be at least one act round")
-        if self.max_dream_attempts < 1:
-            raise ValueError("max_dream_attempts must be at least one dream attempt")
-        if self.max_dream_attempts > MAX_DREAM_ATTEMPTS_CEILING:
-            raise ValueError(
-                "spec §5.4 allows at most one dream retry, i.e. "
-                f"max_dream_attempts <= {MAX_DREAM_ATTEMPTS_CEILING}"
-            )
 
 
 DepsProvider = Callable[[int], CycleDeps]
@@ -342,14 +300,9 @@ def _grants_dream(state: CycleState) -> bool:
     outcome that has not been decided yet (the act phase is still running)
     denies nothing.
 
-    NOTE this is a deliberate, spec'd divergence from `cycle-one.sh`, which
-    skips the dream on ANY non-zero `auto-run.sh` exit -- including a rhythm
-    veto and an empty plan. §7.1 calls that conflation the reason "an empty
-    plan came to cost a personality evolution", and `finalize_step` already
-    records the same change point on the `landed == 0` branch. Since Plan 4
-    the SAME decision also gates `/lab`'s F4 and fidelity series, because
-    `rule_check` is the dream phase's entry node -- spec §7.9 records that as
-    its own dated change point.
+    Spec §7.1: a rhythm veto or an empty plan must not cost the account its
+    dream ("an empty plan came to cost a personality evolution"), and
+    `finalize_step` records the same on the `landed == 0` branch.
 
     EQUIVALENT MUTANT, conditionally (standing constraint §7): the last line
     can be replaced by a direct membership test
@@ -371,36 +324,18 @@ def _grants_dream(state: CycleState) -> bool:
 
 
 def _dream_phase_or_logout(state: CycleState) -> str:
-    """The ONE place the act phase can enter the dream PHASE, so the ONE
-    place a shadow round has to be stopped.
+    """The ONE place the act phase can enter the dream phase, so the ONE place
+    a shadow round has to be stopped.
 
-    The phase's entry node is `rule_check`, not `dream`: `cycle-one.sh:45`
-    samples rule adherence between `auto-run.sh` and `dream.sh`, inside the
-    same `if` that gates the dream, and it must run BEFORE the rewrite
-    because the rewrite replaces the document it parses (`cycle-one.sh:39-41`).
-    So every route that used to name `DREAM` here names `RULE_CHECK`, and
-    `rule_check -> dream` is the only unconditional edge into the dream.
-
-    Design spec §9.4: a dry run "builds context and produces a plan but
-    executes nothing and **writes nothing**". `run_act`'s `dry_run` is
-    threaded into the three act steps that write, but the dream path has no
-    equivalent -- `write_step` archives and rewrites `personality.md` and
-    `snapshot_step` publishes it, and neither takes a `dry_run` parameter to
-    be inert under (`dream/round.py` predates the shadow round and is frozen).
-    An unguarded dry cycle would therefore have rewritten 23 personalities and
-    uploaded 23 snapshots during the stage-3 round whose entire premise is
-    that Python never wrote.
-
-    Skipping the whole phase rather than only its two write steps is also what
-    §9.4 compares: rhythm policy, guardrail verdicts and veto lists are all
-    act-phase artefacts, and a dream nobody reads still costs one paid LLM
-    call per account. The write nodes carry their own `dry_run` guard as well
-    (`graph/nodes.py`), so this edge is the cheap path and not the only
-    defence -- standing constraint §5.
+    A dry run "builds context and produces a plan but executes nothing and
+    writes nothing" (design spec §9.4), and the dream phase writes
+    `personality.md` and publishes a snapshot, so a dry run skips it whole.
+    The dream-phase nodes also check `dry_run` themselves; this edge is the
+    cheap path, not the only defence.
     """
     if state.get("dry_run", False):
         return LOGOUT
-    return RULE_CHECK if _grants_dream(state) else LOGOUT
+    return DREAM if _grants_dream(state) else LOGOUT
 
 
 def _continue_or_logout(next_node: str) -> _Router:
@@ -433,8 +368,8 @@ def _after_execute(config: CycleConfig) -> _Router:
 
     `round_index` counts act rounds COMPLETED (the execute node increments
     it), so it doubles as the index of the deps the next round needs. The
-    router hangs off `behavior_snapshot` because `auto-run.sh:806` samples at
-    the end of EACH `run_agent` call, i.e. once per act round -- putting it
+    router hangs off `behavior_snapshot` because the sample is taken at
+    the end of EACH act round -- putting it
     after this branch instead would sample only the last round of a loop-3
     configuration."""
 
@@ -447,25 +382,9 @@ def _after_execute(config: CycleConfig) -> _Router:
 
 
 def _after_dream(state: CycleState) -> str:
-    """A cooldown SKIP, an empty rewrite and a blown deadline all leave
-    `candidate` unset, and the gate node `_require`s it -- an unconditional
-    edge would turn every quiet round into a `NodeStateError`."""
-    return GATE if state.get("candidate") else LOGOUT
-
-
-def _after_gate(config: CycleConfig) -> _Router:
-    """Loop 2, and ONLY loop 2. A rejection that has no retry budget left
-    still goes to `write` -- see the module docstring on why the reject path
-    is not an edge around it."""
-
-    def route(state: CycleState) -> str:
-        verdict = state.get("verdict")
-        rejected = verdict is not None and not verdict.accepted
-        if rejected and state.get("dream_attempt", 0) < config.max_dream_attempts:
-            return DREAM
-        return WRITE
-
-    return route
+    """A cooldown SKIP, a failed reply and a blown deadline produce no list:
+    there is nothing to write or snapshot, so they go straight to logout."""
+    return WRITE if state.get("recent") is not None else LOGOUT
 
 
 def _deps_of(runtime: Runtime[CycleContext], state: CycleState) -> CycleDeps:
@@ -500,13 +419,6 @@ def _execute_node(state: CycleState, *, runtime: Runtime[CycleContext]) -> Cycle
     return update
 
 
-def _dream_node(state: CycleState, *, runtime: Runtime[CycleContext]) -> CycleState:
-    """`dream`, plus loop 2's counter -- §5.4's "attempt recorded"."""
-    update = make_dream_node(_deps_of(runtime, state))(state)
-    update["dream_attempt"] = state.get("dream_attempt", 0) + 1
-    return update
-
-
 def build_cycle(config: CycleConfig | None = None) -> CycleGraph:
     """Assemble the cycle graph. Takes no deps: they arrive per invocation
     through `CycleContext`, so the shape can be compiled and inspected
@@ -524,9 +436,7 @@ def build_cycle(config: CycleConfig | None = None) -> CycleGraph:
     graph.add_node(GUARDRAIL, _bind(make_guardrail_node))
     graph.add_node(EXECUTE, _execute_node, retry_policy=EXECUTE_RETRY)
     graph.add_node(BEHAVIOR_SNAPSHOT, _bind(make_behavior_snapshot_node))
-    graph.add_node(RULE_CHECK, _bind(make_rule_check_node))
-    graph.add_node(DREAM, _dream_node, retry_policy=DREAM_RETRY)
-    graph.add_node(GATE, _bind(make_gate_node), retry_policy=GATE_RETRY)
+    graph.add_node(DREAM, _bind(make_dream_node), retry_policy=DREAM_RETRY)
     graph.add_node(WRITE, _bind(make_write_node))
     graph.add_node(SNAPSHOT, _bind(make_snapshot_node), retry_policy=SNAPSHOT_RETRY)
     graph.add_node(LOGOUT, _bind(make_logout_node))
@@ -535,12 +445,10 @@ def build_cycle(config: CycleConfig | None = None) -> CycleGraph:
     graph.add_edge(START, LOGIN)
     graph.add_conditional_edges(LOGIN, _continue_or_logout(PLAN), [PLAN, LOGOUT])
     graph.add_conditional_edges(PLAN, _continue_or_logout(GUARDRAIL), [GUARDRAIL, LOGOUT])
-    graph.add_conditional_edges(GUARDRAIL, _after_guardrail, [EXECUTE, RULE_CHECK, LOGOUT])
+    graph.add_conditional_edges(GUARDRAIL, _after_guardrail, [EXECUTE, DREAM, LOGOUT])
     graph.add_edge(EXECUTE, BEHAVIOR_SNAPSHOT)
-    graph.add_conditional_edges(BEHAVIOR_SNAPSHOT, _after_execute(cfg), [LOGIN, RULE_CHECK, LOGOUT])
-    graph.add_edge(RULE_CHECK, DREAM)
-    graph.add_conditional_edges(DREAM, _after_dream, [GATE, LOGOUT])
-    graph.add_conditional_edges(GATE, _after_gate(cfg), [DREAM, WRITE])
+    graph.add_conditional_edges(BEHAVIOR_SNAPSHOT, _after_execute(cfg), [LOGIN, DREAM, LOGOUT])
+    graph.add_conditional_edges(DREAM, _after_dream, [WRITE, LOGOUT])
     graph.add_edge(WRITE, SNAPSHOT)
     graph.add_edge(SNAPSHOT, LOGOUT)
     graph.add_edge(LOGOUT, POPULATION_METRIC)
@@ -550,12 +458,9 @@ def build_cycle(config: CycleConfig | None = None) -> CycleGraph:
 
 def _recursion_limit(config: CycleConfig) -> int:
     """Five supersteps per act round (`login`, `plan`, `guardrail`, `execute`,
-    `behavior_snapshot`), two per dream attempt, plus the `rule_check` /
-    `write` / `snapshot` / `logout` / `population_metric` tail and START. Only
-    exceeds LangGraph's own default for a configuration that turns a loop on
-    -- but a `GraphRecursionError` on the round that finally enables loop 3
-    would be a confusing way to learn that."""
-    needed = 5 * config.max_rounds + 2 * config.max_dream_attempts + 8
+    `behavior_snapshot`), plus the `dream` / `write` / `snapshot` / `logout` /
+    `population_metric` tail and START."""
+    needed = 5 * config.max_rounds + 6
     return max(_DEFAULT_RECURSION_LIMIT, needed)
 
 
@@ -609,11 +514,11 @@ def run_cycle(
 
     Identity: the lease, the log lines and `CycleState["agent"]` all use the
     persona DIRECTORY name (`agent_dir_name`), never the `Username` bullet --
-    `auto-run.sh:407` derives it with `basename`, and the two diverge on this
-    roster. `round_id` defaults to `deps.now` formatted, so a resumed thread
-    id is reproducible from the same moment; `run_id` defaults to a fresh
-    uuid, because `RunLease`'s release is identity-scoped and a successor must
-    never be mistakable for the holder it replaced.
+    the `Username` bullet and the directory name can differ. `round_id`
+    defaults to `deps.now` formatted, so a resumed thread id is reproducible
+    from the same moment; `run_id` defaults to a fresh uuid, because
+    `RunLease`'s release is identity-scoped and a successor must never be
+    mistakable for the holder it replaced.
 
     `resume=True` streams **`None`** instead of the seed state, which is what
     actually continues an interrupted run: measured against langgraph 1.2.11,

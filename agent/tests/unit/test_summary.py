@@ -21,7 +21,6 @@ from pathlib import Path
 from swil_agent.analysis.summary import (
     EMPTY_LATEST,
     LATEST_MAX_CHARS,
-    TIP_LINE,
     AccountActivity,
     collect_activity,
     count_action,
@@ -138,8 +137,7 @@ def test_a_row_counts_the_four_kinds_for_the_named_date() -> None:
 
 def test_the_total_is_the_newline_count_not_the_line_count() -> None:
     """`wc -l` counts NEWLINES. A file with no trailing newline has one more
-    line than newlines, and this number is what `rotate-memory.sh` compares
-    against 500."""
+    line than newlines."""
     row = summarise_account("alpha", "a\nb\nc", DATE)
     assert row.total == 2
     assert len(memory_lines("a\nb\nc")) == 3
@@ -184,19 +182,17 @@ def _account(root: Path, cohort: str, name: str, memory: str | None = "x\n") -> 
     return directory
 
 
-def test_agents_come_before_humans_and_each_cohort_is_sorted(tmp_path: Path) -> None:
-    """Cohort order is the script's `for base in agents humans`, and within
-    a cohort bash's `*/` glob expands sorted. `aardvark` under humans/ sorts
-    before every agent name, so a port that merged and sorted once would put
-    it first."""
+def test_accounts_are_sorted_by_name(tmp_path: Path) -> None:
     _account(tmp_path, "agents", "zenith")
     _account(tmp_path, "agents", "chawendao")
+    assert [r.name for r in collect_activity(tmp_path, DATE)] == ["chawendao", "zenith"]
+
+
+def test_only_agents_is_read(tmp_path: Path) -> None:
+    """Era 3 has one cohort; a leftover `humans/` tree is not a roster."""
+    _account(tmp_path, "agents", "zenith")
     _account(tmp_path, "humans", "aardvark")
-    assert [r.name for r in collect_activity(tmp_path, DATE)] == [
-        "chawendao",
-        "zenith",
-        "aardvark",
-    ]
+    assert [r.name for r in collect_activity(tmp_path, DATE)] == ["zenith"]
 
 
 def test_an_account_without_a_memory_file_gets_no_row(tmp_path: Path) -> None:
@@ -207,9 +203,9 @@ def test_an_account_without_a_memory_file_gets_no_row(tmp_path: Path) -> None:
     assert [r.name for r in collect_activity(tmp_path, DATE)] == ["veteran"]
 
 
-def test_a_missing_cohort_directory_is_skipped(tmp_path: Path) -> None:
-    _account(tmp_path, "humans", "solo")
-    assert [r.name for r in collect_activity(tmp_path, DATE)] == ["solo"]
+def test_a_missing_agents_directory_yields_no_rows(tmp_path: Path) -> None:
+    (tmp_path / "logs").mkdir()
+    assert collect_activity(tmp_path, DATE) == []
 
 
 def test_an_empty_root_yields_no_rows(tmp_path: Path) -> None:
@@ -251,7 +247,6 @@ alpha              1     2     3     4    11   2026-08-19 13:15 | follow | @s
 zeta               0     0     0     0     0   (empty)
 
 Date: 2026-08-19
-Tip: bash scripts/rotate-memory.sh — archives memory.md when total > 500
 """
 
 
@@ -265,7 +260,7 @@ def test_the_rendered_dashboard_matches_the_scripts_layout(tmp_path: Path) -> No
     (see this module's docstring) -- this pin is what keeps it that way.
     """
     _account(tmp_path, "agents", "alpha", memory=_MEMORY)
-    _account(tmp_path, "humans", "zeta", memory="")
+    _account(tmp_path, "agents", "zeta", memory="")
     assert run_summary(tmp_path, date=DATE) == _EXPECTED
 
 
@@ -289,20 +284,22 @@ def test_the_header_and_rule_rows_are_present_on_an_empty_roster(tmp_path: Path)
     out = run_summary(tmp_path, date=DATE)
     assert out.splitlines()[0].startswith("ACCOUNT")
     assert out.splitlines()[1].startswith("─")
-    assert out.splitlines()[-2] == f"Date: {DATE}"
-    assert out.splitlines()[-1] == TIP_LINE
+    assert out.splitlines()[-1] == f"Date: {DATE}"
+    assert "rotate-memory" not in out
 
 
 def test_a_blank_line_precedes_the_footer(tmp_path: Path) -> None:
     """`echo ""` (:51)."""
     lines = run_summary(tmp_path, date=DATE).splitlines()
-    assert lines[-3] == ""
+    assert lines[-2] == ""
 
 
 def test_the_output_ends_with_a_newline(tmp_path: Path) -> None:
     """The script's last `echo` emits one; a CLI that prints this must not
     add a second."""
-    assert run_summary(tmp_path, date=DATE).endswith("500\n")
+    out = run_summary(tmp_path, date=DATE)
+    assert out.endswith(f"{DATE}\n")
+    assert not out.endswith("\n\n")
 
 
 def test_an_empty_latest_renders_as_the_placeholder() -> None:

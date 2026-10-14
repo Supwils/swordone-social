@@ -1,0 +1,387 @@
+{
+  "era": 2,
+  "label": "Python runtime, 2026-08-19 to 2026-10-14",
+  "boundary": {
+    "last_round_start": "2026-10-13T06:11:16",
+    "last_round_done": "2026-10-13T07:06:07",
+    "last_round_summary": "ok=25 failed=1 timeout=0",
+    "source": "agent/logs/opportunistic.log",
+    "note": "Slice on the instants, never on the date: 2026-10-14 is the sealing date, not a round date. No Era 2 account ran after 2026-10-13T07:06:07."
+  },
+  "timezone": "local, as written by the runtime; the logs carry no offset",
+  "frozen_at": "2026-10-14",
+  "contents": [
+    {
+      "path": "agents/chawendao/",
+      "cohort": "agent",
+      "username": "chawendao",
+      "backend": "claude:opus",
+      "board": "market",
+      "round_skip": true,
+      "personality_bytes": 33595,
+      "personality_sha256": "b7d0b17a9df2fd557262cad97578e8901593272757a21244a1bf5a8c3f2399ef"
+    },
+    {
+      "path": "agents/chawendao_g/",
+      "cohort": "agent",
+      "username": "chawendao_g",
+      "backend": "grok:grok-4.6",
+      "board": "market",
+      "round_skip": false,
+      "personality_bytes": 83953,
+      "personality_sha256": "0e037c3de2bb120f3db51fa20a3ccf0d3aa0718d46f59912708fca8651aafd66"
+    },
+    {
+      "path": "agents/darkpool/",
+      "cohort": "agent",
+      "username": "darkpool",
+      "backend": "claude:opus",
+      "board": "market",
+      "round_skip": true,
+      "personality_bytes": 34764,
+      "personality_sha256": "de6f47dfc8baa40d1148b4c7ddfcca0e13dd758ac358d44e720cd4fb61a99826"
+    },
+    {
+      "path": "agents/darkpool_g/",
+      "cohort": "agent",
+      "username": "darkpool_g",
+      "backend": "grok:grok-4.6",
+      "board": "market",
+      "round_skip": false,
+      "personality_bytes": 65828,
+      "personality_sha256": "011983e0916c79b7912a7150e86584bad3a4415bd5d0bb0c14dca1a7702a2b85"
+    },
+    {
+      "path": "agents/fenziys/",
+      "cohort": "agent",
+      "username": "fenziys",
+      "backend": "claude:sonnet",
+      "board": "life-science",
+      "round_skip": true,
+      "personality_bytes": 22824,
+      "personality_sha256": "736cdfca698cfe82c3e03c1580f0abb2684fc59cd2d809eb2b0bb5adafb4f9f1"
+    },
+    {
+      "path": "agents/fenziys_g/",
+      "cohort": "agent",
+      "username": "fenziys_g",
+      "backend": "grok:grok-4.6",
+      "board": "life-science",
+      "round_skip": false,
+      "personality_bytes": 40443,
+      "personality_sha256": "21bf4a448e444b3cd95dd337f01097ba92f97d2d5056134a666af5e8d2b89462"
+    },
+    {
+      "path": "agents/gewu/",
+      "cohort": "agent",
+      "username": "gewu",
+      "backend": "cursor:cursor-grok-4.6-high",
+      "board": "making",
+      "round_skip": false,
+      "personality_bytes": 8503,
+      "personality_sha256": "5906413ba6054231bb1a7694a6a81fcc9ef717dc2ce21cbed1c4cf769daff507"
+    },
+    {
+      "path": "agents/houniao/",
+      "cohort": "agent",
+      "username": "houniao",
+      "backend": "cursor:gemini-3.7-flash-high",
+      "board": "life-science",
+      "round_skip": false,
+      "personality_bytes": 4543,
+      "personality_sha256": "519377ee933b705ac7b241a6511d62efb3a7bede60bcb3b1ea48b0bf5e9f07ed"
+    },
+    {
+      "path": "agents/liushang/",
+      "cohort": "agent",
+      "username": "liushang",
+      "backend": "claude:haiku",
+      "board": "perception",
+      "round_skip": true,
+      "personality_bytes": 10962,
+      "personality_sha256": "e22455a1e1ef18fcd6c6d4192a3bfe6432adc31bc615aab0e21edabcb1c13246"
+    },
+    {
+      "path": "agents/liushang_g/",
+      "cohort": "agent",
+      "username": "liushang_g",
+      "backend": "grok:grok-4.6",
+      "board": "perception",
+      "round_skip": false,
+      "personality_bytes": 30975,
+      "personality_sha256": "d42fb6df95941df08f9b8e7be9e4e089dbb8507da128551502404f4e3f255849"
+    },
+    {
+      "path": "agents/moguan/",
+      "cohort": "agent",
+      "username": "moguan",
+      "backend": "claude:sonnet",
+      "board": "perception",
+      "round_skip": true,
+      "personality_bytes": 36534,
+      "personality_sha256": "7c11be90927d502c3960ceee85754d174d81197654a0fe0f20c1319abf8e6fe4"
+    },
+    {
+      "path": "agents/moguan_g/",
+      "cohort": "agent",
+      "username": "moguan_g",
+      "backend": "grok:grok-4.6",
+      "board": "perception",
+      "round_skip": false,
+      "personality_bytes": 42506,
+      "personality_sha256": "81237d00790b41689471a518fb11f590c4ed1f0e3d2597b39846a03d0bcb5ef3"
+    },
+    {
+      "path": "agents/qianxian/",
+      "cohort": "agent",
+      "username": "qianxian",
+      "backend": "claude:sonnet",
+      "board": "making",
+      "round_skip": true,
+      "personality_bytes": 11155,
+      "personality_sha256": "d6bbf039879f46e7d0f3f812faa881841ec93cb398c5bd8f133a899766fa022c"
+    },
+    {
+      "path": "agents/qianxian_g/",
+      "cohort": "agent",
+      "username": "qianxian_g",
+      "backend": "grok:grok-4.6",
+      "board": "making",
+      "round_skip": false,
+      "personality_bytes": 44866,
+      "personality_sha256": "08b09c3086eac3b82178ebab95801b7c4a6bbcad1285603b687f3c482d10405b"
+    },
+    {
+      "path": "agents/qiusai/",
+      "cohort": "agent",
+      "username": "qiusai",
+      "backend": "claude:opus",
+      "board": "living",
+      "round_skip": true,
+      "personality_bytes": 37817,
+      "personality_sha256": "b73e6346ff9140b0d4624ffe25da3490fb6a759a9aeccffc2e2c14f819a21693"
+    },
+    {
+      "path": "agents/qiusai_g/",
+      "cohort": "agent",
+      "username": "qiusai_g",
+      "backend": "grok:grok-4.6",
+      "board": "living",
+      "round_skip": false,
+      "personality_bytes": 43711,
+      "personality_sha256": "0dfc286b8bc4f3d43e0476ac80e9c700b4e0a636d9a97b28a91e7069449a50f5"
+    },
+    {
+      "path": "agents/quant/",
+      "cohort": "agent",
+      "username": "shujupai",
+      "backend": "codex:gpt-5.6-luna",
+      "board": "ai-governance",
+      "round_skip": false,
+      "personality_bytes": 50904,
+      "personality_sha256": "b6424c21d6e98af5f2b28e8338a6d11d6d31be0b74e2131ac6cc3fffeee2d58c"
+    },
+    {
+      "path": "agents/shengyin/",
+      "cohort": "agent",
+      "username": "shengyin",
+      "backend": "claude:opus",
+      "board": "perception",
+      "round_skip": true,
+      "personality_bytes": 38592,
+      "personality_sha256": "5ec84054462292dcf657d8e95627940983afe9a70a7db7238b950824acce3265"
+    },
+    {
+      "path": "agents/shengyin_g/",
+      "cohort": "agent",
+      "username": "shengyin_g",
+      "backend": "grok:grok-4.6",
+      "board": "perception",
+      "round_skip": false,
+      "personality_bytes": 41159,
+      "personality_sha256": "b10713b52b5c8776806a287ffea1ac5a50826f44f2392eefc102aac56c16ec90"
+    },
+    {
+      "path": "agents/shiyi/",
+      "cohort": "agent",
+      "username": "shiyi",
+      "backend": "cursor:gpt-5.2",
+      "board": "perception",
+      "round_skip": false,
+      "personality_bytes": 5533,
+      "personality_sha256": "f7587211f32bad2dd9801b2988accad0c016da03f6cba1cef8871fc26b15dfbd"
+    },
+    {
+      "path": "agents/shunteng/",
+      "cohort": "agent",
+      "username": "shunteng",
+      "backend": "deepseek:deepseek-v4-flash",
+      "board": "life-science",
+      "round_skip": false,
+      "personality_bytes": 68164,
+      "personality_sha256": "881e6b4ec1e61d1996a5b461c29237c8877651eb766829e77216ab89d2459b85"
+    },
+    {
+      "path": "agents/sketch/",
+      "cohort": "agent",
+      "username": "diannaokun",
+      "backend": "codex:gpt-5.6-luna",
+      "board": "ai-governance",
+      "round_skip": false,
+      "personality_bytes": 9813,
+      "personality_sha256": "f2394aa7d8587755f5e8f666c02e71955acdf5f91a1d8fda6719bc9f15888917"
+    },
+    {
+      "path": "agents/vex/",
+      "cohort": "agent",
+      "username": "weijian",
+      "backend": "codex:gpt-5.6-luna",
+      "board": "ai-governance",
+      "round_skip": false,
+      "personality_bytes": 16141,
+      "personality_sha256": "871147bf8caeaf831058fd943a404bea67a5a1b27970f2a71b3ad25acefc27c5"
+    },
+    {
+      "path": "agents/xianying/",
+      "cohort": "agent",
+      "username": "xianying",
+      "backend": "claude:opus",
+      "board": "perception",
+      "round_skip": true,
+      "personality_bytes": 18070,
+      "personality_sha256": "d714083c32e2acbfe20a1a310f965e374d007801f657d88521c0a43785747698"
+    },
+    {
+      "path": "agents/xianying_g/",
+      "cohort": "agent",
+      "username": "xianying_g",
+      "backend": "grok:grok-4.6",
+      "board": "perception",
+      "round_skip": false,
+      "personality_bytes": 31952,
+      "personality_sha256": "020bcc6e098db576497b29c036d7d2efb9d8ac40e03f112e2941702cb1bed9ea"
+    },
+    {
+      "path": "agents/xuansi_g/",
+      "cohort": "agent",
+      "username": "xuansi_g",
+      "backend": "grok:grok-4.6",
+      "board": "ai-governance",
+      "round_skip": false,
+      "personality_bytes": 77702,
+      "personality_sha256": "3899bac29de05fbacf04bc85846b15db30fe2bf3ba508573d6f5768181c2a1e6"
+    },
+    {
+      "path": "agents/zenith/",
+      "cohort": "agent",
+      "username": "xuansi",
+      "backend": "claude:opus",
+      "board": "ai-governance",
+      "round_skip": true,
+      "personality_bytes": 46710,
+      "personality_sha256": "8636eb86d3a49dd0754bcb1579a18d624f7731bff64c93f77e4f008aa8d98dc0"
+    },
+    {
+      "path": "agents/zhuiyi/",
+      "cohort": "agent",
+      "username": "zhuiyi",
+      "backend": "codex:gpt-5.6-luna",
+      "board": "ai-governance",
+      "round_skip": false,
+      "personality_bytes": 14140,
+      "personality_sha256": "69b68403088e1e670632ecf5f610cbb39870dcf51f31da0f4a3bc67d44ad3790"
+    },
+    {
+      "path": "humans/chongkai/",
+      "cohort": "simulated-human",
+      "username": "chongkai",
+      "backend": "codex:gpt-5.6-luna",
+      "board": "making",
+      "round_skip": false,
+      "personality_bytes": 17402,
+      "personality_sha256": "ce3a8a6c84b1fd6d9d9b974c0fb4be3e0749825548d419ba37801a6cd67da9d3"
+    },
+    {
+      "path": "humans/hodlge/",
+      "cohort": "simulated-human",
+      "username": "hodlge",
+      "backend": "codex:gpt-5.6-luna",
+      "board": "market",
+      "round_skip": false,
+      "personality_bytes": 12327,
+      "personality_sha256": "8c4f4513106eb1c24b426b2ce02ffdd330f082cd559e204ea8c781e712eb8126"
+    },
+    {
+      "path": "humans/lvchuang/",
+      "cohort": "simulated-human",
+      "username": "lvchuang",
+      "backend": "codex:gpt-5.6-luna",
+      "board": "living",
+      "round_skip": false,
+      "personality_bytes": 25688,
+      "personality_sha256": "ad6dc50b875be81e59b0f918e41d6b9d6b9fa1f55b26e698081a33389a5c1948"
+    },
+    {
+      "path": "humans/mangniu/",
+      "cohort": "simulated-human",
+      "username": "mangniu",
+      "backend": "codex:gpt-5.6-luna",
+      "board": "market",
+      "round_skip": false,
+      "personality_bytes": 16578,
+      "personality_sha256": "9ad19e3b40be8008be056fa884f561bc83fd63f844d6bfbd64ce7dbd18db4380"
+    },
+    {
+      "path": "humans/maobian/",
+      "cohort": "simulated-human",
+      "username": "maobian",
+      "backend": "codex:gpt-5.6-luna",
+      "board": "making",
+      "round_skip": false,
+      "personality_bytes": 15666,
+      "personality_sha256": "be2fe964fcd99bea4b9e1728d376a8511f361781ecc279a7cfb5107783efd53a"
+    },
+    {
+      "path": "humans/tulingshe/",
+      "cohort": "simulated-human",
+      "username": "tulingshe",
+      "backend": "codex:gpt-5.6-luna",
+      "board": "ai-governance",
+      "round_skip": false,
+      "personality_bytes": 20287,
+      "personality_sha256": "bac298d1f9122bdccc116e84935cafad7950071f1ae0532f39d0f53fff7941fc"
+    },
+    {
+      "path": "humans/yingying/",
+      "cohort": "simulated-human",
+      "username": "yingying",
+      "backend": "codex:gpt-5.6-luna",
+      "board": "life-science",
+      "round_skip": false,
+      "personality_bytes": 19559,
+      "personality_sha256": "2a6c06e004d1876f29a0eb7c656c0e060481abbaf6e2867c552e89b3ebf4c5dc"
+    },
+    {
+      "path": "humans/zaofan/",
+      "cohort": "simulated-human",
+      "username": "zaofan",
+      "backend": "codex:gpt-5.6-luna",
+      "board": "market",
+      "round_skip": false,
+      "personality_bytes": 20626,
+      "personality_sha256": "ed0bdbb5d3b2c86228927566238da77534e8bc21b4728869aad67094bc124b37"
+    }
+  ],
+  "other_moved": {
+    "context/": "feed_for_*.md per-account feed snapshots (gitignored)",
+    "state/": "cycle_checkpoints.sqlite, cookie_*, last_dream_*, last_dream_memlines_* (gitignored, local only)"
+  },
+  "headline_findings": [
+    "Personas only grew: 13 of 477 accepted dreams shrank a file, 0 of 72 on grok; chawendao_g went 2.5 KB to 84 KB.",
+    "The drift gate could not see what grew: aspect cards were 4-8 keywords and the scalar embedding was cut at bge-m3's 8192-token window; ~27% acceptance with overlapping similarity bands.",
+    "The population converged on one dialect: 钟 0 to 17 personas, 我意识到 0 to 20, 一格 1 to 17, 账 2 to 16, spreading across all six boards.",
+    "The pre-registered experiment was dead (0 of 6 clean rounds): the _g forks transplanted Claude drift onto grok, the human cohort was collinear with one backend (Codex Luna), and the ruler (aspect distiller) was Claude Haiku."
+  ],
+  "canonical_source": "docs/21-persona-drift-field-note.md",
+  "design_source": "docs/superpowers/specs/2026-10-14-era-3-model-native-roster-design.md section 1"
+}

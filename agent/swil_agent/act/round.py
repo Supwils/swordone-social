@@ -1,37 +1,14 @@
 """The act path as a sequence of steps, plus `run_act`, the function that
-composes them (design spec §7, contract `01` §1 + `02` §3-§5): health probe
--> lock -> `agentBackend` sync -> context -> rhythm -> plan -> guardrails ->
-execute -> mark-read -> tally.
+composes them: health probe -> lock -> `agentBackend` sync -> context ->
+rhythm -> plan -> guardrails -> duplicate guard + execute -> mark-read ->
+tally.
 
-This is the piece that replaces `auto-run.sh`'s exit-code contract
-(`return 66/75`, `rc=0`) with `ActOutcome`, a typed six-value enum. The
-mapping from "what happened this round" to "does the account still get a
-dream" is spelled out on `ActResult.grants_dream` (`models.py`) and is the
-actual deliverable here -- see the outcome-mapping table in
-`tests/unit/test_act_round.py`.
-
-Each stage of that sequence is a public function taking explicit arguments
-and returning a value -- `login_step`, `sync_backend_step`, `context_step`,
-`plan_step`, `guardrail_step`, `execute_step`, `finalize_step` -- with no
-shared mutable state between them and no class to instantiate. `run_act` is
-their composition and nothing else: it sequences them, takes the early
-returns between them, and assembles the `ActResult`.
-
-That split is the deliverable, not a tidying (Plan 3 ruling R4). Plan 3's
-`graph/nodes.py` adapts `CycleState` to these same functions, so the graph
-path and the direct CLI path run ONE implementation and cannot drift into
-two behaviours. Any logic that lived only inside `run_act`'s body would be
-logic the graph layer had to copy -- and a copy is exactly the failure this
-migration is structured to avoid. `test_act_round.py` is the oracle for
-that claim: it drives `run_act` end to end and must pass unchanged across
-any regrouping of these steps.
-
-Below the steps sit the underlying units, each independently public and
-independently tested (Tasks 1-6): `build_context`, `decide_rhythm`,
-`plan_round`, `apply_guardrails`, `execute_action`. The step functions add
-the WIRING between them (which rhythm field the planner gets, which
-contacts list the guardrails see) and the classifications the caller needs
-to name the round's `ActOutcome`.
+Each stage is a public function taking explicit arguments and returning a
+value -- `login_step`, `sync_backend_step`, `context_step`, `plan_step`,
+`guardrail_step`, `execute_step`, `finalize_step` -- with no shared mutable
+state. `run_act` is their composition and nothing else. `graph/nodes.py`
+adapts `CycleState` to these same functions, so the graph path and the direct
+CLI path run one implementation.
 """
 
 from __future__ import annotations
@@ -45,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Final, NamedTuple, Protocol
 
-from swil_agent.act.context import DEFAULT_CROSS_READ_PROB, build_context, overlay_probe_posts
+from swil_agent.act.context import build_context, overlay_probe_posts
 from swil_agent.act.executor import execute_action
 from swil_agent.act.guardrails import apply_guardrails
 from swil_agent.act.planner import plan_round
@@ -55,9 +32,9 @@ from swil_agent.api.resources import Resources
 from swil_agent.embedder.client import EmbedderUnavailable
 from swil_agent.llm.base import Backend
 from swil_agent.llm.extract import collapse_doubled_text
-from swil_agent.locks import FileLock, act_lock_path
+from swil_agent.locks import FileLock, LockBusy, act_lock_path, dream_lock_path
+from swil_agent.memory_rotation import rotate_memory
 from swil_agent.models import (
-    GLOBAL_READ_SCOPE,
     ActContext,
     Action,
     ActionResult,
@@ -138,33 +115,19 @@ def _memory_username(raw: str | None) -> str:
 
 
 def _memory_note(action: Action, result: ActionResult) -> str | None:
-    """The per-kind note text `swil.sh`'s `_remember()` would append
-    (contract `02` §4.2), or `None` when no memory.md line should be
-    written at all.
+    """The per-kind memory note text (contract `02` §4.2), or `None` when no
+    memory.md line should be written at all.
 
-    Gated on `result.call_succeeded`, NOT on `result.landed` (ruling R19):
-    every one of `_remember`'s real call sites only fires on a write that
-    actually happened (contract `02` §4.1) -- `post`/`comment`/`echo`/`dm`
-    gated on a non-empty server-assigned id, `like`/`follow` unconditionally
-    *after* their curl call did not already abort the case under `set -e`.
-    "Did not already abort" is precisely what `call_succeeded` means, and for
-    every kind but one it equals `landed`.
+    Gated on `result.call_succeeded`, NOT on `result.landed` (ruling R19): a
+    line is written only for a write that actually happened (contract `02`
+    §4.1). For every kind but `follow` the two are equal.
 
-    `follow` is that one kind, and gating on `landed` got it wrong. Bash keeps
-    the two decisions on two different levels: `auto-run.sh:243-252` returns 0
-    on BOTH branches ("Deliberately 0 either way: 'already following' is the
-    common outcome and is not a failed round"), so a 409 still counts as
-    landed -- but one level down, `swil.sh`'s own `follow` case
-    (swil.sh:679-683) never reaches `_remember` on that 409, because `_curl`
-    returns 1 for any status >= 400 (swil.sh:132-135) and `set -euo pipefail`
-    aborts the case at the failing pipeline. So Bash writes
-    `follow | @<user>` only on a genuine NEW follow, and "already following"
-    -- the common outcome -- records nothing.
-
-    This is not cosmetic: `memory.md` is the dream's input AND the unit
-    `DREAM_MIN_NEW_MEMORIES=8` counts, so a spurious line per repeat-follow
-    both shifts what every later dream reads and makes dreams fire earlier
-    than Bash would.
+    A `follow` that 409s ("already following", the common outcome) still
+    counts as landed -- it is not a failed round -- but the write did not
+    succeed, so it records nothing. `memory.md` is the dream's input AND the
+    unit `DREAM_MIN_NEW_MEMORIES=8` counts, so a spurious line per
+    repeat-follow would shift what every later dream reads and make dreams
+    fire earlier.
 
     The gate here is only half the fix, and on its own it was inert (ruling
     R20). `call_succeeded` is `False` only on `_execute_follow`'s EXCEPT
@@ -176,8 +139,7 @@ def _memory_note(action: Action, result: ActionResult) -> str | None:
     `test_an_already_following_409_warns_and_writes_no_memory_line`, not
     through a fake whose `follow()` re-raises whatever it is handed.
 
-    `nothing` never gets a line (contract `02` §4.1: "auto-run.sh's
-    `nothing` case never calls swil.sh").
+    `nothing` never gets a line (contract `02` §4.1).
     """
     if not result.call_succeeded or action.kind == "nothing":
         return None
@@ -192,8 +154,7 @@ def _memory_note(action: Action, result: ActionResult) -> str | None:
     elif action.kind == "comment":
         text = _memory_text(action.text)
         # The retry-succeeded-top-level path (contract 02 §2.2) writes NO
-        # parentId at all: swil.sh's own retry call passes no 4th argument,
-        # so its `_remember` never sees one either. `result.detail` is the
+        # parentId at all. `result.detail` is the
         # only signal left, after the fact, that this was that path.
         parent_tag = ""
         if action.parent_id and result.detail != _PARENT_UNUSABLE_DETAIL:
@@ -211,14 +172,7 @@ def _memory_note(action: Action, result: ActionResult) -> str | None:
         quote_tag = f" | {text[:_MEMORY_PREVIEW_CAP]}" if text else ""
         return f"echo | id={result.resource_id} echoOf={action.post_id}{quote_tag}"
     elif action.kind == "dm":
-        # Byte-matches swil.sh:711's `_remember "dm | to=$RECIPIENT
-        # conversationId=$CONV_ID | ${TEXT:0:80}"`. Fix round 1, item 4:
-        # an earlier version of this branch substituted `messageId=` here
-        # because `Resources.send_dm` used to return only the message id --
-        # `send_dm` now returns `(conversation_id, message_id)` (Task 1/6
-        # widened, see resources.py/executor.py) and `ActionResult` carries
-        # the conversation id in its own dedicated field, so this is a real
-        # byte-for-byte match now, not a documented substitute.
+        # `ActionResult` carries the conversation id in its own field.
         text = _memory_text(action.text)
         username = _memory_username(action.username)
         return (
@@ -236,7 +190,7 @@ def _memory_note(action: Action, result: ActionResult) -> str | None:
         )
 
 
-# `_remember`'s own whitelist (swil.sh:196). A note whose leading verb is not
+# `_remember`'s own whitelist. A note whose leading verb is not
 # one of these emits `action=""` -- which `LabEvent.to_wire` then OMITS from
 # the body entirely, so `/lab` records the event with no action facet rather
 # than with a made-up one. `echo` and `dm` are deliberately ABSENT: Bash's
@@ -246,8 +200,8 @@ _MEMORY_EVENT_ACTIONS: Final = frozenset(
     {"post", "comment", "like", "follow", "unfollow", "delete", "nothing"}
 )
 
-# `grep -Eo '(id|postId|commentId)=[a-f0-9]{24}' | head -1 | cut -d= -f2`
-# (swil.sh:194). Case-sensitive and unanchored, exactly as `grep -E` is: the
+# The first `id=`, `postId=` or `commentId=` followed by 24 hex characters.
+# Case-sensitive and unanchored, exactly as `grep -E` is: the
 # `conversationId=` in a `dm` note does NOT match (`Id` != `id`), so a dm's
 # memory event carries no targetId -- checked against the real note shapes,
 # not assumed.
@@ -255,7 +209,7 @@ _MEMORY_TARGET_RE: Final = re.compile(r"(?:id|postId|commentId)=([a-f0-9]{24})")
 
 
 def _flatten_note(note: str) -> str:
-    r"""`_remember`'s own normalisation of its argument (swil.sh:189-190):
+    r"""`_remember`'s own normalisation of its argument:
     `tr '\n' ' '` then `sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//'`.
 
     A RAW docstring on purpose: both of those are shell escapes, and in a
@@ -272,29 +226,17 @@ def _flatten_note(note: str) -> str:
 
 
 def _memory_event(note: str) -> LabEvent:
-    """The SECOND lab event `_remember` fires for every memory line
-    (swil.sh:192-202), independent of the `cycle/act/*` event
+    """The SECOND lab event fired for every memory line, independent of the `cycle/act/*` event
     `act/executor.py` already emits per action.
 
     So one successful `post` produces TWO POSTs to
-    `/agents/{username}/events` -- `cycle/act/success` from `auto-run.sh`'s
-    `emit_lab_event`, and `memory/memory/success` from `swil.sh`'s
-    `_remember`. Python emitted only the first, for every write action kind,
-    which halved what `/lab`'s memory surfaces saw. Captured in contract
-    `02` §372 and then lost between the contract and the plan: no task
-    covered it, no ruling decided it, no §15 row recorded it (ruling R21).
+    `/agents/{username}/events` -- `cycle/act/success` and `memory/memory/success`
+    (ruling R21); `/lab`'s memory surfaces read the second.
 
-    Field placement is `_lab_event`'s positional signature (swil.sh:206):
-    `type, phase, outcome, action, summary, reason, target_id, metrics`.
-    `_remember` passes `""` for `reason` and `"{}"` for `metrics`, and the
+    Field placement: `type, phase, outcome, action, summary, reason,
+    target_id, metrics`, with `reason` empty and `metrics` `"{}"`. The
     summary is the WHOLE flattened note -- uncapped, unlike the act events'
     200-char cap.
-
-    (An earlier version of this docstring warned that `auto-run.sh`'s
-    `emit_lab_event` wrapper used a DIFFERENT positional order. It does not:
-    `swil.sh:667-676` forwards `TYPE PHASE OUTCOME ACTION SUMMARY REASON
-    TARGET_ID METRICS` straight through in that same order. The warning was
-    fictional and is removed rather than left as a trap for the next reader.)
     """
     verb = note.split("|", 1)[0].strip()
     match = _MEMORY_TARGET_RE.search(note)
@@ -320,18 +262,18 @@ def _write_memory_line(
 ) -> None:
     """Append one line to `<directory>/memory.md` AND fire the
     `memory/memory/success` lab event, matching `_remember()`
-    (swil.sh:184-203) in both halves and in that ORDER.
+    in both halves and in that ORDER.
 
     The on-disk line is byte-for-byte `_remember`'s (contract `02` §4.2):
     `<YYYY-MM-DD> | <note>`. `directory` is `persona.directory` -- the same
     folder `resolve_agent_dir` returns and Bash calls `agent_dir` -- so this
     reads and writes the identical file a live Bash round would.
 
-    ORDER IS THE CONTRACT: the file append (swil.sh:190) happens BEFORE the
-    event (swil.sh:197/200), so an events outage still leaves the memory
+    ORDER IS THE CONTRACT: the file append happens BEFORE the
+    event, so an events outage still leaves the memory
     line on disk -- and memory.md, not `/lab`, is what the next dream reads.
     The event itself cannot fail the round in either runtime: Bash ends
-    `_lab_event`'s curl with `|| true` (swil.sh:246) and
+    `_lab_event`'s curl with `|| true` and
     `Resources.lab_event` documents the same guarantee ("this never
     raises"). No extra try/except is added here on purpose -- one would
     imply this module distrusts that contract, and would also hide a fake
@@ -358,7 +300,7 @@ _BACKEND_SYNC_ERROR_CAP: Final = 160
 
 
 def _agent_backend_value(persona: Persona) -> str:
-    """`"${ai_backend}${ai_model:+:$ai_model}"` (`auto-run.sh:492`) --
+    """`"${ai_backend}${ai_model:+:$ai_model}"` --
     `<backend>` alone when the persona declares no `Model:` bullet,
     `<backend>:<model>` when it does.
 
@@ -378,10 +320,9 @@ def sync_backend_step(
     agent_name: str,
     dry_run: bool = False,
 ) -> None:
-    """PATCH the account profile with `{"agentBackend": ...}` every act round
-    (`auto-run.sh:473-494`).
+    """PATCH the account profile with `{"agentBackend": ...}` every act round.
 
-    Step 2 of the act path (see `run_act`): Bash's own position in the
+    Step 2 of the act path (see `run_act`): its position in the
     sequence is after login and BEFORE any context is built, and this
     function is called from there -- it is not deferred to the end of the
     round. Skipped on `dry_run` for the same reason the lock is
@@ -392,16 +333,9 @@ def sync_backend_step(
     roster mid-experiment. `Resources.update_profile` existed for exactly
     this call and had no callers.
 
-    Non-fatal by design, and LOGGED rather than swallowed: Bash's own
-    comment records that a bare `|| true` with stderr to /dev/null is what
-    hid a 403 on every `humans/` round for months (2026-08-05). The WARN
-    line and its 160-char truncation are Bash's
-    (`WARN $agent_name — agentBackend sync failed: ${backend_sync_err:0:160}`).
-
-    Runs for `humans/` accounts too. `agentBackend` IS recorded for them --
-    it is only withheld from the PUBLIC DTOs, which is a server concern
-    (`publicAgentBackend` in `server/src/lib/dto.ts`); skipping the sync
-    here would silently drop 8 of 23 accounts from the experiment.
+    Non-fatal by design, and LOGGED rather than swallowed: a silent
+    `|| true` once hid a 403 on this call for months (2026-08-05). The WARN
+    line carries the error truncated to 160 characters.
     """
     if dry_run:
         return
@@ -420,12 +354,11 @@ _RESPONSE_NOTIFICATION_TYPES: Final = frozenset({"mention", "comment", "reply"})
 
 
 def _comment_targets(actions: list[Action]) -> list[tuple[str, str]]:
-    """`auto-run.sh:782-783`'s `comment_targets` jq, as `(post_id, parent_id)`
-    pairs -- one per `comment` action in the (post-guardrail) plan, with
-    `.postId // ""` / `.parentId // ""` becoming `""` for an absent field.
+    """`(post_id, parent_id)` pairs -- one per `comment` action in the
+    (post-guardrail) plan, with `""` for an absent field.
 
-    Plan-aware on purpose: a round may contain several comments and Bash
-    collects every one of them, marking the whole set in a single call.
+    Plan-aware on purpose: a round may contain several comments and every
+    one of them is collected, marking the whole set in a single call.
     """
     return [
         ((action.post_id or ""), (action.parent_id or ""))
@@ -437,7 +370,7 @@ def _comment_targets(actions: list[Action]) -> list[tuple[str, str]]:
 def _responded_notification_ids(
     notifications: list[dict[str, Any]], targets: list[tuple[str, str]]
 ) -> list[str]:
-    """`auto-run.sh:785-798`'s selection jq, matched clause for clause.
+    """Pick the notification ids that answer one of the round's comments.
 
     A notification is selected when ANY target matches it:
 
@@ -479,7 +412,7 @@ def _responded_notification_ids(
 
 
 def _mark_notifications_read(resources: Resources, actions: list[Action]) -> None:
-    """Bash's "smart mark-read" block (`auto-run.sh:768-803`), ported whole.
+    """Bash's "smart mark-read" block, ported whole.
 
     Without it the same notifications come back unread every round and the
     agent posts duplicate replies to the same comment -- user-visible on the
@@ -545,27 +478,27 @@ def login_step(
     dry_run: bool = False,
 ) -> LoginStep:
     """Step 1 of the act path: probe `/health`, then choose the round's
-    mutual exclusion (`auto-run.sh`'s `check_internet`, then `acquire_lock`).
+    mutual exclusion (connectivity check, then the account lock).
 
     ORDER IS THE CONTRACT, and it is why the probe and the lock are one step
-    rather than two: Bash's `check_internet` runs once in Main, BEFORE any
-    per-account work, so an offline probe means no lock is ever constructed,
+    rather than two: the probe runs BEFORE any per-account work, so an
+    offline probe means no lock is ever constructed,
     let alone acquired -- an offline round can therefore never lose an
     acquire race, nor disturb a lock another process is holding. Splitting
     these apart invites a caller that acquires first and probes second,
     which no test would fail but which changes what an outage does to the
     roster.
 
-    `agent_name` is `basename "$agent_dir"` (`auto-run.sh:437`), i.e.
+    `agent_name` is `basename "$agent_dir"`, i.e.
     `persona.directory.name`, NOT the persona's `Username` bullet -- see
     `run_act`'s docstring for the case where the two diverge.
 
     F4: a dry run acquires NOTHING. `dry_run` executes no action, writes no
     memory line and PATCHes no profile, so it needs no mutual exclusion --
     and taking the lock made the documented "safe inspection command"
-    actively unsafe: a dry run launched while a real Bash round held the
-    lock cost that account its whole round (`auto-run.sh`'s own
-    `acquire_lock` failure path returns 75 and the account is skipped).
+    actively unsafe: a dry run launched while a real round held the
+    lock cost that account its whole round (a lock failure returns 75 and
+    the account is skipped).
     `nullcontext` rather than a second "shared" lock mode: there is no
     resource to share access TO.
     """
@@ -586,118 +519,13 @@ class ContextStep(NamedTuple):
     rhythm: RhythmDecision
 
 
-_BOARD_READ_HOME: Final = "read its own board"
-_BOARD_READ_CROSS: Final = "cross-read another board"
+DEFAULT_POST_PROBABILITY: Final = 60
+"""Percent chance a round must post. `Settings.post_probability` carries the
+same default; `act/` sits below `config`, so the two are pinned equal by test."""
 
-
-def _board_read_event(ctx: ActContext, *, cross_read_prob: float) -> LabEvent:
-    """The input-diversification round's `/lab` row (Phase B task 3).
-
-    `type="cycle"`, `phase="act"` -- the act path's own pair, and the pair
-    `agentEventIngest`'s two zod enums accept for this phase
-    (`server/src/modules/agents/agents.schemas.ts:51-52`). It moves no `/lab`
-    counter for the reason `_similarity_event` records in full above: every
-    read of `agentEvents` that COUNTS anything is pinned to a type that is not
-    `cycle`, and the one unfiltered read (`agents.population.ts:38-39`) is a
-    `selectDistinct(userId)` over a set every acting account is already in.
-
-    A SEPARATE event from `_similarity_event`, deliberately, and not an extra
-    key on it. That row is emitted only from `execute_step`, only when the
-    round has a candidate POST -- so a comment-only, like-only or
-    `nothing` round files none. A cross-read happens on every round of an
-    account with a niche, and the rounds where what it read is the ONLY thing
-    that happened are exactly the non-posting ones. Attaching the board there
-    would blind the series to them. It is not on `act/executor.py`'s
-    per-action rows either: those are per ACTION and would repeat the same
-    board 1-5 times per round, turning a per-round fact into a count of
-    actions.
-
-    `action` is left UNSET although the enum would take one. Nothing was
-    acted on; this row records an INPUT.
-
-    `metrics` is FLAT -- four scalars, no nesting, no lists.
-    `agentEventIngest.metrics` is a `z.record` of string/number/boolean/null
-    (`agents.schemas.ts:59`) and a nested object or an array fails that union
-    and makes zod 400 the WHOLE event, silently in both runtimes. Key
-    spellings follow the camelCase convention `_drift_metrics` and
-    `_similarity_event` already use.
-
-    `crossReadProb` is on the row for the reason `window` is on the
-    similarity row: without it, a run of home reads cannot be told apart from
-    an operator having turned the probability down, and the calibration
-    question ("did cross-reads actually fire at the rate we set?") is
-    unanswerable from the series itself.
-
-    `boardItems` is `null` when the feed read FAILED and `0` when the board
-    was genuinely empty. That distinction is the thin-board starvation risk
-    made observable: `making` carried 4 posts at the last count
-    (`docs/12-handoff.md`), so an account niched to it can legitimately read
-    nothing at all, and a series that spelled both cases `0` could not tell
-    that from an outage.
-
-    `homeBoard` is on the row because `boardRead` ALONE cannot answer "which
-    niche did this round leave": on a cross-read it names the AWAY board, and
-    the home board is then recoverable only by joining against the roster's
-    assignment table as of that date. That table is the `Read` bullet in
-    `personality.md` -- a file a dream can rewrite, and (until the explicit
-    `Read: global` bullets land) can even ADD the field to. A series whose
-    interpretation depends on reconstructing a mutable file's past state is a
-    series that decays. Two keys, both flat, and the pair is self-contained.
-    """
-    return LabEvent(
-        type="cycle",
-        phase="act",
-        outcome="success" if ctx.board_items is not None else "warn",
-        summary=_BOARD_READ_CROSS if ctx.cross_read else _BOARD_READ_HOME,
-        metrics={
-            "boardRead": ctx.board_read,
-            "homeBoard": ctx.home_board,
-            "crossRead": ctx.cross_read,
-            "crossReadProb": cross_read_prob,
-            "boardItems": ctx.board_items,
-        },
-    )
-
-
-def record_board_read(
-    resources: Resources,
-    persona: Persona,
-    ctx: ActContext,
-    *,
-    cross_read_prob: float,
-    dry_run: bool,
-) -> None:
-    """Publish which input pool this round read.
-
-    Only for an account that HAS a niche. A persona with no `Read` bullet --
-    22 of the 23 on the roster today -- reads globally exactly as it always
-    has, cannot cross-read, and files nothing: its board is a constant of the
-    roster assignment table, not a per-round observation, and a row per
-    account per round restating it would be 23 rows a round of no information.
-    The moment an operator gives an account a `Read` bullet, its rounds start
-    appearing here.
-
-    `dry_run` skips it because the row is a WRITE, and Stage 3's shadow round
-    drives 23 live accounts (standing constraint §9). The guard is HERE, with
-    the write, rather than in `run_act` -- `graph/nodes.py`'s login node calls
-    `context_step`, not `run_act`, so a guard left in the composition would
-    not cover the path `cycle-one.sh` actually runs (ruling R4 / §5).
-
-    The niche test reads `ctx.home_board`, NOT a second `read_scope(persona)`
-    call. `build_context` already resolved the `Read` bullet for this round
-    and the answer is on the context; re-deriving it here would be two
-    derivations of one experiment control value, which is the class of
-    duplicate this codebase keeps paying for. It also makes the coupling the
-    right way round: if the read path decided this account is global, the row
-    must not be filed, whatever a fresh parse of the persona would say.
-
-    `Resources.lab_event` never raises (`api/resources.py:266-275`), so this
-    needs no guard of its own -- the same guarantee `_emit_memory_event` and
-    `similarity_step` rely on.
-    """
-    if dry_run or ctx.home_board == GLOBAL_READ_SCOPE:
-        return
-    resources.lab_event(persona.username, _board_read_event(ctx, cross_read_prob=cross_read_prob))
+DEFAULT_POST_CEILING_PER_DAY: Final = 1
+"""At this many posts today the round may not post. Mirrors
+`Settings.post_ceiling_per_day`."""
 
 
 def context_step(
@@ -710,32 +538,17 @@ def context_step(
     budget: int = 5,
     context_now: str = "(no context file)",
     feed_context: str = "",
-    cross_read_prob: float = DEFAULT_CROSS_READ_PROB,
-    dry_run: bool = False,
+    era_start: datetime | None = None,
+    post_probability: int = DEFAULT_POST_PROBABILITY,
+    post_ceiling: int = DEFAULT_POST_CEILING_PER_DAY,
     probe_board: str | None = None,
 ) -> ContextStep:
-    """Step 3 of the act path: `build_context` (read-side prompt assembly,
-    degrading per-block) then `decide_rhythm` (the day's post-budget /
-    probability gate).
+    """Step 3 of the act path: `build_context` then `decide_rhythm`.
 
-    One step rather than two because `decide_rhythm`'s `posts_today`
-    argument is `ctx.today_post_count` -- a field `build_context` computes
-    from `memory_text`. A caller that assembled the rhythm from anything
-    else (its own count of today's memory lines, say) would silently change
-    which accounts are allowed to post, so the wiring between the two is
-    kept here where exactly one implementation of it exists.
-
-    `rng` reaches BOTH consumers, and the order is fixed: `build_context`
-    rolls the cross-read first, `decide_rhythm` draws second. Only an account
-    with a `Read` bullet consumes a draw in the first one
-    (`choose_read_scope` returns before rolling for a global-scope account),
-    so adding this task changed no existing account's rhythm draw.
-
-    The board-read lab event is emitted HERE rather than inside
-    `build_context`: this is the seam both callers pass through -- `run_act`
-    and `graph/nodes.py`'s login node -- and it is the first point in the
-    read path that knows `dry_run`. `build_context` stays a function that
-    writes nothing.
+    One step because the rhythm's `posts_today` is `ctx.today_post_count`,
+    which `build_context` computes from `memory_text`. `rng` is drawn only by
+    the rhythm. The probe overlay (dry-run eval only) reads the probe board
+    unfiltered.
     """
     ctx = build_context(
         resources,
@@ -743,10 +556,9 @@ def context_step(
         memory_text=memory_text,
         now=now,
         budget=budget,
-        rng=rng,
         context_now=context_now,
         feed_context=feed_context,
-        cross_read_prob=cross_read_prob,
+        era_start=era_start,
     )
     if probe_board:
         with suppress(ApiError):
@@ -754,8 +566,9 @@ def context_step(
                 ctx,
                 resources.feed_board(probe_board, limit=10, sort="latest"),
             )
-    record_board_read(resources, persona, ctx, cross_read_prob=cross_read_prob, dry_run=dry_run)
-    rhythm = decide_rhythm(persona.rhythm_text, ctx.today_post_count, rng)
+    rhythm = decide_rhythm(
+        ctx.today_post_count, rng, probability=post_probability, ceiling=post_ceiling
+    )
     return ContextStep(context=ctx, rhythm=rhythm)
 
 
@@ -861,7 +674,7 @@ def _resolve_board_id(resources: Resources, persona: Persona) -> str | None:
     """The `Board:` bullet resolved to a board id, ONCE per round (fix round
     1, item 5).
 
-    Bash re-resolves on every `post` call (`swil.sh:426-432`), but guardrails
+    Bash re-resolves on every `post` call, but guardrails
     cap a round at one post, so resolving once -- and only when there is
     something left to execute -- is behaviourally equivalent and cheaper.
     Guarded on `persona.board` being truthy, exactly like Bash's own
@@ -875,90 +688,42 @@ def _resolve_board_id(resources: Resources, persona: Persona) -> str | None:
     try:
         return resources.get_boards().get(persona.board)
     except ApiError:
-        return None  # degrades to an unfiled post, matching swil.sh
+        return None  # degrades to an unfiled post
 
 
-# ── act-path self-similarity, SHADOW ONLY (Phase B task 2) ───────────────
+# ── near-duplicate guard ─────────────────────────────────────────────────
 #
-# The act path has no guard on what it posts. `liushang` has been visibly
-# collapsing onto one recycled phrase since 2026-07-22: the dream gate
-# rejects its personality rewrites round after round and cannot touch the
-# posts, because nothing between "the model produced this text" and "the
-# text is on the platform" ever looks at what the account already said.
-#
-# This block MEASURES that and records it. It changes no plan, vetoes no
-# action, re-rolls nothing, and cannot alter a single byte of what gets
-# posted -- deliberately, because the threshold a guard would need does not
-# exist yet and has to be fitted to the distribution this series collects.
-# `ACT_SIMILARITY_THRESHOLD` therefore does not exist anywhere in this
-# package, and adding one is a later task's job, not a config default.
+# Before a post executes it is embedded and compared with the account's own
+# last `window` posts; at max cosine >= `threshold` the post is dropped.
 
 
 class Embedder(Protocol):
-    """The one method this module needs from the bge-m3 daemon.
-
-    Declared HERE rather than imported from `dream/distill.py` or
-    `analysis/behavior_snapshot.py` -- each of which declares its own copy of
-    exactly this -- to keep spec §5.2's dependency direction (`graph -> act,
-    dream, analysis -> api, llm, persona, embedder`). `act`, `dream` and
-    `analysis` are PEERS; importing one from another would be the first
-    sideways edge in that graph. Protocols are structural, so `EmbedderClient`
-    and every existing test double satisfy all three declarations without
-    knowing any of them exists.
-    """
+    """The one method this module needs from the bge-m3 daemon. Declared here
+    rather than imported from a peer package (`dream`, `analysis`)."""
 
     def embed(self, texts: list[str]) -> list[list[float]]: ...
 
 
-DEFAULT_ACT_SIMILARITY_WINDOW: Final = 12
+DEFAULT_POST_DUPLICATE_WINDOW: Final = 12
 """How many of the account's own recent posts a candidate is compared
-against. `Settings.act_similarity_window` (`ACT_SIMILARITY_WINDOW`) is the
-env-driven override and carries the same default; the two are pinned equal
-in both directions by `test_act_similarity.py`, the same treatment
-`rule_check`/`behavior_snapshot`'s `DEFAULT_POST_LIMIT` pair already gets.
+against. Mirrors `Settings.post_duplicate_window`; pinned equal by test."""
 
-12 matches `analysis/behavior_snapshot.py`'s window -- verified against that
-module, not taken from the brief -- so the two measurements read the same
-slice of the same account's history and can be compared."""
+DEFAULT_POST_DUPLICATE_THRESHOLD: Final = 0.92
+"""Max cosine similarity at which a candidate post is dropped. Mirrors
+`Settings.post_duplicate_threshold`; pinned equal by test."""
 
 MIN_COMPARISON_CORPUS: Final = 2
-"""Fewer prior posts than this and `max_sim` is `None`, never a number.
-
-A `max` over a one-element sample is not the same estimator as a `max` over
-twelve, and the calibration this series feeds will fit a threshold to the
-latter; mixing single-sample maxima into it biases the fitted threshold
-downward for reasons that have nothing to do with any account's behaviour.
-The zero-prior case -- a new account, which has nothing to be similar to --
-is the one that matters in practice and is covered by the same guard."""
+"""Fewer prior posts than this and `max_sim` is `None` (not computed), so a
+new account is never measured against a one-post sample."""
 
 
 def candidate_post_text(actions: Sequence[Action]) -> str | None:
-    """The text this round would put on the platform, or `None` if it would
-    put none there.
+    """The text this round would post, or `None`.
 
-    The FIRST `post` action, and only a `post`: `guardrail_step` already caps
-    a round at one post (`act/guardrails.py` stage 5), so "first" and "only"
-    coincide, and a later `post` in the list is one the guardrails vetoed.
-
-    `echo` is deliberately NOT a candidate even though it also creates a row
-    via `create_post` (`act/executor.py`'s `_execute_echo` calls
-    `resources.create_post(text, echo_of=post_id)`). An echo's text is
-    commentary attached to somebody else's post -- a different authorial act
-    with a different length and shape -- and a round may carry one of each,
-    which would leave two candidates competing for one scalar metric. Mixing
-    the two distributions into one calibration sample would set the eventual
-    threshold from a blend of two quantities.
-
-    Normalised with `_memory_text`, which is `_clean` + `collapse_doubled_text`
-    -- byte-for-byte what `act/executor.py:254-262` puts on the wire for a
-    `post`. Embedding `action.text` raw would measure a string that never
-    existed, and the difference is not cosmetic on exactly the accounts this
-    exists for: `collapse_doubled_text` is there because a degenerate backend
-    emits its answer twice, so the raw text of a collapsing account can be
-    double the length of the post it becomes.
-
-    Blank (after normalisation) yields `None`: `_execute_post` SKIPs on empty
-    text without making any call, so there is no candidate to measure.
+    The first `post` action only (guardrails cap a round at one); an `echo` is
+    commentary on someone else's post and is not a candidate. Normalised the
+    way the executor puts it on the wire, so the measured string is the one
+    that would be published. Blank yields `None`: the executor would skip it.
     """
     for action in actions:
         if action.kind == "post":
@@ -967,23 +732,11 @@ def candidate_post_text(actions: Sequence[Action]) -> str | None:
 
 
 def prior_post_texts(items: Sequence[dict[str, Any]]) -> list[str]:
-    """The account's own recent post bodies, in the order the API returned
-    them.
+    """The account's own recent post bodies, in API order.
 
-    `originalText` falling back to `text` with jq's `//` semantics (an empty
-    `originalText` does NOT fall through, because `""` is truthy in jq), and
-    whitespace-only bodies dropped -- the same extraction
-    `analysis/behavior_snapshot.py`'s `select_post_texts` performs on the same
-    endpoint's payload, for the same reason: the ORIGINAL-language text, so
-    the comparison is never polluted by the translation layer.
-
-    Reimplemented rather than imported. `analysis` and `act` are peers under
-    spec §5.2 and this module may not import that one; and the two scripts
-    that own these extractions already disagree with each other on purpose
-    (`select_post_texts`'s own docstring records that it is deliberately not
-    shared with `rule_check.extract_posts`, whose Bash original genuinely has
-    Python `or` semantics). A non-string body is dropped rather than raising,
-    matching `select_post_texts`.
+    `originalText`, falling back to `text` only when it is null/false (an empty
+    `originalText` is kept as-is, then dropped as blank). Non-string and
+    whitespace-only bodies are dropped.
     """
     texts: list[str] = []
     for item in items:
@@ -996,21 +749,11 @@ def prior_post_texts(items: Sequence[dict[str, Any]]) -> list[str]:
 
 
 def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
-    """Cosine similarity of two bge-m3 vectors, clamped to [-1, 1].
+    """Dot product of two L2-normalised bge-m3 vectors, clamped to [-1, 1].
 
-    A plain dot product is correct because the daemon returns L2-normalised
-    vectors (`normalize_embeddings=True`, contract 04 §1).
-
-    NOT `dream/drift.py`'s `cosine_sim`, and not a candidate for
-    deduplication with it. That one FAILS OPEN TO 1.0 on empty or
-    mismatched-length input, which is the safe direction for a gate that
-    rejects on LOW similarity -- a failed computation can then never cause a
-    rejection. Here the eventual guard fires on HIGH similarity, so the same
-    fallback would turn every broken embed into a maximally-repetitive
-    reading. This function is therefore only ever called on vectors the
-    caller has already checked, and `measure_act_similarity` does that check
-    itself rather than delegating the failure policy to a shared helper whose
-    policy points the other way.
+    Callers check the vectors first. Unlike `dream/drift.py`'s `cosine_sim`
+    this has no fail-open-to-1.0 fallback: here a HIGH value drops a post, so
+    such a fallback would turn every broken embed into a veto.
     """
     dot = sum(x * y for x, y in zip(a, b, strict=True))
     return max(-1.0, min(1.0, dot))
@@ -1024,40 +767,10 @@ def measure_act_similarity(
 ) -> ActSimilarity:
     """How close `candidate_text` sits to the closest of `prior_texts`.
 
-    The corpus is a PARAMETER, not something this function fetches, and that
-    is the seam that makes "compared against the account's own posts" a
-    testable property of `similarity_step` (which does the fetching) rather
-    than an untestable one of a function that hides its own I/O. It also
-    keeps the "could not fetch the corpus" outcome -- a genuinely different
-    fact from "the corpus was empty" -- at the layer that can tell them
-    apart; `analysis/behavior_snapshot.py` records what it costs to lose that
-    distinction (an account that has been quiet and a platform that was
-    unreachable produce the same flat series).
-
-    ONE embed call for the whole batch, candidate first: the candidate's
-    vector and the corpus's are needed together and there is nothing to gain
-    from two round trips. The prior posts' vectors are RECOMPUTED every round
-    rather than fetched, because there is nothing to fetch -- no per-post
-    embedding exists anywhere. `server/src/db/schema/lab.ts` carries a
-    `vector` column on exactly two tables (`personalitysnapshots`,
-    `behaviorsnapshots`), and the behavior one is a single vector over all
-    twelve posts JOINED into one document (`behavior-snapshot.sh:66`), which
-    cannot yield a per-post maximum. Posts themselves carry no embedding and
-    no endpoint returns one.
-
-    Fail-open, in the direction that cannot manufacture a signal: any embedder
-    failure, any short or mismatched batch, any unusable vector yields
-    `max_sim=None` with `embedder_ok=False`. `ValueError` is caught alongside
-    `EmbedderUnavailable` because `EmbedderClient.embed` raises it (not
-    `EmbedderUnavailable`) for a batch above `MAX_BATCH`, which an
-    `ACT_SIMILARITY_WINDOW` above 63 would produce -- a config typo must
-    degrade this measurement, never abort a round that was about to post.
-
-    Partial vector damage is treated as total: if any prior vector is empty or
-    a different width from the candidate's, the whole measurement reports
-    `embedder_ok=False` rather than quietly maximising over the survivors.
-    That keeps `compared_against` honest -- on the path that produces a
-    number, every prior counted was genuinely compared.
+    One embed call, candidate first. Any embedder failure, short or
+    mismatched batch, or unusable vector yields `max_sim=None` with
+    `embedder_ok=False`. `ValueError` is caught too: `EmbedderClient.embed`
+    raises it for a batch above `MAX_BATCH`.
     """
     corpus = list(prior_texts)
     if len(corpus) < MIN_COMPARISON_CORPUS:
@@ -1087,53 +800,17 @@ _SIMILARITY_EMBEDDER_DOWN: Final = "embedder unreachable"
 _SIMILARITY_CORPUS_TOO_SMALL: Final = f"fewer than {MIN_COMPARISON_CORPUS} prior posts"
 
 
-def _similarity_event(sim: ActSimilarity, *, window: int, reason: str | None) -> LabEvent:
-    """The shadow measurement's `/lab` row.
+def _similarity_event(
+    sim: ActSimilarity, *, window: int, threshold: float, reason: str | None
+) -> LabEvent:
+    """The `/lab` row for one post candidate, dropped or not.
 
-    `type="cycle"`, `phase="act"` -- the act path's own pair, and the pair
-    `agentEventIngest`'s two zod enums accept for this phase
-    (`server/src/modules/agents/agents.schemas.ts:51-52`). No `/lab` aggregate
-    counts it, checked one query at a time rather than by recollection (fix
-    round 1, review Minor 2 -- an earlier version of this paragraph said the
-    two modules read `dream` and `echo_flag` only, and missed a third type and
-    an unfiltered read):
-
-      * `agents.pulse.ts` reads `agentEvents` three times, each pinned to a
-        type: `dream`/`fail` (:209-210), `echo_flag`/`flagged` (:219-220),
-        and `rule_check`/`flagged` (:233-234).
-      * `agents.population.ts` reads it twice -- `echo_flag` in range (:127),
-        and once with NO type filter at all (:38-39). That second one is a
-        `selectDistinct(userId)` building the set of accounts `/lab` shows,
-        not a count, and every acting account is already in it: the act path
-        has always emitted a `cycle`/`act` row per action and a
-        `memory`/`memory` row per memory line.
-
-    So an extra `cycle` row per posting round moves no counter and adds no
-    account, and shows up only where it is meant to, in the account's event
-    list.
-
-    `action` is left UNSET although `"post"` is a legal enum member. The
-    sampler did not post anything; `act/executor.py` emits the round's real
-    `action="post"` event, and filing this one under the same action would
-    make a measurement indistinguishable from a write when filtering by it.
-
-    `metrics` is FLAT -- four scalars, no nesting, no lists.
-    `agentEventIngest.metrics` is a `z.record` of string/number/boolean/null
-    (`agents.schemas.ts:59`), and a nested object or an array fails that union
-    and makes zod 400 the WHOLE event. That defect ran unnoticed for six weeks
-    on the dream side (see `dream/round.py`'s `_drift_fail_metrics`, and the
-    2026-08-19 change-point entries in `docs/13-observation-lab.md`); the key
-    spellings here follow `_drift_metrics`' camelCase convention rather than
-    inventing a second one.
-
-    `window` is one key more than the plan's list, for the reason `driftMode`
-    is on the drift event: `comparedAgainst` records how many priors there
-    actually were, `window` records how many were ASKED for, and only the
-    second tells a later analyst whether a short corpus means "quiet account"
-    or "somebody lowered the window".
-
-    `null` survives to the wire and is the point: a similarity that was not
-    computed is `null`, never `0.0`.
+    `cycle`/`act` moves no `/lab` counter. `action` is unset: this row is a
+    measurement, the executor files the real `post` event. The measured
+    summary is a contract with `server/src/modules/agents/agents.collapse.ts`,
+    which selects on it, so a dropped candidate keeps it and says `dropped`
+    in `metrics`. `metrics` stays flat (the ingest schema rejects nested
+    values), and `maxSim` is `null`, never `0.0`, when it was not computed.
     """
     measured = sim.max_sim is not None
     return LabEvent(
@@ -1149,6 +826,8 @@ def _similarity_event(sim: ActSimilarity, *, window: int, reason: str | None) ->
             "comparedAgainst": sim.compared_against,
             "embedderOk": sim.embedder_ok,
             "window": window,
+            "threshold": threshold,
+            "dropped": sim.dropped,
         },
     )
 
@@ -1165,49 +844,19 @@ def similarity_step(
     persona: Persona,
     actions: Sequence[Action],
     embedder: Embedder | None,
-    window: int = DEFAULT_ACT_SIMILARITY_WINDOW,
+    window: int = DEFAULT_POST_DUPLICATE_WINDOW,
+    threshold: float = DEFAULT_POST_DUPLICATE_THRESHOLD,
 ) -> ActSimilarity | None:
-    """Measure this round's candidate post against the account's own recent
-    posts and record the number. Returns `None` when there was nothing to
-    measure.
+    """Measure this round's candidate post against the account's OWN recent
+    posts, decide whether it is a near-duplicate, and record one lab event.
 
-    OWN posts -- `resources.user_posts(persona.username, ...)` -- never the
-    feed and never a global corpus. A candidate compared against other
-    accounts' posts measures roster HOMOGENEITY, which is a real quantity
-    (`/lab` Feature 3 computes it population-wide) but a different one, with a
-    different distribution and therefore a different threshold. Wiring the
-    feed in here would produce numbers that look entirely plausible and
-    calibrate the wrong guard.
-
-    `persona.username` is the `Username` bullet, not the directory name: the
-    two differ on this roster (CLAUDE.md, "Stray `agents/<name>` dir shadows a
-    `humans/` account"), and this endpoint is keyed by the platform username.
-
-    NEVER RAISES, and never changes the round. EVERY statement of the body is
-    inside the guard -- there is no preamble above the `try` for a future edit
-    to make fallible -- so every branch either returns an `ActSimilarity` or
-    `None`. The outer `except Exception` catches the class no branch
-    anticipated -- an `OSError`, a `Resources` method that
-    starts raising a type this file does not list. `graph/nodes.py`'s
-    `_fail_soft` catches the same breadth for the same reason and records it
-    at length: this is the observability layer, and a measurement outage may
-    never decide whether a round happened. `BaseException` is deliberately not
-    caught -- a `KeyboardInterrupt` is the operator ending the run.
-
-    A skip still emits its event (with `maxSim: null` and a `reason`), because
-    an absent row and a row saying "the embedder was down" are the two things
-    this plan exists to stop conflating -- and because a series that only
-    records its successes is exactly the censoring Phase B task 1 ended on the
-    dream side.
+    Returns `None` when there is nothing to measure (no embedder, no post).
+    `dropped` is true only for a computed `max_sim >= threshold`; a failed
+    fetch, a down embedder or too small a corpus fails open (`dropped`
+    false). Never raises: any unexpected error is logged and yields `None`,
+    which also fails open.
     """
     try:
-        # INSIDE the guard, not above it (fix round 1, review Minor 8). Both
-        # of these are total in practice -- an identity check and a pure
-        # function over already-validated `Action`s -- so this changes no
-        # behaviour today. It changes what enforces the paragraph above: with
-        # them outside, "NEVER RAISES" was a claim about two statements
-        # nobody had a test for; inside, it is a property of the function's
-        # shape, and stays true if either one ever grows a way to fail.
         if embedder is None:
             return None
         candidate = candidate_post_text(actions)
@@ -1225,7 +874,9 @@ def similarity_step(
             sim = ActSimilarity(max_sim=None, compared_against=0, embedder_ok=True)
             resources.lab_event(
                 persona.username,
-                _similarity_event(sim, window=window, reason=_SIMILARITY_FETCH_FAILED),
+                _similarity_event(
+                    sim, window=window, threshold=threshold, reason=_SIMILARITY_FETCH_FAILED
+                ),
             )
             return sim
 
@@ -1239,9 +890,19 @@ def similarity_step(
                 "act-similarity: %s — embedder unreachable; skipping (fail-open)",
                 persona.username,
             )
+        if sim.max_sim is not None and sim.max_sim >= threshold:
+            sim = sim.model_copy(update={"dropped": True})
+            logger.warning(
+                "act-similarity: %s — post dropped as a near-duplicate (max_sim %.3f >= %s)",
+                persona.username,
+                sim.max_sim,
+                threshold,
+            )
         resources.lab_event(
             persona.username,
-            _similarity_event(sim, window=window, reason=_similarity_reason(sim)),
+            _similarity_event(
+                sim, window=window, threshold=threshold, reason=_similarity_reason(sim)
+            ),
         )
         return sim
     except Exception as exc:
@@ -1255,14 +916,42 @@ def similarity_step(
         return None
 
 
+def duplicate_veto_reason(sim: ActSimilarity, threshold: float) -> str:
+    return f"near-duplicate of a recent post (max_sim {sim.max_sim:.3f} >= {threshold})"
+
+
+def apply_duplicate_guard(
+    actions: Sequence[Action], sim: ActSimilarity | None, *, threshold: float
+) -> tuple[list[Action], list[VetoedAction]]:
+    """Remove the candidate post when `sim` says it is a near-duplicate.
+
+    A plan left empty becomes a single `nothing`, so the round still records
+    that it did nothing.
+    """
+    if sim is None or not sim.dropped:
+        return list(actions), []
+    kept = list(actions)
+    index = next(i for i, action in enumerate(kept) if action.kind == "post")
+    vetoed = [VetoedAction(action=kept.pop(index), reason=duplicate_veto_reason(sim, threshold))]
+    if not kept:
+        kept = [Action(kind="nothing")]
+    return kept, vetoed
+
+
 class ExecuteStep(NamedTuple):
-    """The write-side tally of a round: one `ActionResult` per attempted
-    action, in plan order, with `landed` counting those that actually
-    landed."""
+    """The write-side tally of a round.
+
+    `actions` is what actually executed (after the duplicate guard), `vetoed`
+    what the guard dropped, and `emptied` whether the guard left nothing but
+    a `nothing` -- `finalize_step` reports that round as `VETOED_EMPTY`.
+    """
 
     results: list[ActionResult]
     attempted: int
     landed: int
+    actions: list[Action]
+    vetoed: list[VetoedAction]
+    emptied: bool = False
 
 
 def execute_step(
@@ -1275,73 +964,44 @@ def execute_step(
     access_key: str | None = None,
     dry_run: bool = False,
     embedder: Embedder | None = None,
-    similarity_window: int = DEFAULT_ACT_SIMILARITY_WINDOW,
+    duplicate_window: int = DEFAULT_POST_DUPLICATE_WINDOW,
+    duplicate_threshold: float = DEFAULT_POST_DUPLICATE_THRESHOLD,
 ) -> ExecuteStep:
-    """Step 6 of the act path: execute every surviving action in order and
-    append its `memory.md` line.
+    """Step 6 of the act path: duplicate guard, then execute every surviving
+    action in order and append its `memory.md` line.
 
-    `dry_run` short-circuits the WHOLE step -- no board lookup, no write, no
-    memory line, no lab event -- and the guard lives HERE, not only in the
-    caller that happens to sequence the steps. This function performs 100%
-    of a round's writes, and Stage 3 of the migration is a `--dry-run`
-    shadow round over 23 live accounts: a caller that threaded `dry_run`
-    into every step that accepted one, but found this one did not, would
-    post for real. The zero-valued `ExecuteStep` it returns is exactly what
-    `run_act`'s dry-run `ActResult` reports (`results == []`,
-    `attempted == 0`), which is how a caller tells "nothing ran" from "an
-    empty plan ran".
+    `dry_run` short-circuits the whole step -- no guard, no board lookup, no
+    write, no memory line, no lab event -- because this function performs all
+    of a round's writes and the graph path calls it directly.
 
-    The memory write is INSIDE this loop, not a later phase, and that is a
-    behavioural constraint rather than a layout preference: Bash's
-    `_remember` runs inside `swil.sh`'s own per-action case, so the
-    `memory/memory/success` lab event for action N is POSTed before action
-    N+1's write goes out. Collecting the results first and writing memory
-    afterwards would reorder the API calls a round makes -- invisible in the
-    return value, visible in `/lab`'s event stream and in what survives a
-    crash mid-round.
+    The guard runs first, before any write: once this round's post lands it
+    is one of the account's own posts, and comparing against it would report
+    ~1.0. It lives here rather than in `run_act` so the graph path gets it
+    too. `embedder=None` disables it.
 
-    Board resolution happens once, here, because here is where it is first
-    needed -- the callers that return before this step (empty plan, dry run)
-    must never pay for it, which is what `test_board_resolution_is_skipped_
-    when_the_plan_ends_up_empty` pins.
-
-    `agent_name` is the DIRECTORY name and `persona.username` is the
-    `Username` bullet; both are passed to `execute_action`, which draws the
-    same distinction. `access_key or ""` matches `execute_action`'s own
-    `access_key: str = ""` default -- a bare `None` would be a `str | None`
-    where its signature demands `str`.
-
-    `embedder` (Phase B task 2) enables the SHADOW self-similarity
-    measurement and nothing else -- `None`, the default, makes this step
-    byte-for-byte what it was. It is sampled HERE, at the head of the step,
-    for a reason that is not stylistic: `resources.user_posts` is what the
-    measurement compares against, and the moment this round's post lands it
-    IS one of those posts, so a sample taken afterwards would compare the
-    candidate to itself and report ~1.0 for every account forever. Placing it
-    inside this step rather than in `run_act`'s body is the same rule
-    `dry_run` obeys (ruling R4 / standing constraint §5): `graph/nodes.py`'s
-    execute node calls this function, not `run_act`, so a measurement left in
-    the composition is a measurement the graph path -- the one `cycle-one.sh`
-    actually runs -- would never take. It sits below the `dry_run` guard
-    because its lab event is a write, and Stage 3's shadow round over 23 live
-    accounts must write nothing.
+    The memory write is inside the loop, so action N's memory event is sent
+    before action N+1's write. Board resolution happens once, only when there
+    is something to execute.
     """
     if dry_run:
-        return ExecuteStep(results=[], attempted=0, landed=0)
+        return ExecuteStep(results=[], attempted=0, landed=0, actions=list(actions), vetoed=[])
 
-    similarity_step(
+    sim = similarity_step(
         resources=resources,
         persona=persona,
         actions=actions,
         embedder=embedder,
-        window=similarity_window,
+        window=duplicate_window,
+        threshold=duplicate_threshold,
     )
+    to_run, vetoed = apply_duplicate_guard(actions, sim, threshold=duplicate_threshold)
+    emptied = bool(vetoed) and all(action.kind == "nothing" for action in to_run)
 
-    board_id = _resolve_board_id(resources, persona)
+    board_id = _resolve_board_id(resources, persona) if not emptied else None
 
     results: list[ActionResult] = []
     landed = 0
-    for action in actions:
+    for action in to_run:
         result = execute_action(
             resources,
             action,
@@ -1361,7 +1021,14 @@ def execute_step(
             resources=resources,
             username=persona.username,
         )
-    return ExecuteStep(results=results, attempted=len(actions), landed=landed)
+    return ExecuteStep(
+        results=results,
+        attempted=len(to_run),
+        landed=landed,
+        actions=to_run,
+        vetoed=vetoed,
+        emptied=emptied,
+    )
 
 
 def finalize_step(
@@ -1373,59 +1040,30 @@ def finalize_step(
     landed: int,
     solo_nothing: bool,
     dry_run: bool = False,
+    emptied: bool = False,
 ) -> ActOutcome:
     """Step 7 of the act path: the post-execution tail -- smart mark-read,
     then the round's `ActOutcome`.
 
-    `dry_run` skips the mark-read (its only write, and one that mutates what
-    the NEXT real round sees) and returns the shadow round's label directly:
-    `PLANNER_EMPTY` for a solo-`nothing` plan, `LANDED_ALL` otherwise. That
-    is a label, not a prediction -- a dry run never executed anything, so
-    `results == []` / `attempted == 0` are the fields that tell a caller
-    nothing ran (see `run_act`'s docstring). Falling through to the normal
-    classification instead would log Bash's FAIL line at every shadow round,
-    since a dry run's `landed` is always 0.
+    `dry_run` skips the mark-read (its only write) and returns a label:
+    `PLANNER_EMPTY` for a solo-`nothing` plan, `LANDED_ALL` otherwise.
 
-    F3: Bash's smart mark-read (`auto-run.sh:768-803`) sits AFTER the
-    `landed == 0` early return (`auto-run.sh:762-765`), so a round where
-    nothing landed marks nothing -- those notifications must survive to the
-    next round. `landed > 0` reproduces that placement without an early
-    return of our own, since this step still has an `ActOutcome` to decide.
+    `emptied` (the duplicate guard dropped the round's only post) returns
+    `VETOED_EMPTY` before the mark-read, exactly like a plan the guardrails
+    emptied: those notifications were not answered and must survive.
 
-    The mark-read is placed BEFORE the outcome branch here, where Bash has
-    it after its own `landed == 0` return. The two are equivalent and it is
-    worth recording why, so nobody "corrects" it later: the mark-read is
-    gated on `landed > 0` and the FAIL branch on `landed == 0`, so no round
-    can take both, and mark-read reads/writes nothing the outcome decision
-    consults. Moving it below the branch is a no-op -- unlike moving it
-    above the `landed > 0` gate, which is not.
+    Mark-read runs only when something landed, so a round where everything
+    failed leaves its notifications for the next round.
 
-    The outcome, in Bash's own order of precedence:
-
-      * `solo_nothing` -> `PLANNER_EMPTY`. The model explicitly chose to be
-        quiet; it already executed (lab event and log line fired), but the
-        label is not the landed/attempted formula's.
-      * `landed == 0` -> `LANDED_PARTIAL`, and a WARNING in BASH'S ORIGINAL
-        WORDING. Ruling (task-7-brief.md): Bash treats "every planned action
-        failed" as rc=75 and skips the dream, reasoning that dreaming on
-        unrefreshed memory manufactures drift that never happened (contract
-        `02` §3.2). Design spec §7.1 is explicit that only
-        `BACKEND_UNAVAILABLE` and `OFFLINE` deny the dream, so the spec wins
-        -- `ActResult.grants_dream` stays `True` -- but an operator grepping
-        the Python equivalent of `auto-run.log` still sees the same line
-        even though the decision underneath it changed. That increase in
-        dream attempts is a deliberate correction and must be recorded as a
-        change point in the drift series, not silently absorbed.
-      * `landed == attempted` -> `LANDED_ALL`; anything else ->
-        `LANDED_PARTIAL`.
-
-    `agent_name` is the DIRECTORY name in the FAIL line (fix round 1, item
-    2), matching Bash's own `$agent_name` there (auto-run.sh:763) -- NOT
-    `persona.username`, which an earlier version of that one call used
-    inconsistently with every other identifier in the round.
+    Outcome precedence: `solo_nothing` -> `PLANNER_EMPTY`; `landed == 0` ->
+    `LANDED_PARTIAL` with a FAIL warning (the dream is still granted);
+    `landed == attempted` -> `LANDED_ALL`; otherwise `LANDED_PARTIAL`.
+    `agent_name` is the directory name.
     """
     if dry_run:
         return ActOutcome.PLANNER_EMPTY if solo_nothing else ActOutcome.LANDED_ALL
+    if emptied:
+        return ActOutcome.VETOED_EMPTY
 
     if landed > 0:
         _mark_notifications_read(resources, actions)
@@ -1444,6 +1082,21 @@ def finalize_step(
     return ActOutcome.LANDED_PARTIAL
 
 
+def rotate_memory_soft(directory: Path, agent_name: str) -> None:
+    """Rotate `directory/memory.md` (see `memory_rotation.py`). A failure --
+    including a file that is not UTF-8 -- is a WARN line and never the
+    round's outcome. The caller must hold both the act and the dream lock."""
+    try:
+        moved = rotate_memory(directory / "memory.md")
+    except (OSError, ValueError) as exc:
+        logger.warning(
+            "memory rotation failed for %s (%s); the round is unaffected", agent_name, exc
+        )
+        return
+    if moved:
+        logger.info("memory rotated for %s — %d lines archived", agent_name, moved)
+
+
 def run_act(
     *,
     persona: Persona,
@@ -1460,135 +1113,31 @@ def run_act(
     dry_run: bool = False,
     access_key: str | None = None,
     embedder: Embedder | None = None,
-    similarity_window: int = DEFAULT_ACT_SIMILARITY_WINDOW,
-    cross_read_prob: float = DEFAULT_CROSS_READ_PROB,
+    era_start: datetime | None = None,
+    post_probability: int = DEFAULT_POST_PROBABILITY,
+    post_ceiling: int = DEFAULT_POST_CEILING_PER_DAY,
+    duplicate_window: int = DEFAULT_POST_DUPLICATE_WINDOW,
+    duplicate_threshold: float = DEFAULT_POST_DUPLICATE_THRESHOLD,
     probe_board: str | None = None,
 ) -> ActResult:
-    """One act round: context -> rhythm -> plan -> guardrails -> execute.
+    """One act round: login -> sync -> context + rhythm -> plan -> guardrails
+    -> duplicate guard + execute -> finalize.
 
-    Sequence (contract `01` §1, `02` §3-§5):
+      * Offline health probe -> `OFFLINE`, nothing else attempted.
+      * A held lock raises `LockBusy` out of this function; the caller treats
+        it as a skip.
+      * `plan_step` returning `None` -> `BACKEND_UNAVAILABLE`.
+      * Guardrails emptying the plan -> that `empty_outcome`, nothing executed.
+      * The duplicate guard's veto is appended to `vetoed`; a round it empties
+        is `VETOED_EMPTY`.
 
-      1. Probe `health_check()` first, before anything else -- Bash's
-         `check_internet` runs once in Main, before any per-account work,
-         and a failure there means no round is even attempted for anyone.
-         Injected rather than performed here: this module owns no HTTP
-         mechanics for the raw (non-`/api/v1`-prefixed) `${SWIL_URL}/health`
-         endpoint -- see the run_act docstring's "known decisions" note
-         below and task-7-report.md for why. A failure yields
-         `ActOutcome.OFFLINE` with nothing else populated.
-      2. Acquire `FileLock(act_lock_path(agent_root, persona.directory.name))`.
-         Ruling R6 (task-7-brief.md): a held lock raises `LockBusy` OUT of
-         this function -- it is not folded into any `ActOutcome`, because
-         "there was no round at all" is a different question from "what did
-         this round decide", and `ActOutcome` only ever answers the second
-         one. The caller (a later task's CLI) catches `LockBusy` and treats
-         it as a SKIP.
-      3. `sync_backend_step` -- the `agentBackend` PATCH, in Bash's own
-         position: after login, before any context is built.
-      4. `context_step` -- `build_context` (read-side prompt assembly,
-         degrading per-block) then `decide_rhythm` (the day's post-budget /
-         probability gate) off the count it computed. Since Phase B task 3
-         this step also chooses the round's READ SCOPE from the persona's
-         `Read` bullet and, with probability `cross_read_prob`, cross-reads
-         a different board; it records which pool it read on the returned
-         `ActContext` and files one lab event for it, but ONLY for an
-         account that has a niche, and never under `dry_run`.
-      5. `plan_step` -- ask the backend. `None` means the backend produced
-         nothing at all -> `ActOutcome.BACKEND_UNAVAILABLE`.
-      6. `guardrail_step` -- backend allow-list, rhythm veto, dm contacts,
-         one-post/one-echo + dedupe, budget cap; plus the `empty_outcome`
-         (`VETOED_EMPTY` vs `PLANNER_EMPTY`) and `solo_nothing`
-         classifications, whose reasoning is on `GuardrailStep`.
-      7. An empty plan returns that `empty_outcome` here, executing nothing.
-         The classification does not depend on `dry_run`, since there is
-         nothing to execute regardless.
-      8. `execute_step` -- execute every surviving action in order, tally
-         `landed`/`attempted`, and append a memory.md line per landed action
-         (`nothing` never gets one). When an `embedder` is supplied, this
-         step also takes the SHADOW self-similarity sample (Phase B task 2)
-         BEFORE its first write; `embedder=None` (the default) leaves the
-         step exactly as it was. `ActResult` deliberately does not carry the
-         measurement: it is recorded to `/lab` and read by nothing in this
-         process, because this task's whole contract is that it acts on
-         nothing. The later task that turns it into a guard is what will
-         need it in a return value.
-      9. `finalize_step` -- smart mark-read, then the outcome:
-         `landed == attempted` (with `attempted > 0`) -> `LANDED_ALL`,
-         otherwise `LANDED_PARTIAL`, INCLUDING when `landed == 0` (which
-         also logs Bash's FAIL line). The ruling behind that last case --
-         the spec's dream-granting rule overriding Bash's rc=75 -- is
-         recorded on `finalize_step` itself.
+    `dry_run` is threaded through the steps that write (each is inert under
+    it), so a dry round still plans and applies guardrails and returns
+    `plan`/`vetoed` with `results == []` and `attempted == 0`.
 
-    `dry_run` is not a step of its own and not an early return: it is passed
-    THROUGH steps 3, 8 and 9, each of which is inert under it. The round
-    still plans and still applies guardrails (that is the point of a shadow
-    round -- design spec §9.4 -- and neither writes anything), then returns
-    `plan` and `guarded.vetoed` with `results`/`attempted`/`landed` at their
-    zero defaults. For a plan that survives guardrails with real
-    (non-`nothing`) actions, a dry run cannot know whether they would have
-    landed without executing them, so the outcome is
-    `ActOutcome.LANDED_ALL` -- a label, not a prediction: `results == []`
-    and `attempted == 0` are the fields a caller must check to know nothing
-    actually ran; see `test_dry_run_never_calls_the_api_or_writes_memory`.
-    The guard lives in the steps rather than here because `run_act` is not
-    the only caller: Stage 3's shadow round drives 23 live accounts, and a
-    graph node that threaded `dry_run` into every step that took one would
-    otherwise still post.
-
-    The mapping from that list to the functions is not one-to-one, so read
-    it as: items 1-2 are ONE function (`login_step` -- the probe and the
-    CHOICE of lock; entering it, and letting `LockBusy` propagate, is
-    `run_act`'s own control flow, ruling R6); items 3, 4, 5, 6, 8 and 9 are
-    one function each; item 7 is an early return, not a step. Everything
-    this function's body does beyond that sequence is those early returns
-    and the `ActResult` assembly.
-
-    That is the point (ruling R4): `graph/nodes.py` adapts `CycleState` to
-    these SAME functions, so the graph path and the direct path cannot drift
-    into two behaviours. A block of logic that exists only inside `run_act`
-    is a block the graph would have to copy.
-
-    Four things this function decides that the brief left open, recorded
-    here and in task-7-report.md:
-
-      * `health_check: Callable[[], bool]` is a required, injected
-        parameter, not a Settings-driven default. No Python code anywhere in
-        this package yet performs a raw (unprefixed) HTTP GET to
-        `${SWIL_URL}/health` -- `ApiClient` always prefixes `/api/v1`, and
-        adding that mechanics here would mix an HTTP concern into a function
-        whose job is sequencing. The CLI (a later task) supplies the real
-        probe; tests supply a fixed callable.
-      * The lock/agent-name Bash calls `agent_name` is `basename "$agent_dir"`
-        (`auto-run.sh:437`), NOT the persona's `Username` bullet -- the two
-        usually match but are not the same field (see CLAUDE.md's "Stray
-        agents/<name> dir shadows a humans/ account" note for a case where
-        they diverge). This function uses `persona.directory.name`
-        throughout -- for the lock path, as `execute_action`'s `agent_name`,
-        AND as the identifier in the `landed == 0` FAIL log line (fix round
-        1, item 2: an earlier version of that one log call passed
-        `persona.username` instead, inconsistent with every other use of
-        `agent_name` in this function).
-      * `board_id` is resolved INSIDE the round, once, from `persona.board`
-        via `Resources.get_boards()` -- not injected as a parameter (fix
-        round 1, item 5). Unlike `health_check`, which needed injection
-        because nothing else in this package performs that raw unprefixed
-        HTTP GET, board lookup is a plain `Resources` read the act path
-        already has everything it needs to make: `get_boards()` already
-        exists (Task 1) and `Persona.board` is already populated (persona
-        loader). It lives in `execute_step` (via `_resolve_board_id`), which
-        is what keeps it after the empty-plan / dry_run early returns; see
-        that function for the rest of the reasoning.
-      * `access_key: str | None = None` (fix round 1, item 6) is a plain
-        `run_act` parameter, NOT resolved internally from `Settings`. Unlike
-        board resolution above (a plain `Resources` read, of the same kind
-        this function already performs several of), an Unsplash access key
-        is a credential, and credentials come from the composition root --
-        consistent with how
-        auth is already handled elsewhere in this package (`ApiClient`
-        takes a pre-built `AuthStrategy`, not a settings object it resolves
-        one from itself). Threaded straight into `execute_action`'s own
-        `access_key` parameter as `access_key or ""`, matching that
-        function's existing default.
+    `agent_name` (lock path, executor, FAIL line) is the directory name, not
+    the username. `health_check` and `access_key` come from the composition
+    root.
     """
     if probe_board and not dry_run:
         raise ValueError("--probe-board requires --dry-run")
@@ -1603,10 +1152,8 @@ def run_act(
         return ActResult(outcome=ActOutcome.OFFLINE)
 
     agent_name = login.agent_name
-    with login.lock:
-        # F8: `agentBackend` profile sync -- `auto-run.sh:473-494`, in Bash's
-        # own position in the sequence (after login, before any context is
-        # built), not deferred to the end of the round.
+
+    def locked() -> ActResult:
         sync_backend_step(
             resources=resources, persona=persona, agent_name=agent_name, dry_run=dry_run
         )
@@ -1620,8 +1167,9 @@ def run_act(
             budget=budget,
             context_now=context_now,
             feed_context=feed_context,
-            cross_read_prob=cross_read_prob,
-            dry_run=dry_run,
+            era_start=era_start,
+            post_probability=post_probability,
+            post_ceiling=post_ceiling,
             probe_board=probe_board,
         )
 
@@ -1646,14 +1194,7 @@ def run_act(
                 context=ctx,
             )
 
-        # `dry_run` is THREADED into the two steps that write rather than
-        # short-circuited here. Both spellings return the identical
-        # `ActResult` -- a dry `execute_step` is `([], 0, 0)` and a dry
-        # `finalize_step` is the label this branch used to compute inline --
-        # but only this one puts the guard where the writes are, so a caller
-        # that is not `run_act` (a graph node, Stage 3's shadow round)
-        # cannot get a "dry" round that posts.
-        results, attempted, landed = execute_step(
+        step = execute_step(
             resources=resources,
             persona=persona,
             actions=guarded.actions,
@@ -1662,26 +1203,41 @@ def run_act(
             access_key=access_key,
             dry_run=dry_run,
             embedder=embedder,
-            similarity_window=similarity_window,
+            duplicate_window=duplicate_window,
+            duplicate_threshold=duplicate_threshold,
         )
 
         outcome = finalize_step(
             resources=resources,
-            actions=guarded.actions,
+            actions=step.actions,
             agent_name=agent_name,
-            attempted=attempted,
-            landed=landed,
+            attempted=step.attempted,
+            landed=step.landed,
             solo_nothing=guarded.solo_nothing,
             dry_run=dry_run,
+            emptied=step.emptied,
         )
 
         return ActResult(
             outcome=outcome,
-            results=results,
-            vetoed=guarded.vetoed,
+            results=step.results,
+            vetoed=[*guarded.vetoed, *step.vetoed],
             rhythm=rhythm,
             plan=plan,
             context=ctx,
-            attempted=attempted,
-            landed=landed,
+            attempted=step.attempted,
+            landed=step.landed,
         )
+
+    with login.lock:
+        result = locked()
+        if not dry_run:
+            # A standalone `dream` appends to memory.md under the dream lock
+            # alone, so rotation also needs it. Busy means a dream is running:
+            # skip, and the next round rotates.
+            try:
+                with FileLock(dream_lock_path(agent_root, agent_name)):
+                    rotate_memory_soft(persona.directory, agent_name)
+            except LockBusy:
+                logger.info("memory rotation skipped for %s — dream lock held", agent_name)
+        return result

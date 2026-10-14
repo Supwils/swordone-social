@@ -20,7 +20,7 @@ class LabEvent(BaseModel):
 
     `action`, `reason` and `target_id` are omitted from the wire body when
     empty, and `action` is additionally omitted when it is the placeholder
-    "-" — matching swil.sh's `_lab_event` jq (contract 02 §5.3). Emitting
+    "-" (contract 02 §5.3). Emitting
     them as empty strings would change what the /lab surfaces count.
 
     `occurred_at` is the one field no live-runtime emitter sets: every event

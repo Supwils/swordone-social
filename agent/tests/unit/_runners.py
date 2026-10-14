@@ -3,15 +3,17 @@
 Single home for these so `test_backends.py`, `test_embedder.py`, and any later
 task's tests (act/dream) import the same fakes instead of each hand-rolling
 one. All classes conform structurally to `swil_agent.llm.base.Runner` /
-`swil_agent.llm.base.Backend` / `swil_agent.dream.distill.Embedder` /
+`swil_agent.llm.base.Backend` / `swil_agent.dream.round.Embedder` /
 `swil_agent.dream.candidate.DreamState`.
 """
 
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Final
 
 from swil_agent.api.client import ApiError
@@ -19,7 +21,30 @@ from swil_agent.api.dto import LabEvent
 from swil_agent.api.resources import WriteNotVerifiedError
 from swil_agent.embedder.client import EmbedderUnavailable
 from swil_agent.llm.base import BackendUnavailableError, CompletionRequest
-from swil_agent.models import AspectVectors, Persona
+from swil_agent.models import Persona
+
+
+def make_persona(
+    *,
+    username: str = "zenith",
+    directory: Path | None = None,
+    **overrides: Any,
+) -> Persona:
+    """An Era 3 `Persona` with every required field filled; override any of them."""
+    fields: dict[str, Any] = {
+        "username": username,
+        "display_name": username,
+        "topics": ["AI"],
+        "backend": "claude",
+        "board": "ai",
+        "era": 3,
+        "card": "CARD",
+        "prompt": "CARD\n\n## 最近\n（暂无）",
+        "raw": "",
+        "directory": directory if directory is not None else Path(f"/tmp/{username}"),
+    }
+    fields.update(overrides)
+    return Persona(**fields)
 
 
 @dataclass(frozen=True)
@@ -88,57 +113,23 @@ _PLACEHOLDER_VECTOR: Final[list[float]] = [0.0, 0.0, 0.0]
 
 
 class FakeEmbedder:
-    """A `dream.distill.Embedder` double: no HTTP, no daemon.
+    """An `Embedder` double: no HTTP, no daemon.
 
-    `anchor_aspects` embeds the three aspect cards INDIVIDUALLY -- one
-    `.embed([text])` call per card, in `values, style, topic` order (contract
-    `04` §3) -- so this fake hands back one vector per call, not one batch.
-    `dream.gate.evaluate_candidate` (task 11) shares ONE embedder across MORE
-    than 3 calls per dream (2 scalar-similarity embeds, always first, then up
-    to 3 aspect-card embeds), which is why `vectors` accepts two shapes:
-
-    `vectors=AspectVectors(...)`: serves `.values`, `.style`, `.topic` on
-    calls 1, 2, 3 respectively -- the original 3-call shape, unchanged, still
-    what `dream.distill`'s own tests use.
-
-    `vectors=[[...], [...], ...]`: a raw, arbitrary-length list served one
-    entry per call, in order -- what a `gate.py` test needs to control ALL of
-    an embedder's calls (scalar embeds included) precisely, e.g. to pin an
-    exact cosine similarity via a 1-dimensional vector (`[0.95]` dotted with
-    `[1.0]` IS `0.95`; see `test_gate.py`'s module docstring).
-
-    Omit `vectors` entirely (the `fail_on_call`/`fail_always`-only
-    constructor form) when every scripted call before a failure just needs to
-    return SOME vector shape and its content is never asserted on.
-
-    `fail_on_call`: the 1-indexed call number that raises `EmbedderUnavailable`
-    instead of returning a vector -- e.g. `fail_on_call=2` fails on the
-    `style` embed, proving a partial failure aborts before `topic` is ever
-    embedded and before any cache is written.
-
-    `fail_always`: EVERY call raises `EmbedderUnavailable`, regardless of call
-    number -- for a gate test proving a whole embedder OUTAGE (not one bad
-    call) is fail-open, where the exact number of calls attempted before the
-    caller gives up is an implementation detail, not something worth pinning.
+    `vectors` is served one entry per `.embed` call, in order; calls past the
+    end get a placeholder vector. `fail_on_call` makes that 1-indexed call
+    raise `EmbedderUnavailable`; `fail_always` makes every call raise.
+    `embedded` records every batch asked for, before the failure check, so a
+    test can assert WHAT was embedded rather than only what came back.
     """
 
     def __init__(
         self,
-        vectors: AspectVectors | list[list[float]] | None = None,
+        vectors: list[list[float]] | None = None,
         *,
         fail_on_call: int | None = None,
         fail_always: bool = False,
     ) -> None:
-        if isinstance(vectors, AspectVectors):
-            self._vectors: list[list[float]] = [
-                list(vectors.values),
-                list(vectors.style),
-                list(vectors.topic),
-            ]
-        elif vectors is not None:
-            self._vectors = [list(v) for v in vectors]
-        else:
-            self._vectors = []
+        self._vectors: list[list[float]] = [list(v) for v in vectors] if vectors else []
         self._fail_on_call = fail_on_call
         self._fail_always = fail_always
         self.call_count = 0
@@ -219,13 +210,11 @@ class ExplodingBackend:
 class ScriptedBackend:
     """Answers each `complete` call from a fixed script, in call order.
 
-    A whole CYCLE spends up to three backend calls on ONE backend object --
-    the plan, the dream's rewrite candidate, and an accepted dream's diff
-    narrative -- so neither `StubBackend` (one fixed answer for everything)
-    nor `TwoCallBackend` (candidate then narrative, with no plan before them)
-    can drive one. Calls past the end of the script repeat its last entry,
-    which is what makes a cycle whose dream is retried (loop 2) or whose act
-    phase runs twice (loop 3) expressible without padding the script.
+    A whole CYCLE spends two backend calls on ONE backend object -- the plan,
+    then the dream's new 最近 list -- so `StubBackend` (one fixed answer for
+    everything) cannot drive one. Calls past the end of the script repeat its
+    last entry, which is what makes a cycle whose act phase runs twice
+    (loop 3) expressible without padding the script.
     """
 
     name = "scripted"
@@ -240,61 +229,6 @@ class ScriptedBackend:
         if index < len(self._responses):
             return self._responses[index]
         return self._responses[-1] if self._responses else ""
-
-
-class TwoCallBackend:
-    """A `Backend` double for `dream/round.py` (task 12): `run_dream` calls
-    the SAME backend exactly twice on an accepted dream -- once to generate
-    the rewrite candidate (before the gate), once for the diff narrative
-    (the first accept-sequence step, contract `03` §4.1) -- and never more
-    than twice, since a rejected or empty-candidate dream never reaches the
-    diff-narrative call at all.
-
-    Distinguishes the two calls by ORDER (first call -> candidate response,
-    every call after -> narrative response/raise), not by inspecting
-    `req.system` -- `run_dream`'s own call sequence is what's under test,
-    not the exact wording of its diff-narrative system prompt, and pinning
-    to call order keeps this fake from needing to import anything from
-    `dream/round.py`.
-
-    `order`, if given, gets `"diff_narrative"` appended on the SECOND call
-    only -- the candidate-rewrite call happens well before the write
-    sequence even starts, so it is deliberately never recorded onto that
-    shared list (`test_dream_round.py`'s write-ordering test, ruling R8:
-    ordering is observed through the fakes, not a `recorder=` parameter on
-    `run_dream`).
-
-    `narrative_raises`, if set, is raised (instead of returning
-    `narrative_response`) on the second call -- for pinning that a dead
-    backend during the best-effort diff-narrative step degrades to `""`
-    rather than aborting an already-accepted dream.
-    """
-
-    name = "two-call"
-
-    def __init__(
-        self,
-        *,
-        candidate_response: str,
-        narrative_response: str = "这次梦把风格往更沉稳的方向调了一点。",
-        narrative_raises: Exception | None = None,
-        order: list[str] | None = None,
-    ) -> None:
-        self._candidate_response = candidate_response
-        self._narrative_response = narrative_response
-        self._narrative_raises = narrative_raises
-        self._order = order
-        self.calls: list[CompletionRequest] = []
-
-    def complete(self, req: CompletionRequest) -> str:
-        self.calls.append(req)
-        if len(self.calls) == 1:
-            return self._candidate_response
-        if self._order is not None:
-            self._order.append("diff_narrative")
-        if self._narrative_raises is not None:
-            raise self._narrative_raises
-        return self._narrative_response
 
 
 # ── FakeResources (act/executor.py, task 6; extended for act/round.py, task 7) ──
@@ -472,6 +406,8 @@ class FakeResources:
         # `calls`, which is scoped to writes.
         self.board_feeds: dict[str, list[dict[str, Any]]] = {}
         self.feed_board_calls: list[tuple[str, int, str]] = []
+        # Era 3: every feed/search read's `since`, as (endpoint, since).
+        self.since_calls: list[tuple[str, str | None]] = []
 
         # Topic search (act/context.py's follow-topics world-context block).
         # `search_results` is topic -> items; `search_calls` records
@@ -521,13 +457,17 @@ class FakeResources:
         """Make `get_post`/`get_comments` raise `ApiError` for this one id."""
         self._fail_posts.add(post_id)
 
-    def feed_global(self, limit: int, sort: str) -> list[dict[str, Any]]:
+    def feed_global(self, limit: int, sort: str, since: str | None = None) -> list[dict[str, Any]]:
+        self.since_calls.append(("feed_global", since))
         if f"feed_global_{sort}" in self._fail:
             raise ApiError(500, "boom", None)
         return self.recommended if sort == "recommended" else self.latest
 
-    def feed_board(self, slug: str, limit: int = 12, sort: str = "latest") -> list[dict[str, Any]]:
+    def feed_board(
+        self, slug: str, limit: int = 12, sort: str = "latest", since: str | None = None
+    ) -> list[dict[str, Any]]:
         self.feed_board_calls.append((slug, limit, sort))
+        self.since_calls.append((f"feed_board:{slug}", since))
         if f"feed_board_{slug}" in self._fail:
             raise ApiError(500, "boom", None)
         return self.board_feeds.get(slug, [])
@@ -547,7 +487,9 @@ class FakeResources:
             raise ApiError(500, "boom", None)
         return self.thread_comments.get(post_id, [])
 
-    def search_posts(self, q: str, limit: int = 12) -> list[dict[str, Any]]:
+    def search_posts(
+        self, q: str, limit: int = 12, since: str | None = None
+    ) -> list[dict[str, Any]]:
         """`/posts/search`, the follow-topics world-context read.
 
         Recorded in its OWN list rather than in `self.calls`, which is scoped
@@ -556,6 +498,7 @@ class FakeResources:
         this call comes from the context build.
         """
         self.search_calls.append((q, limit))
+        self.since_calls.append(("search_posts", since))
         if f"search_{q}" in self._fail:
             raise ApiError(500, "boom", None)
         return self.search_results.get(q, [])
@@ -710,88 +653,53 @@ class FakeResources:
         return f"evt-{len(self.interventions)}"
 
 
-# ── FakeState (dream/candidate.py, task 10) ─────────────────────────────────
+# ── FakeState (dream/candidate.py) ──────────────────────────────────────────
 
 
 class FakeState:
     """An in-memory `dream.candidate.DreamState` double for cooldown tests.
 
-    Production's `FilesystemDreamState` reads the two real on-disk markers
-    (`last_dream_<name>`, `last_dream_memlines_<name>`) under STATE_DIR. This
-    fake skips the filesystem entirely -- not just for speed, but because the
-    floored-hours boundary test (11.9h, `test_hours_are_floored_not_rounded`
-    in `test_dream_candidate.py`) needs an EXACT elapsed-seconds value; poking
-    a real file's mtime to land within a fraction of a second of a 12-hour
-    boundary would make that test flaky in a way `set_last_dream`'s plain
-    `time.time() - seconds_ago` arithmetic is not.
-
-    `set_last_dream` defaults `name` to `"zenith"` because every example test
-    in task-10-brief.md's cooldown section drives a single implicit account
-    ("zenith") without ever passing a name into the setup call -- only into
-    `check_cooldown` itself.
-
-    `record_dream` (task 12, `dream/round.py`) writes both markers, same as
-    `FilesystemDreamState.record_dream` -- with `order`, if given, getting
-    `"marker_last_dream"` then `"marker_memlines"` appended, mirroring that
-    real method's own two-step internal order (epoch marker, then the
-    memlines snapshot) for `test_dream_round.py`'s write-ordering test.
+    Production's `FilesystemDreamState` reads `<state_dir>/last_dream_<name>`.
+    This fake skips the filesystem so a test can pin an exact elapsed-seconds
+    value at a cooldown boundary. `order`, if given, gets `"marker_last_dream"`
+    appended on every `record_dream`, so a write-order test can thread one list
+    through this fake, `FakePersonaSource` and `FakeResources`.
     """
 
     def __init__(self, *, order: list[str] | None = None) -> None:
         self._ts: dict[str, int] = {}
-        self._memlines: dict[str, int] = {}
         self._order = order
 
     def set_last_dream(
         self,
         *,
-        memlines: int,
         hours_ago: float = 0,
         minutes_ago: float = 0,
         name: str = "zenith",
+        at: int | None = None,
     ) -> None:
         seconds_ago = hours_ago * 3600 + minutes_ago * 60
-        self._ts[name] = int(time.time() - seconds_ago)
-        self._memlines[name] = memlines
+        self._ts[name] = at if at is not None else int(time.time() - seconds_ago)
 
     def last_dream_ts(self, name: str) -> int | None:
         return self._ts.get(name)
 
-    def last_dream_memlines(self, name: str) -> int:
-        return self._memlines.get(name, 0)
-
-    def record_dream(self, name: str, *, at: int, memlines: int) -> None:
+    def record_dream(self, name: str, *, at: int) -> None:
         if self._order is not None:
             self._order.append("marker_last_dream")
-            self._order.append("marker_memlines")
         self._ts[name] = at
-        self._memlines[name] = memlines
 
 
-# ── FakePersonaSource (persona/source.py's PersonaSource; task 12) ──────────
+# ── FakePersonaSource (persona/source.py's PersonaSource) ───────────────────
 
 
 class FakePersonaSource:
-    """An in-memory `persona.source.PersonaSource` double for `dream/round.py`
-    (task 12) tests that need to observe WRITE ORDER without touching a
-    filesystem.
+    """An in-memory `persona.source.PersonaSource` double.
 
-    `archive_and_write` appends `"archive_prepend"` then `"personality_write"`
-    to a shared `order` list (when one is supplied), and `append_memory`
-    appends `"memory_append"` -- mirroring the internal write granularity the
-    REAL `GitPersonaSource.archive_and_write` performs in ONE call (prepend
-    the old version to the archive, THEN swap `personality.md`; see that
-    method's own body) and `FilesystemDreamState.record_dream` performs in
-    another. This is how `test_dream_round.py` observes the full seven-step
-    write-ordering contract (`03` §4) without a `recorder=` parameter on
-    `run_dream` itself (ruling R8) -- one list threaded through this fake,
-    `FakeState`, and `FakeResources`.
-
-    Not itself a drop-in for every `test_dream_round.py` scenario: tests that
-    need to inspect real on-disk content after a call (e.g. "a rejected
-    dream touches nothing", or the snapshot-failure tests, which read
-    `personality.md`'s actual bytes back) use the real `GitPersonaSource`
-    against a `tmp_path` roster instead.
+    `write_recent` records the call and appends `"write_recent"` to a shared
+    `order` list (when one is supplied); `append_memory` appends
+    `"memory_append"`. Tests that need real bytes on disk use the real
+    `GitPersonaSource` against a `tmp_path` roster instead.
     """
 
     def __init__(
@@ -800,17 +708,17 @@ class FakePersonaSource:
         self._personas = personas or {}
         self._order = order
         self.memory: dict[str, str] = {}
-        self.archived: list[tuple[str, str, datetime]] = []
+        self.written: list[tuple[str, list[str], datetime]] = []
         self.appended: list[tuple[str, str]] = []
 
     def load(self, name: str) -> Persona:
         return self._personas[name]
 
-    def archive_and_write(self, name: str, candidate: str, when: datetime) -> None:
+    def write_recent(self, name: str, recent: Sequence[str], when: datetime) -> str:
         if self._order is not None:
-            self._order.append("archive_prepend")
-            self._order.append("personality_write")
-        self.archived.append((name, candidate, when))
+            self._order.append("write_recent")
+        self.written.append((name, list(recent), when))
+        return ""
 
     def read_memory(self, name: str) -> str:
         return self.memory.get(name, "")

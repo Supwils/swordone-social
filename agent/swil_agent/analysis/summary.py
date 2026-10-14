@@ -1,16 +1,12 @@
 """The daily activity dashboard, read by a human.
 
-Port of `agent/scripts/agent-summary.sh` (frozen; that script, not any prose
-about it, is the contract). LOCAL ONLY -- there is no API call anywhere in
-this module, and there is none in the script either. It reads each account's
+LOCAL ONLY -- there is no API call anywhere in this module. It reads each account's
 `memory.md` and prints posts / comments / likes / follows for one date, the
-latest line, and the total line count (the rotation-candidate signal).
+latest line, and the total line count. Rotation is automatic now
+(`memory_rotation.py`, at the end of every real round).
 
-It reads `memory.md`, NOT `auto-run.log`; a brief in an earlier plan claimed
-the opposite and was wrong.
-
-CLAUDE.md documents `bash agent/scripts/agent-summary.sh` as an everyday
-command and its output is read by eye, so the layout is reproduced column for
+It reads `memory.md`, NOT the act log. The output is read by eye, so the
+layout is kept stable column for
 column rather than improved -- see `render_summary`.
 
 `run_summary` returns the text instead of printing it: the CLI owns stdout,
@@ -28,11 +24,10 @@ from pydantic import BaseModel, ConfigDict
 
 MEMORY_FILENAME: Final = "memory.md"
 
-# `for base in agents humans` (agent-summary.sh:25). Cohort order is the
-# output order and agents come first.
-COHORTS: Final = ("agents", "humans")
+# Era 3 has one cohort: every account lives under `agents/`.
+ACCOUNTS_DIR: Final = "agents"
 
-# The four `grep -c` lines (agent-summary.sh:35-38), in column order.
+# The four `grep -c` lines, in column order.
 ACTION_KINDS: Final = ("post", "comment", "like", "follow")
 
 # `cut -c1-60` (:44). CHARACTERS, not bytes: BSD `cut -c` is codepoint-based
@@ -53,8 +48,6 @@ _RULES: Final = (
     "─────",
     "──────────",
 )
-
-TIP_LINE: Final = "Tip: bash scripts/rotate-memory.sh — archives memory.md when total > 500"
 
 
 class AccountActivity(BaseModel):
@@ -96,7 +89,7 @@ def memory_lines(text: str) -> list[str]:
 
 
 def count_action(lines: list[str], date: str, action: str) -> int:
-    """`grep -c "^${DATE}.*| post |"` (agent-summary.sh:35-38).
+    """`grep -c "^${DATE}.*| post |"`.
 
     In a POSIX BRE `|` is a literal pipe, so the pattern is: the line starts
     with `date`, and the literal `| post |` appears somewhere at or after
@@ -118,8 +111,7 @@ def summarise_account(name: str, memory_text: str, date: str) -> AccountActivity
 
     `total` is `wc -l`, i.e. the number of NEWLINES -- deliberately not
     `len(memory_lines(...))`. The two differ by one for a file with no
-    trailing newline, and this number is compared against 500 by
-    `rotate-memory.sh`.
+    trailing newline.
     """
     lines = memory_lines(memory_text)
     counts = [count_action(lines, date, action) for action in ACTION_KINDS]
@@ -135,45 +127,34 @@ def summarise_account(name: str, memory_text: str, date: str) -> AccountActivity
 
 
 def collect_activity(agent_root: Path, date: str) -> list[AccountActivity]:
-    """Every account with a `memory.md`, agents before humans, each cohort
-    sorted.
+    """Every account under `agents/` with a `memory.md`, sorted by name.
 
-    Bash's `*/` glob expands in sorted order and every account directory is
-    ASCII, so `sorted()` reproduces it. A missing cohort directory is
-    skipped (`[[ ! -d ... ]] && continue`, :26) and so is an account with no
-    `memory.md` (:31) -- a brand-new account that has never acted has no row
-    at all rather than a row of zeros.
+    A missing `agents/` directory yields no rows, and so does an account
+    with no `memory.md` -- a brand-new account that has never acted has no
+    row at all rather than a row of zeros.
 
     `errors="replace"` rather than a hard decode: `grep` and `wc` are
     byte-oriented and never fail on one bad byte, and a dashboard that
     raises on a single corrupt account is worse than one that shows a
     replacement character in its `LATEST` column.
-
-    Dropping `if p.is_dir()` is an EQUIVALENT mutant today (standing
-    constraint §7): the next test is `(p / "memory.md").is_file()`, which is
-    False for every non-directory, so a stray `agents/README.md` is skipped
-    either way. The filter stays because it is what bash's `*/` glob means,
-    and the equivalence expires the moment anything reads `p.name` or writes
-    a row before that inner test.
     """
+    base = agent_root / ACCOUNTS_DIR
+    if not base.is_dir():
+        return []
     rows: list[AccountActivity] = []
-    for cohort in COHORTS:
-        base = agent_root / cohort
-        if not base.is_dir():
+    for directory in sorted(p for p in base.iterdir() if p.is_dir()):
+        memory = directory / MEMORY_FILENAME
+        if not memory.is_file():
             continue
-        for directory in sorted(p for p in base.iterdir() if p.is_dir()):
-            memory = directory / MEMORY_FILENAME
-            if not memory.is_file():
-                continue
-            text = memory.read_text(encoding="utf-8", errors="replace")
-            rows.append(summarise_account(directory.name, text, date))
+        text = memory.read_text(encoding="utf-8", errors="replace")
+        rows.append(summarise_account(directory.name, text, date))
     return rows
 
 
 def render_summary(rows: list[AccountActivity], date: str) -> str:
     """The dashboard as text, ending in a newline.
 
-    `%-14s %5s %5s %5s %5s %5s   %s` (agent-summary.sh:20-23, :46) -- note
+    `%-14s %5s %5s %5s %5s %5s   %s` -- note
     the THREE spaces before the last column and one everywhere else.
 
     Bash's `printf` pads by BYTES and Python's format spec pads by
@@ -199,7 +180,7 @@ def render_summary(rows: list[AccountActivity], date: str) -> str:
                 row.latest or EMPTY_LATEST,
             )
         )
-    lines.extend(["", f"Date: {date}", TIP_LINE])
+    lines.extend(["", f"Date: {date}"])
     return "\n".join(lines) + "\n"
 
 
@@ -210,7 +191,7 @@ def _row(
 
 
 def local_today(now: datetime) -> str:
-    """`$(date '+%Y-%m-%d')` (agent-summary.sh:18) -- LOCAL time, not UTC.
+    """`$(date '+%Y-%m-%d')` -- LOCAL time, not UTC.
 
     Takes `now` rather than reading the clock so the default is decided by
     the caller and is pinnable in a test; `run_summary` requires an explicit

@@ -1,165 +1,93 @@
-from swil_agent.persona.validators import validate_candidate
+"""`validate_persona_text`: every limit of persona format v2, as readable failures."""
 
-BASE = """# 测试
+from __future__ import annotations
 
-## 身份
-- **Username:** tester
-- **Display Name:** 测试
-- **Headline:** AI Agent
-- **Bio:** 一句话
-- **Follow Topics:** alpha,beta,gamma
+from swil_agent.persona.validators import validate_persona_text
 
-- **AI Backend:** claude
-- **Model:** haiku
-- **Board:** perception
-- **Read:** wide
+VALID = """---
+username: xiaoman
+display_name: 小满
+model: grok:grok-4.6
+board: life-science
+topics: [health]
+era: 3
+---
+# 小满
 
-## 性格
-一些文字
+夜班护士，说话短。
 
-## 发帖节律
-- 每次触发有 60% 概率选择 post
+## 最近
+- 连上三个夜班
 """
 
 
-def test_identical_candidate_passes() -> None:
-    assert validate_candidate(BASE, BASE) is None
+def test_valid_text_has_no_failures() -> None:
+    assert validate_persona_text(VALID) == []
 
 
-def test_bio_may_be_rewritten_freely() -> None:
-    """Check 4 is existence-only. A dream MUST be allowed to rewrite Bio."""
-    candidate = BASE.replace("- **Bio:** 一句话", "- **Bio:** 完全不同的一句话")
-    assert validate_candidate(BASE, candidate) is None
+def test_bom_crlf_and_missing_recent_are_still_valid() -> None:
+    text = "﻿" + VALID.split("## 最近")[0].replace("\n", "\r\n")
+    assert validate_persona_text(text) == []
 
 
-def test_headline_and_display_name_may_be_rewritten() -> None:
-    candidate = BASE.replace("- **Headline:** AI Agent", "- **Headline:** 新的头衔")
-    candidate = candidate.replace("- **Display Name:** 测试", "- **Display Name:** 新名字")
-    assert validate_candidate(BASE, candidate) is None
+def test_missing_frontmatter_is_reported() -> None:
+    failures = validate_persona_text("# 小满\n\n卡片\n")
+    assert len(failures) == 1
+    assert "frontmatter" in failures[0]
 
 
-def test_headline_value_change_is_accepted() -> None:
-    """Symmetric to test_bio_may_be_rewritten_freely: pins that the
-    existence group is existence-only from the Headline side too, so the
-    round-trip/existence split is tested from both directions."""
-    candidate = BASE.replace("- **Headline:** AI Agent", "- **Headline:** 完全不同的头衔")
-    assert validate_candidate(BASE, candidate) is None
+def test_every_missing_required_key_is_reported() -> None:
+    text = VALID.replace("board: life-science\n", "").replace("era: 3\n", "")
+    failures = validate_persona_text(text)
+    assert any("board" in f for f in failures)
+    assert any("era" in f for f in failures)
 
 
-def test_username_drift_fails() -> None:
-    candidate = BASE.replace("- **Username:** tester", "- **Username:** someone_else")
-    f = validate_candidate(BASE, candidate)
-    assert f is not None
-    assert f.check == "Username"
+def test_empty_topics_is_reported() -> None:
+    failures = validate_persona_text(VALID.replace("topics: [health]", "topics: []"))
+    assert any("topics" in f for f in failures)
 
 
-def test_backend_drift_fails() -> None:
-    candidate = BASE.replace("- **AI Backend:** claude", "- **AI Backend:** codex")
-    f = validate_candidate(BASE, candidate)
-    assert f is not None
-    assert f.check == "AI Backend"
+def test_wrong_era_is_reported() -> None:
+    failures = validate_persona_text(VALID.replace("era: 3", "era: 2"))
+    assert any("era" in f for f in failures)
 
 
-def test_model_drift_fails() -> None:
-    candidate = BASE.replace("- **Model:** haiku", "- **Model:** opus")
-    f = validate_candidate(BASE, candidate)
-    assert f is not None
-    assert f.check == "Model"
+def test_non_string_scalar_is_reported() -> None:
+    failures = validate_persona_text(VALID.replace("board: life-science", "board: [a, b]"))
+    assert any("board" in f for f in failures)
 
 
-def test_board_drift_fails() -> None:
-    candidate = BASE.replace("- **Board:** perception", "- **Board:** making")
-    f = validate_candidate(BASE, candidate)
-    assert f is not None
-    assert f.check == "Board"
+def test_non_string_bio_is_reported() -> None:
+    failures = validate_persona_text(VALID.replace("era: 3", "era: 3\nbio: [a]"))
+    assert any("bio" in f for f in failures)
 
 
-def test_read_dropped_fails_the_quietest_control_field() -> None:
-    """Losing `Read` turns the widest-input arm into an ordinary board reader
-    with nothing in any log to say so. It must fail loudly."""
-    candidate = BASE.replace("- **Read:** wide\n", "")
-    f = validate_candidate(BASE, candidate)
-    assert f is not None
-    assert f.check == "Read"
+def test_long_card_is_reported() -> None:
+    text = VALID.replace("夜班护士，说话短。", "字" * 600)
+    assert any("card" in f for f in validate_persona_text(text))
 
 
-def test_read_value_change_fails() -> None:
-    """The deletion-shaped sibling test above cannot distinguish round-trip
-    from existence-only grouping: dropping the whole `Read` line trips the
-    'missing required field' branch just as reliably under either grouping,
-    so it passes regardless of which group `Read` is in. A changed-but-still-
-    present value is the failure mode that would otherwise pass silently
-    under an existence-only grouping -- and it is exactly the quiet
-    corruption this field is meant to guard against."""
-    candidate = BASE.replace("- **Read:** wide", "- **Read:** narrow")
-    f = validate_candidate(BASE, candidate)
-    assert f is not None
-    assert f.check == "Read"
+def test_empty_card_is_reported() -> None:
+    text = VALID.replace("# 小满\n\n夜班护士，说话短。\n", "")
+    assert any("card" in f for f in validate_persona_text(text))
 
 
-def test_control_field_absent_from_original_is_not_a_failure() -> None:
-    original = BASE.replace("- **Read:** wide\n", "")
-    candidate = original
-    assert validate_candidate(original, candidate) is None
+def test_too_many_recent_items_is_reported() -> None:
+    text = VALID + "".join(f"- 事{i}\n" for i in range(5))
+    assert any("最近" in f and "6" in f for f in validate_persona_text(text))
 
 
-def test_missing_bio_fails_existence_check() -> None:
-    candidate = BASE.replace("- **Bio:** 一句话\n", "")
-    f = validate_candidate(BASE, candidate)
-    assert f is not None
-    assert f.check == "Bio"
+def test_long_recent_item_is_reported() -> None:
+    text = VALID + "- " + "长" * 61 + "\n"
+    assert any("最近" in f and "60" in f for f in validate_persona_text(text))
 
 
-def test_missing_rhythm_section_fails() -> None:
-    candidate = BASE.replace("## 发帖节律\n- 每次触发有 60% 概率选择 post\n", "")
-    f = validate_candidate(BASE, candidate)
-    assert f is not None
-    assert f.check == "发帖节律"
+def test_file_over_4096_bytes_is_reported() -> None:
+    text = VALID.replace("display_name: 小满", "display_name: " + "长" * 1400)
+    assert any("4096" in f for f in validate_persona_text(text))
 
 
-def test_single_follow_topic_fails() -> None:
-    candidate = BASE.replace("- **Follow Topics:** alpha,beta,gamma", "- **Follow Topics:** alpha")
-    f = validate_candidate(BASE, candidate)
-    assert f is not None
-    assert f.check == "Follow Topics"
-
-
-def test_two_follow_topics_pass() -> None:
-    candidate = BASE.replace("- **Follow Topics:** alpha,beta,gamma", "- **Follow Topics:** a,b")
-    assert validate_candidate(BASE, candidate) is None
-
-
-def test_whitespace_differences_do_not_count_as_drift() -> None:
-    candidate = BASE.replace("- **Username:** tester", "- **Username:**  tester ")
-    assert validate_candidate(BASE, candidate) is None
-
-
-def test_internal_whitespace_does_not_count_as_drift() -> None:
-    """The sibling test above uses leading/trailing spaces, but
-    `loader.get_field()` already `.strip()`s the captured value before
-    `_normalised` ever sees it -- so that test would pass even if
-    `_normalised` did no whitespace handling at all. Bash's
-    `tr -d '[:space:]'` strips whitespace ANYWHERE in the value, including
-    internal, which is what `_normalised`'s `re.sub` exists to reproduce.
-    Only a space in the MIDDLE of the value exercises that equivalence."""
-    candidate = BASE.replace("- **Username:** tester", "- **Username:** tes ter")
-    assert validate_candidate(BASE, candidate) is None
-
-
-def test_suffixed_rhythm_heading_still_passes_the_structural_validator() -> None:
-    """`dream.sh`'s own structural check is `grep -q '^## 发帖节律'` -- a
-    prefix match with no end anchor -- so a dream that appends a suffix to
-    the heading (e.g. a parenthetical annotation tacked onto "发帖节律")
-    already passes Bash's gate and lands on disk. `validate_candidate` must
-    accept it too, or Python would reject dreams Bash has always accepted."""
-    candidate = BASE.replace("## 发帖节律\n", "## 发帖节律（本轮微调）\n")
-    assert validate_candidate(BASE, candidate) is None
-
-
-def test_checks_run_in_declared_order() -> None:
-    """Username drift AND a missing Bio: Username must be reported."""
-    candidate = BASE.replace("- **Username:** tester", "- **Username:** other")
-    candidate = candidate.replace("- **Bio:** 一句话\n", "")
-    f = validate_candidate(BASE, candidate)
-    assert f is not None
-    assert f.check == "Username"
+def test_several_failures_are_all_reported() -> None:
+    text = VALID.replace("era: 3", "era: 2").replace("topics: [health]", "topics: []")
+    assert len(validate_persona_text(text)) >= 2

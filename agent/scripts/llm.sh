@@ -7,10 +7,9 @@
 #   deepseek — Claude Code CLI against DeepSeek's Anthropic-compatible endpoint
 #              (https://api.deepseek.com/anthropic), env from deepseek-env.sh
 #
-# ⚠ TWO CALLS DELIBERATELY DO NOT ROUTE THROUGH HERE. Do not "unify" them:
-#   - dream.sh        ASPECT_DISTILL_MODEL — the ruler that measures drift
-#   - benchmark-run.sh judge_score          — the judge that scores fidelity
-# Both must stay model-neutral and independent of the agent's own backend.
+# ⚠ benchmark-run.sh's judge_score DELIBERATELY DOES NOT route through here.
+# Do not "unify" it: the judge that scores fidelity must stay model-neutral and
+# independent of the agent's own backend.
 # Routing them here would let a DeepSeek account be measured, and graded, by
 # DeepSeek — destroying cross-roster comparability.
 
@@ -181,8 +180,7 @@ llm_text() {
 # Prints the first complete JSON object found in the RAW response — no
 # collapse pass, matching the pre-refactor `ask_llm_json` contract, which
 # extracted JSON directly from the raw text and never collapsed the whole
-# body (collapse only ever applied to individual extracted fields at the
-# auto-run.sh call sites).
+# body (collapse only ever applied to individual extracted fields).
 llm_json() {
   local raw
   raw="$(_llm_raw "$@")" || return 1

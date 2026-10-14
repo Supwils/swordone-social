@@ -40,8 +40,9 @@ JUDGE="${JUDGE:-0}"
 JUDGE_MODEL="${JUDGE_MODEL:-sonnet}"
 
 # locate persona dir
+# Era 3 accounts live in agents/; sealed Era 2 accounts in archive/era-2/.
 DIR=""
-for base in agents humans; do
+for base in agents archive/era-2/agents archive/era-2/humans; do
   [[ -d "$ROOT_DIR/$base/$PERSONA" ]] && DIR="$ROOT_DIR/$base/$PERSONA" && break
 done
 [[ -z "$DIR" ]] && { echo "benchmark: persona '$PERSONA' not found" >&2; exit 1; }
@@ -51,13 +52,26 @@ KEY_FILE="$DIR/api_key.txt"
 [[ -f "$PFILE" ]] || { echo "benchmark: no personality.md for $PERSONA" >&2; exit 1; }
 [[ -f "$KEY_FILE" ]] || { echo "benchmark: no api_key.txt for $PERSONA (needed to POST)" >&2; exit 1; }
 KEY="$(cat "$KEY_FILE")"
-SYS="$(cat "$PFILE")"
-DISPLAY="$(grep -i '^\- \*\*Display Name:\*\*' "$PFILE" | sed 's/.*\*\* //' | head -1 | tr -d '\r')"
+# A v2 persona starts with a YAML frontmatter block (fenced by `---`); the model
+# sees only the card and 最近, never the frontmatter (it names the model under
+# test). CRLF and a UTF-8 BOM are dropped first, as the Python loader does.
+# Era 2 files are used as-is.
+PTEXT="$(LC_ALL=C sed $'1s/^\xef\xbb\xbf//' "$PFILE" | tr -d '\r')"
+IS_V2=0
+[[ "$(printf '%s\n' "$PTEXT" | head -1)" == "---" ]] && IS_V2=1
+if [[ "$IS_V2" == "1" ]]; then
+  PBODY="$(printf '%s\n' "$PTEXT" | awk 'NR==1 && $0=="---"{fm=1; next} fm && $0=="---"{fm=0; next} !fm{print}')"
+  DISPLAY="$(printf '%s\n' "$PTEXT" | awk 'NR==1{next} $0=="---"{exit} /^display_name:/{sub(/^display_name:[ ]*/,""); gsub(/^["'"'"']|["'"'"']$/,""); print; exit}')"
+else
+  PBODY="$(cat "$PFILE")"
+  DISPLAY="$(grep -i '^\- \*\*Display Name:\*\*' "$PFILE" | sed 's/.*\*\* //' | head -1 | tr -d '\r')"
+fi
+SYS="$PBODY"
 
 # Fidelity reference = the persona's IDENTITY + VOICE slice (everything before the
 # operational "## 发帖节律" section), so we score "does the output sound like this
 # persona", not "did it echo the rule list".
-REF_TEXT="$(awk '/^## 发帖节律/{exit} {print}' "$PFILE")"
+REF_TEXT="$(printf '%s\n' "$PBODY" | awk '/^## 发帖节律/{exit} {print}')"
 
 OUT_DIR="$BENCH_DIR/results/$PERSONA/$MODEL"
 mkdir -p "$OUT_DIR"

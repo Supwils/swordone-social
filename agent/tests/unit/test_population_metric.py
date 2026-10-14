@@ -42,20 +42,10 @@ def test_a_named_account_is_found_under_agents(tmp_path: Path) -> None:
     assert find_account_with_api_key(tmp_path, "zenith") == wanted
 
 
-def test_a_named_account_is_found_under_humans(tmp_path: Path) -> None:
-    """The simulated humans are first-class members of every round and carry
-    api keys exactly as the agents do (CLAUDE.md)."""
-    wanted = _keyed(tmp_path, "humans", "mangniu")
-    assert find_account_with_api_key(tmp_path, "mangniu") == wanted
-
-
-def test_agents_shadows_humans_for_the_same_name(tmp_path: Path) -> None:
-    """`for base in agents humans` searches agents first, the same order
-    `dream.sh::_find_dir` uses -- the shadowing that has already retired a
-    real humans/ account once (CLAUDE.md, "stray agents/<name> dir")."""
-    shadow = _keyed(tmp_path, "agents", "twin")
-    _keyed(tmp_path, "humans", "twin")
-    assert find_account_with_api_key(tmp_path, "twin") == shadow
+def test_a_named_account_under_humans_is_not_found(tmp_path: Path) -> None:
+    """Era 3 has one cohort: a leftover `humans/` tree holds no credentials."""
+    _keyed(tmp_path, "humans", "mangniu")
+    assert find_account_with_api_key(tmp_path, "mangniu") is None
 
 
 def test_a_named_account_without_a_key_is_not_found(tmp_path: Path) -> None:
@@ -98,24 +88,15 @@ def test_without_a_name_a_keyless_agent_is_skipped(tmp_path: Path) -> None:
     assert find_account_with_api_key(tmp_path) == keyed
 
 
-def test_without_a_name_humans_are_searched_only_after_agents(tmp_path: Path) -> None:
-    """`aardvark` under humans/ sorts before `zenith` under agents/, so a
-    port that merged the two cohorts into one sorted list would pick it."""
-    _keyed(tmp_path, "humans", "aardvark")
-    agent = _keyed(tmp_path, "agents", "zenith")
-    assert find_account_with_api_key(tmp_path) == agent
-
-
-def test_humans_are_reached_when_no_agent_has_a_key(tmp_path: Path) -> None:
+def test_without_a_name_humans_are_never_searched(tmp_path: Path) -> None:
     _keyed(tmp_path, "agents", "keyless", key=False)
-    human = _keyed(tmp_path, "humans", "mangniu")
-    assert find_account_with_api_key(tmp_path) == human
+    _keyed(tmp_path, "humans", "mangniu")
+    assert find_account_with_api_key(tmp_path) is None
 
 
-def test_a_missing_cohort_directory_is_skipped_not_an_error(tmp_path: Path) -> None:
-    """An unexpanded `.../agents/*/` glob just fails bash's `-f` test."""
-    human = _keyed(tmp_path, "humans", "mangniu")
-    assert find_account_with_api_key(tmp_path) == human
+def test_a_missing_agents_directory_is_not_an_error(tmp_path: Path) -> None:
+    (tmp_path / "logs").mkdir()
+    assert find_account_with_api_key(tmp_path) is None
 
 
 def test_an_empty_root_yields_none(tmp_path: Path) -> None:

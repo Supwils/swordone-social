@@ -1,14 +1,12 @@
-"""Bash-compatible per-account lock files under `agent/.agent-state/`.
+"""Per-account lock files under `agent/.agent-state/`.
 
-These are a COEXISTENCE measure, not the destination. The design spec §7.3
-replaces them with SQLite run leases in Plan 3, which is what actually fixes
-the orphan-lock class of defect (a dead run's lease expires; a dead run's
-lock file does not). Until then Python must use the same paths and the same
-1800s staleness rule as auto-run.sh:411-433 and dream.sh:461-470, or a Python
-round and a Bash round can hold the same account at the same time.
+A lock file is the cheap guard that works without the SQLite run-lease row:
+creation is atomic (`O_EXCL`) and a file older than 1800s is stale and
+reclaimed. The design spec §7.3 adds the lease row, which expires a dead
+run's claim where a dead run's lock file would not.
 
 **The on-disk format is one or two lines.** Line 1 is the holder's pid and
-nothing else, byte-for-byte what `echo "$$" > "$lock_file"` writes, because
+nothing else, plus a newline, because
 `cat`-ing a stale lock during an incident is how an operator finds the
 process (cli.py's own LeaseBusy remedy tells them to do exactly that). Line 2
 is OPTIONAL and carries an `identity` token supplied by the caller -- a value
@@ -16,12 +14,9 @@ unique to *this acquisition*, so a holder can later tell its own file apart
 from a replacement created at the same path after its lock was reclaimed as
 stale. `read_lock_identity` is the reader.
 
-Nothing in Bash reads either line. auto-run.sh:417 and dream.sh:463 create
-the file with `( set -o noclobber; echo "$$" > … )`, decide staleness from
-`stat` **mtime** alone (auto-run.sh:422, dream.sh:465), and release with
-`rm -f` (auto-run.sh:428/439, dream.sh:471/479). So a second line is
-invisible to the cross-runtime exclusion; what the two runtimes share is the
-path, the mtime, and the file's existence.
+Staleness is decided from the file's **mtime** alone and release is
+`rm -f`, so the optional second line is informational: what holders share is
+the path, the mtime, and the file's existence.
 """
 
 from __future__ import annotations
@@ -131,13 +126,10 @@ class FileLock:
         except FileExistsError:
             return False
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            # Trailing newline to match Bash's `echo "$$" > "$lock_file"`
-            # (auto-run.sh:417, dream.sh:463) byte-for-byte -- lock semantics
-            # here are purely mtime-based so this changes no behavior, but a
-            # Python-held lock's contents should read identically to a
-            # Bash-held one for anyone inspecting it during an incident. The
-            # identity line, when there is one, goes AFTER the pid for the
-            # same reason: `head -1` and a bare `cat` still name the process.
+            # Trailing newline, so `cat` of a lock during an incident prints
+            # the pid cleanly. The identity line, when there is one, goes
+            # AFTER the pid for the same reason: `head -1` and a bare `cat`
+            # still name the process.
             suffix = "" if self._identity is None else f"{self._identity}\n"
             handle.write(f"{os.getpid()}\n{suffix}")
         return True

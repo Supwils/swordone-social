@@ -1,100 +1,101 @@
-"""The six structural validators a dream candidate must pass.
+"""The limits of persona format v2, as human-readable failures.
 
-A faithful port of `agent/scripts/dream.sh:670-730`. Any failure means the
-candidate is discarded and the original personality.md is kept.
-
-The round-trip / existence split is load-bearing and easy to invert:
-  * Username, AI Backend, Model, Board, Read  -> must be IDENTICAL
-  * Display Name, Headline, Bio, Follow Topics -> must merely EXIST
-Implementing the second group as round-trip would reject every dream that
-rewrites a Bio, which is exactly what a dream is for. Implementing the first
-group as existence-only would let an account's model tier, board, or read
-width silently change, corrupting its data points.
+`load_persona` raises on the frontmatter, card and size checks; an over-limit
+`## 最近` is clamped on load instead, because the dream rewrites that list
+every round and a hand edit there must not stop an account from running.
+`validate_persona_text` reports all of them, for `register` and for authors.
 """
 
 from __future__ import annotations
 
-import re
+from collections.abc import Mapping, Sequence
+from typing import Any
 
-from pydantic import BaseModel
+from swil_agent.persona.format import (
+    MAX_CARD_CHARS,
+    MAX_FILE_BYTES,
+    MAX_RECENT_CHARS,
+    MAX_RECENT_ITEMS,
+    PersonaFormatError,
+    parse_persona,
+)
 
-from swil_agent.persona.loader import get_field, get_section
-
-# Identity fields: must round-trip identical, full stop.
-_ROUND_TRIP_IDENTITY = ("Username", "AI Backend")
-# Experiment control fields: dropping or rewriting one silently changes the
-# account's model tier, feed scope, or read width, making its data points
-# uninterpretable. If a field is absent from the ORIGINAL, the check is
-# skipped entirely -- so a candidate may both omit it and introduce it;
-# only a field present in the original is required to round-trip
-# unchanged. `Read` fails the most quietly of the three -- losing it turns
-# the widest-input arm into an ordinary board reader with nothing in any
-# log to say so.
-_ROUND_TRIP_CONTROL = ("Model", "Board", "Read")
-# Free-rewrite fields: a dream must be allowed to change these; they need
-# only be present in the candidate.
-_MUST_EXIST = ("Display Name", "Headline", "Bio", "Follow Topics")
-_RHYTHM_HEADING = "发帖节律"
-_MIN_FOLLOW_TOPICS = 2
+ERA = 3
+REQUIRED_KEYS = ("username", "display_name", "model", "board", "topics", "era")
+_STRING_KEYS = ("username", "display_name", "model", "board")
 
 
-class ValidationFailure(BaseModel):
-    check: str
-    detail: str
+def _is_text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
-def _normalised(text: str, field: str) -> str | None:
-    """Bash compares field values with `tr -d '[:space:]'`; mirror that here."""
-    value = get_field(text, field)
-    if value is None:
-        return None
-    return re.sub(r"\s+", "", value)
+def meta_problems(meta: Mapping[str, Any]) -> list[str]:
+    problems: list[str] = []
+    missing = [key for key in REQUIRED_KEYS if meta.get(key) is None or meta.get(key) == ""]
+    if missing:
+        problems.append(f"frontmatter is missing required keys: {', '.join(missing)}")
+
+    for key in _STRING_KEYS:
+        if key not in missing and not _is_text(meta[key]):
+            problems.append(f"frontmatter '{key}' must be a non-empty string")
+    if meta.get("bio") is not None and not isinstance(meta["bio"], str):
+        problems.append("frontmatter 'bio' must be a string")
+
+    if "model" not in missing and _is_text(meta["model"]):
+        backend = str(meta["model"]).split(":", 1)[0].strip()
+        if not backend:
+            problems.append("frontmatter 'model' must start with a backend (backend:model)")
+
+    if "topics" not in missing:
+        topics = meta["topics"]
+        if not isinstance(topics, list) or not all(_is_text(t) for t in topics):
+            problems.append("frontmatter 'topics' must be a list of strings")
+        elif not topics:
+            problems.append("frontmatter 'topics' must have at least one entry")
+
+    if "era" not in missing:
+        era = meta["era"]
+        if type(era) is not int or era != ERA:
+            problems.append(f"frontmatter 'era' must be {ERA}, got {era!r}")
+    return problems
 
 
-def _check_round_trip(original: str, candidate: str, field: str) -> ValidationFailure | None:
-    old = _normalised(original, field)
-    if old is None:
-        # Absent from the original is never a failure, matching Bash's
-        # `[[ -n "$old_val" && "$new_val" != "$old_val" ]]` guard.
-        return None
-    new = _normalised(candidate, field)
-    if new != old:
-        new_repr = repr(new) if new is not None else "<missing>"
-        return ValidationFailure(
-            check=field,
-            detail=f"{field} drift ({old!r} -> {new_repr})",
-        )
-    return None
+def card_problems(card: str) -> list[str]:
+    if not card:
+        return ["card is empty"]
+    if len(card) > MAX_CARD_CHARS:
+        return [f"card is {len(card)} code points (max {MAX_CARD_CHARS})"]
+    return []
 
 
-def validate_candidate(original: str, candidate: str) -> ValidationFailure | None:
-    """Return the first structural failure, or None if the candidate passes
-    all six checks (in the order dream.sh runs them)."""
-    # Checks 1-3: round-trip fields (identity, then experiment controls).
-    for field in (*_ROUND_TRIP_IDENTITY, *_ROUND_TRIP_CONTROL):
-        failure = _check_round_trip(original, candidate, field)
-        if failure is not None:
-            return failure
+def recent_problems(recent: Sequence[str]) -> list[str]:
+    problems: list[str] = []
+    if len(recent) > MAX_RECENT_ITEMS:
+        problems.append(f"最近 has {len(recent)} items (max {MAX_RECENT_ITEMS})")
+    problems.extend(
+        f"最近 item {i} is {len(item)} code points (max {MAX_RECENT_CHARS})"
+        for i, item in enumerate(recent, start=1)
+        if len(item) > MAX_RECENT_CHARS
+    )
+    return problems
 
-    # Check 4: free-rewrite fields need only exist in the candidate.
-    for field in _MUST_EXIST:
-        if get_field(candidate, field) is None:
-            return ValidationFailure(check=field, detail=f"missing required field {field!r}")
 
-    # Check 5: the rhythm section must survive the rewrite.
-    if not get_section(candidate, _RHYTHM_HEADING):
-        return ValidationFailure(
-            check=_RHYTHM_HEADING,
-            detail=f"missing '## {_RHYTHM_HEADING}' section",
-        )
+def size_problems(size: int) -> list[str]:
+    if size > MAX_FILE_BYTES:
+        return [f"file is {size} bytes (max {MAX_FILE_BYTES})"]
+    return []
 
-    # Check 6: Follow Topics needs at least two comma-separated entries.
-    topics_raw = get_field(candidate, "Follow Topics") or ""
-    topics = [t for t in (part.strip() for part in topics_raw.split(",")) if t]
-    if len(topics) < _MIN_FOLLOW_TOPICS:
-        return ValidationFailure(
-            check="Follow Topics",
-            detail=f"Follow Topics has {len(topics)} entries, need >= {_MIN_FOLLOW_TOPICS}",
-        )
 
-    return None
+def validate_persona_text(text: str) -> list[str]:
+    """Every way `text` fails persona format v2; empty when it is valid."""
+    problems = size_problems(len(text.encode("utf-8")))
+    try:
+        doc = parse_persona(text)
+    except PersonaFormatError as exc:
+        return [*problems, str(exc)]
+    return [
+        *problems,
+        *meta_problems(doc.meta),
+        *card_problems(doc.card),
+        *recent_problems(doc.recent),
+    ]

@@ -12,8 +12,6 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-from swil_agent.models import GLOBAL_READ_SCOPE
-
 _DATED = re.compile(r"^\d{4}-\d{2}-\d{2}")
 _POST_LINE = re.compile(r"\| post \|")
 
@@ -78,9 +76,7 @@ def retrieve_memory(
 
 def _needles(board: str, counterparties: Sequence[str]) -> tuple[str, ...]:
     names = [name for name in counterparties if name]
-    board_text = board.strip()
-    if board_text and board_text != GLOBAL_READ_SCOPE:
-        names.extend(part for part in board_text.split() if part and part != GLOBAL_READ_SCOPE)
+    names.extend(board.split())
     return tuple(names)
 
 
