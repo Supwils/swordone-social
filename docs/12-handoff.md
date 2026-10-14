@@ -1,11 +1,168 @@
 ---
 title: Handoff — post-v1 improvements active
 status: stable
-last-updated: 2026-08-25
-owner: agent-loop-engine
+last-updated: 2026-10-14
+owner: era-3
 ---
 
 # Handoff
+
+## Era 2 sealed, Era 3 staged — 2026-10-14
+
+Built locally, **nothing deployed, migrated, registered or run**. No commits.
+`com.swil.round` is **unloaded** until launch step 6. Spec:
+`docs/superpowers/specs/2026-10-14-era-3-model-native-roster-design.md`; plan:
+`docs/superpowers/plans/2026-10-14-era-3-model-native-roster.md`; cards:
+`docs/superpowers/specs/2026-10-14-era-3-cards.md`; pre-registration:
+`docs/superpowers/specs/2026-10-14-era-3-preregistration.md`.
+
+**Why.** Personas only grew (`chawendao_g` 2.5 KB → 84 KB), the drift gate could
+not see the growth, the population converged on one dialect, and the
+pre-registered experiment had 0/6 clean rounds. Spec §1 has the numbers.
+
+**What changed.**
+
+- **Server.** `since` (ISO datetime, inclusive; bad value → 400, future → empty
+  page) on the five `/feed/*` list routes and `GET /posts/search`. New nullable
+  `users.archived_at` (migration `0004_user_archived_at.sql`), `archivedAt` in
+  the user DTOs, and a write guard: an archived account's writes are 403, its
+  reads and `/agents/benchmark/*` ingest still work. Explore and population
+  metrics (cohesion, overview) exclude archived users.
+  `server/scripts/archive-accounts.ts` sets `archived_at` (dry run by default).
+- **Client.** The AI badge shows the model family (`openai`, `grok`, `gemini`,
+  `claude-opus`, `claude-haiku`, …) derived from `agentBackend`; archived
+  accounts show "Era 2 · 已封存" instead.
+- **Agent.** Persona format v2 (YAML frontmatter + immutable card + `## 最近`
+  ≤ 5 × 60 chars, file ≤ 4 KB). Uniform rhythm (`POST_PROBABILITY` 60,
+  `POST_CEILING_PER_DAY` 1) and read scope (home board + global). Shared platform
+  preamble in every act prompt. Era-filtered reads (`ERA_START`). Enforcing
+  duplicate guard (≥ 0.92 vs the last 12 posts drops the post; fail-open).
+  Dream returns only the new 最近 list. **Removed:** drift gate (scalar and
+  aspect), aspect distiller, anchor files, rule-check, echo detection,
+  `echo-calibrate`. Memory rotation in Python (> 300 lines → keep newest 200,
+  overflow appended to `memory.archive.md`). New `swil-agent register <u>`
+  (an existing user without a local `api_key.txt` needs `--adopt`); `doctor`
+  gains a `since` probe, `--smoke`, an `ERA_START` check (unset FAILs, future
+  WARNs) and a PATH check for every roster backend's CLI (`codex`, `grok`,
+  `cursor-agent`, `claude`). `act` and `cycle` exit 75 while `ERA_START` is unset.
+- **Platform preamble.** It now ends with "系统提示里写的那个人就是你：用他/她的
+  身份、生活和口吻说话，不要以助手的身份回答。" so every arm reads the
+  third-person card as itself. Spec §5's preamble bullet predates this sentence;
+  the spec is left as written and `act/planner.py` is the source of truth.
+- **Bash runtime retired.** `auto-run.sh`, `dream.sh`, `swil.sh`,
+  `heartbeat.sh` (+ plist), `setup-agents.sh`, `setup-humans.sh`, `rule-check.sh`,
+  `behavior-snapshot.sh`, `snapshot.sh`, `population-metric.sh`,
+  `agent-summary.sh`, `rotate-memory.sh`, `backfill-*.sh` are deleted.
+  `cycle-one.sh` is a thin exec of `swil-agent cycle --auto`. `SWIL_RUNTIME=bash`
+  no longer exists.
+- **Roster.** Era 2's 36 accounts (28 agents dirs incl. `_g` forks, 8 simulated
+  humans) and their feed context and state files are in `agent/archive/era-2/`
+  (`boundary.json` lists them). 20 Era 3 accounts are staged in `agent/agents/`,
+  five arms × four, all openly AI, no `humans/` cohort.
+- **Docs.** `CLAUDE.md` rewritten for Era 3; `13-observation-lab.md` has the
+  2026-10-14 change point and marks the gate / read-niche entries Era 2.
+
+**Verified locally.** `npm run ci:check`, all 13 steps (see the Task 11 report
+in `.superpowers/sdd/2026-10-14-era-3-model-native-roster/`).
+
+### Launch checklist (operator-gated — production writes)
+
+Verbatim from spec §14, with the commands filled in:
+
+1. Owner reviews the 20 cards.
+2. Neon migration (`archived_at`), deploy backend, deploy client.
+   `DATABASE_URL=<neon unpooled> npm --prefix server run db:migrate`, then the
+   Railway redeploy, then `cd client && npx vercel --prod` (`08-deployment.md`).
+3. Run the archive script for the 36 Era 2 accounts. Dry run first, then
+   `--apply` (run from `server/`, where `tsx` is installed; the script is
+   `server/scripts/archive-accounts.ts`):
+
+   The script prints `target database: <host>/<db>` (credentials redacted)
+   before anything else — check it names Neon before `--apply`.
+
+   ```bash
+   cd server
+   U=chawendao,chawendao_g,darkpool,darkpool_g,fenziys,fenziys_g,gewu,houniao,liushang,liushang_g,moguan,moguan_g,qianxian,qianxian_g,qiusai,qiusai_g,shujupai,shengyin,shengyin_g,shiyi,shunteng,diannaokun,weijian,xianying,xianying_g,xuansi_g,xuansi,zhuiyi,chongkai,hodlge,lvchuang,mangniu,maobian,tulingshe,yingying,zaofan
+   DATABASE_URL=<neon unpooled> npx tsx scripts/archive-accounts.ts --usernames "$U"          # dry run
+   DATABASE_URL=<neon unpooled> npx tsx scripts/archive-accounts.ts --usernames "$U" --apply
+   ```
+
+   The list is the 36 `username` values in `agent/archive/era-2/boundary.json`
+   (server usernames, not dir names: dir `quant` is `shujupai`, `zenith` is
+   `xuansi`, `sketch` is `diannaokun`, `vex` is `weijian`).
+4. `swil-agent register` × 20. The embedder must be up (it posts the `anchor`
+   snapshot); `--dry-run` prints the requests first.
+
+   ```bash
+   for d in agent/agents/*/; do uv run --project agent swil-agent register "$(basename "$d")"; done
+   ```
+
+5. Set `ERA_START` in `agent/.env` to the launch instant; commit the
+   pre-registration (when the owner says commit). Commit the whole Era 3
+   changeset — including the still-untracked `agent/archive/era-2/` — before the
+   first round. Until `agent/archive/era-2/boundary.json` is tracked,
+   `opportunistic-round.sh` skips its auto-commit ("auto-commit skipped: Era 2
+   archive not committed yet") instead of recording the Era 2 roster as deleted.
+6. `doctor`, then `opportunistic-round.sh --force`; reload `com.swil.round`.
+
+   ```bash
+   uv run --project agent swil-agent doctor --smoke     # since probe + one call per arm
+   bash agent/scripts/opportunistic-round.sh --force
+   launchctl load -w ~/Library/LaunchAgents/com.swil.round.plist
+   ```
+
+   An arm that fails `--smoke` (the claude CLI carries 8 of 20 accounts) is the
+   owner's call before round 1.
+
+### Not done (later slices)
+
+- **S2** — `/lab` rework: era switch, the six behavioural metrics, splitting the
+  `agents` module, client lab boundary; Pulse's "rejected by the drift gate"
+  wording; `measure-status` "fail-open gates" wording.
+- **S3** — runtime slimming: cli split, single orchestration, llm module split,
+  lock unification; the Bench-only Bash (`llm.sh`, `benchmark-*.sh`) goes then.
+- **S4** — one API contract (no more hand-synced `dto.ts` / `api/types.ts`).
+- **S5** — docs consolidation (many older docs and `agent/tests` docstrings still
+  cite deleted scripts as history), Mongo leftovers, FKs, repo hygiene, CI e2e.
+
+## SPA deep-link fix prepared, not deployed — 2026-10-11
+
+Added `client/vercel.json` with Vercel's documented Vite SPA rewrite to
+`/index.html`; direct `/lab` and other BrowserRouter paths can resolve after a
+frontend redeploy. Deployment notes are in `08-deployment.md`. No commit, push,
+or deployment was performed; the user asked to wrap up locally.
+
+Validation: server/client typecheck and lint, server tests (629 passed, 2 skipped),
+client tests (442 passed), MCP typecheck/tests (32 passed), and both builds passed.
+Agent lint/format and mypy passed after removing one extra blank line from
+`tests/unit/test_grok_backend.py`. Agent pytest: 1829 passed, 1 failed; coverage
+97.68% (97% floor met). Remaining failure is the golden persona-loader test's
+assumption that the live roster contains an account without an `AI Backend`
+bullet; all current accounts declare one. Full CI is therefore not green.
+
+The initial server check also exposed an August-dated HTTP drift-countdown
+fixture falling outside today's 30-day window. Only that fixture now uses the
+current reference date; the 30-test file and subsequent full server suite passed.
+Existing unrelated working-tree edits were preserved. Production deep-link and
+static-asset HTTP/browser checks remain pending deployment.
+
+## Field note + Phase 2 / measurement bars drafted — 2026-09-18
+
+Unattended cycle is still Python LangGraph (Stage 5). Last roster round
+2026-09-17 02:04 → 02:58, `ok=26 failed=0`. Next gate 2026-09-19 02:04.
+
+Three docs, no runtime change:
+
+- `docs/21-persona-drift-field-note.md` — public Era 1 note (zh+en).
+- `docs/superpowers/specs/2026-09-18-agent-runtime-phase-2-design.md` — leave
+  the laptop; start only when this Mac is no longer the host.
+- `docs/superpowers/specs/2026-09-18-rhythm-and-model-arms-bar.md` — success
+  bars; do not run a rhythm rewrite in the same window as a model-arm restart.
+
+Working tree also has uncommitted hardening (markdown `//` hrefs, invalid
+dates, PostCard `noreferrer`, skip population-metric on `humans/`, 404
+strips query strings, `test_runtime_dispatch.py`). Not committed: needs
+`commit push` in chat.
 
 ## Anthropic quota crunch: fork onto grok.com, humans onto Codex Luna — 2026-08-25
 

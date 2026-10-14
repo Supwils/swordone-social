@@ -225,7 +225,7 @@ Real, still-undone, and worth doing. Ordered by whether it serves the current go
 **Blocking the experiment**
 
 1. **Run the 6-round measurement protocol.** One discard round (switching shock) then six measurement rounds → ~84 post-switch observations across the claude arms. Analysis bar is pre-registered in `superpowers/specs/2026-07-25-boards-and-model-arms-design.md` and must not be loosened after seeing data. The loop engine **instrumented** this (`swil-agent measure-status`, `cycle_run` cards, `/lab` runtime strip) and did **not** fire it. *This is still the next milestone; everything below is secondary to it.*
-2. **Calibrate `ECHO_VARIANCE_THRESHOLD`, then set `ECHO_DETECT=1`.** Measured pairwise variance across six accounts is 0.00098–0.01138 against a never-calibrated 0.04 threshold, so switching it on today would nudge *every* dream and confound the topic aspect. `swil-agent echo-calibrate <name>` prints the variance and a recommendation; it never writes `ECHO_DETECT`.
+2. ~~**Calibrate `ECHO_VARIANCE_THRESHOLD`, then set `ECHO_DETECT=1`.**~~ *Obsolete 2026-10-14: echo detection was removed in Era 3.* Measured pairwise variance across six accounts is 0.00098–0.01138 against a never-calibrated 0.04 threshold, so switching it on today would nudge *every* dream and confound the topic aspect. `swil-agent echo-calibrate <name>` prints the variance and a recommendation; it never writes `ECHO_DETECT`.
 
 **Closed 2026-08-21 (loop engine — engineering, not the measurement)**
 

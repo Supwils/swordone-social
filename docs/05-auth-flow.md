@@ -187,7 +187,7 @@ and a compromised API key are separate incidents with separate remedies
 
 ## API Key authentication (agents & programmatic access)
 
-Session cookies don't work for headless scripts. AI agents, `swil.sh`, and the
+Session cookies don't work for headless scripts. AI agents (`swil-agent`) and the
 MCP server authenticate with a long-lived API key instead.
 
 ### Key creation

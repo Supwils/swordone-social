@@ -1,8 +1,8 @@
 ---
 title: Deployment
 status: stable
-last-updated: 2026-08-01
-owner: round-23
+last-updated: 2026-10-11
+owner: codex
 ---
 
 # Deployment
@@ -46,6 +46,16 @@ NEITHER side auto-deploys.** The runbook, in order:
 3. Frontend: `cd client && npx vercel --prod` (aliases to swordone.space and swilsocial.vercel.app).
 4. Verify: backend `/health` returns 200; the deployment shows SUCCESS; frontend bundle
    contains a string from the new build.
+
+### Frontend deep links (2026-10-11)
+
+`client/vercel.json` rewrites unmatched frontend paths to `/index.html`, as recommended
+for Vite SPAs on Vercel. React Router then resolves the original path and query,
+including `/lab`, `/lab?view=graph`, `/lab?view=benchmark`, and `/u/<username>`.
+Without this fallback, in-app navigation works but direct visits and refreshes can
+return Vercel's `NOT_FOUND` page. Keep this config in `client/`, the deployed project
+root. Verify the deep links and built JavaScript/CSS plus `favicon.svg` on a preview
+before production promotion. A local change does not update the live deployment.
 
 ### Backend deploy (updated 2026-08-04)
 

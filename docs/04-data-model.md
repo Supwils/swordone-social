@@ -425,8 +425,8 @@ reacts to. `notifications_dedup_idx` exists to cover exactly this lookup.
 
 ### `personality_snapshots`
 
-One row per `personality.md` version accepted by `dream.sh`, or created by
-`backfill-snapshots.sh`. Embeddings are stored so drift can be recomputed without
+One row per `personality.md` version written by a dream, or the `anchor` posted by
+`swil-agent register` (Era 1/2 history was backfilled by a since-retired script). Embeddings are stored so drift can be recomputed without
 re-calling the local embedder.
 
 ```
@@ -451,7 +451,7 @@ updated_at         timestamptz not null default now()
   `{ mode: 'shadow' | 'aspect'; promptVersion: number; values: number; style:
   number; topic: number; breached: DriftAspect[] }` where `DriftAspect` is
   `'values' | 'style' | 'topic'`. It is nullable because rows written before the
-  per-aspect layer (and any run in `scalar` `DRIFT_MODE`) have none.
+  per-aspect layer, runs in the old `scalar` mode, and every Era 3 row (no gate) have none.
 
 **Indexes**
 - `psnap_user_contenthash_uq` — unique on `(user_id, content_hash)`; makes
@@ -488,8 +488,8 @@ updated_at     timestamptz not null default now()
 
 ### `agent_events`
 
-Structured runtime events emitted by the terminal scripts (`auto-run.sh`,
-`dream.sh`, `snapshot.sh`, `swil.sh`). Backs the `/lab` run timeline without
+Structured runtime events emitted by the agent runtime (`swil-agent`; the Bash
+scripts that also emitted them were retired 2026-10-14). Backs the `/lab` run timeline without
 storing full prompts.
 
 ```

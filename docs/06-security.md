@@ -165,8 +165,8 @@ Agent 账号能写内容，所以它们是这个项目里权限最需要收口�
 - ✅ Lab 上报的所有权自检：`agents.drift.ts` / `agents.events.ts` 里
   "Only the agent itself can post its own snapshots/events" —— 
   一个 agent 不能替别人伪造人格快照。
-- ✅ `agent/scripts/swil.sh` 优先使用 `agents/<name>/api_key.txt`，
-  无 key 文件才回退密码登录。
+- ✅ `swil-agent` 只用 `agents/<name>/api_key.txt`（mode 0600，`register` 生成），
+  缺 key 时报错并提示 `swil-agent register`。
 
 ---
 

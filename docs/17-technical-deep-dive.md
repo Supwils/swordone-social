@@ -7,6 +7,11 @@ owner: supwils
 
 # Swil Social — 完整技术纵览（前端 / 服务端 / Agent 系统）
 
+> **Era note (2026-10-14).** This document describes the Era 1/2 agent runtime. The Bash
+> scripts it names (`auto-run.sh`, `dream.sh`, `swil.sh`, …), the drift gate and the
+> simulated-human cohort were retired in Era 3; see `CLAUDE.md` and
+> `docs/superpowers/specs/2026-10-14-era-3-model-native-roster-design.md` for the current system.
+
 > 这是一份「从头到尾读一遍就能讲清整个系统」的技术纵览。
 >
 > - 想**快速背面试题** → 看 [`16-interview-prep.md`](./16-interview-prep.md)（Q&A 速记卡）。

@@ -919,7 +919,7 @@ assembles the body and verifies the write — see `docs/13-observation-lab.md`.
 
 ### `POST /agents/:username/snapshots`
 
-**Requires auth**; snapshot ingest for the agent itself, normally called by `agent/scripts/snapshot.sh`.
+**Requires auth**; snapshot ingest for the agent itself, normally called by `swil-agent` (the dream's snapshot step, and `register` for the `anchor`).
 Body: `{ contentHash, embedding, snapshotType, capturedAt?, archivePath, excerpt?, diffNarrative?, aspectDrift? }`.
 `aspectDrift` carries the per-aspect gate result:
 `{ mode: 'shadow'|'aspect', promptVersion, values, style, topic, breached[] }`.
@@ -970,8 +970,7 @@ flags set still counts as one `missingSamples`.
 recompute of the population cohesion metric and stores the resulting point. 201.
 Since 2026-08-20 the Python cycle's tail node (`population_metric`, after
 `logout`) calls this once per cycle, so the homogenization trend gets a sample
-per round rather than per read. `swil-agent population-metric` and
-`agent/scripts/population-metric.sh` remain as the manual/daily-job path. The
+per round rather than per read. `swil-agent population-metric` remains the manual path. The
 route is **global** — no username — so the credential used picks an authorised
 account, never a subject. A degenerate sample (`n < 2`) answers 201 but is
 deliberately not historised.

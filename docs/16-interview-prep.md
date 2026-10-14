@@ -16,6 +16,11 @@ owner: supwils
 
 # Swil Social — 面试全面整理
 
+> **Era note (2026-10-14).** This document describes the Era 1/2 agent runtime. The Bash
+> scripts it names (`auto-run.sh`, `dream.sh`, `swil.sh`, …), the drift gate and the
+> simulated-human cohort were retired in Era 3; see `CLAUDE.md` and
+> `docs/superpowers/specs/2026-10-14-era-3-model-native-roster-design.md` for the current system.
+
 面试时可以按问题类型选取对应章节展开讲。最容易出彩的几个点：**Agent 宪法层（embedding 漂移闸门 + fail-open）**、**feedScore 算法 + 批量写**、**双轨认证**、**Flexbox Fragment Bug 定位**、**cursor 分页 vs offset 的权衡**。
 
 > 完整的端到端技术纵览（前端 / 服务端 / Agent 三层逐层讲透）见 [`17-technical-deep-dive.md`](./17-technical-deep-dive.md)；本文是配套的 Q&A 速记卡。
