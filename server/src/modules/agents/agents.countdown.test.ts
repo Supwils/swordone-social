@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { db } from '../../db/client';
@@ -55,8 +53,9 @@ import type { DriftCountdownDTO, DriftCountdownKey } from './agents.types';
  * `AS_OF` at 1/2/3-day gaps, and it kills both. When adding a fixture here,
  * ask what property `DAYS` forces on it before reusing it.
  *
- * `AS_OF` IS INJECTED EVERYWHERE except the one HTTP test that says why, so
- * these assertions are deterministic forever. That matters for mutation runs
+ * Service tests inject `AS_OF`; HTTP fixtures are relative to the real clock
+ * because the endpoint has no reference-time parameter. These assertions stay
+ * independent of the calendar date. That matters for mutation runs
  * as well as for CI: a verdict about a mutant that only differs once the wall
  * clock passes `AS_OF` is a verdict about the hour it was run in (review F9).
  */
@@ -153,11 +152,12 @@ async function seedScalarSeries(
 /** The four-point, four-series fixture described above. */
 async function seedStraightLines(
   userId: string,
-  over: { driftMode?: string; thresholds?: Record<string, number> | null } = {},
+  over: { driftMode?: string; thresholds?: Record<string, number> | null; asOf?: Date } = {},
 ): Promise<void> {
   const thresholds = over.thresholds === undefined ? THRESHOLDS : over.thresholds;
+  const reference = over.asOf ?? AS_OF;
   for (let i = 0; i < DAYS.length; i += 1) {
-    await seedMeasurement(userId, at(DAYS[i]), {
+    await seedMeasurement(userId, new Date(reference.getTime() + DAYS[i] * DAY_MS), {
       anchorSim: SIMS.anchor[i],
       stepSim: 0.5,
       aspectValues: SIMS.values[i],
@@ -885,43 +885,16 @@ describe('agents.countdown.getDriftCountdown', () => {
   });
 });
 
-describe('the drift-measured summary is a two-language contract', () => {
+describe('the drift-measured summary is frozen history', () => {
   /**
-   * THE OTHER SIDE OF THIS COUPLING IS PYTHON. The query narrows on
-   * `summary = 'drift measured'`, a string produced by
-   * `agent/swil_agent/dream/round.py`'s `_DRIFT_MEASURED_SUMMARY` — and that
-   * module's own comment tells consumers NOT to key on it. Nothing else in
-   * `agent_events` is indexable for this, so the coupling stays and gets a
-   * guard instead: reword the Python constant and this test goes red, rather
-   * than the endpoint returning `n: 0` for every account, which reads like
-   * "no rounds yet".
-   *
-   * The Python suite carries the mirror of this test
-   * (`agent/tests/unit/test_drift_measurement.py`), so the rename reddens both
-   * sides and each failure message names the other.
-   *
-   * Standing constraint §14: the literal appears in this repo's PROSE too —
-   * the module header of `agents.countdown.ts`, three docstrings in
-   * `round.py` — so a guard that greps raw source can be satisfied by a
-   * comment while the real constant is gone. Comment lines are stripped and
-   * the match is anchored on the assignment statement itself.
+   * The query narrows on `summary = 'drift measured'`, the string the Era 1/2
+   * drift gate filed its calibration event under. Era 3 (2026-10-14) removed
+   * the gate, so no producer remains and the rows that exist are all the rows
+   * there will be. Rewording the constant would make the countdown report
+   * `n: 0` for every account, which reads like "no rounds yet".
    */
-  const ROUND_PY = path.resolve(__dirname, '../../../../agent/swil_agent/dream/round.py');
-
-  it('matches the literal `dream/round.py` files the calibration event under', () => {
-    const source = readFileSync(ROUND_PY, 'utf8');
-    const executable = source
-      .split('\n')
-      .filter((line) => !line.trimStart().startsWith('#'))
-      .join('\n');
-
-    expect(
-      executable,
-      `agent/swil_agent/dream/round.py no longer assigns "${DRIFT_MEASURED_SUMMARY}". ` +
-        'That string is what agents.countdown.ts narrows the SQL on: if the Python ' +
-        'side was reworded deliberately, change DRIFT_MEASURED_SUMMARY here in the ' +
-        'same commit — otherwise the countdown silently reports n: 0 for everyone.',
-    ).toMatch(new RegExp(`^\\w+: Final = "${DRIFT_MEASURED_SUMMARY}"$`, 'm'));
+  it('keeps the literal the historical rows were written with', () => {
+    expect(DRIFT_MEASURED_SUMMARY).toBe('drift measured');
   });
 });
 
@@ -930,7 +903,8 @@ describe('GET /agents/:username/drift-countdown', () => {
 
   it('serves the projection publicly, like every other lab read', async () => {
     const userId = await seedAgent();
-    await seedStraightLines(userId);
+    // The HTTP handler uses today's window, so keep its measurements recent.
+    await seedStraightLines(userId, { asOf: new Date() });
 
     const res = await request(createApp()).get('/api/v1/agents/zenith/drift-countdown?range=30d');
 

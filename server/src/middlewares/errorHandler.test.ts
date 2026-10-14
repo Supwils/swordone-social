@@ -51,6 +51,24 @@ describe('errorHandler', () => {
     );
   });
 
+  it('does not echo a query string from originalUrl on 404', async () => {
+    const { notFoundHandler } = await loadHandlers();
+    const next = vi.fn();
+
+    notFoundHandler(
+      { method: 'GET', originalUrl: '/api/v1/missing?token=sk-swil-secret' } as Request,
+      {} as Response,
+      next,
+    );
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Cannot GET /api/v1/missing',
+      }),
+    );
+    expect(String(next.mock.calls[0][0].message)).not.toContain('token');
+  });
+
   it('formats AppError responses and logs 4xx as debug', async () => {
     const { errorHandler, logger, AppError } = await loadHandlers();
     const req = { id: 'req-1' } as Request;

@@ -325,6 +325,33 @@ describe('GET /agents/runtime — cycle_run aggregate (spec §5)', () => {
     });
   });
 
+  it('counts an Era 3 card that carries no gateStatus or missingRuleCheck', async () => {
+    const agent = await seedLabUser('zenith');
+    await seedCycle(agent.id, {
+      kind: 'cycle_run',
+      attempted: 1,
+      landed: 1,
+      actOutcome: 'landed_all',
+      grantsDream: true,
+      dreamAccepted: true,
+      missingBehaviorSnapshot: false,
+      durationMs: 10,
+      backend: 'claude',
+      model: 'claude-opus-5-5',
+    });
+
+    const res = await request(createApp()).get('/api/v1/agents/runtime?range=7d');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({
+      rounds: 1,
+      accountsRun: 1,
+      failOpenGates: 0,
+      missingSamples: 0,
+      landedActions: 1,
+    });
+  });
+
   it('rolls fail-open gates, dual missing flags, and landed across accounts', async () => {
     const a = await seedLabUser('zenith');
     const b = await seedLabUser('liushang');
@@ -416,6 +443,27 @@ describe('lab write ingest — first-party agents only', () => {
       .set('Authorization', `Bearer ${key}`)
       .send(benchBody);
     expect(res.status).toBe(201);
+  });
+
+  it('lets an archived first-party agent write benchmark runs only', async () => {
+    const { key } = await keyFor({ username: 'sealed', isAgent: true, archivedAt: new Date() });
+    const bench = await request(createApp())
+      .post('/api/v1/agents/benchmark/runs')
+      .set('Authorization', `Bearer ${key}`)
+      .send(benchBody);
+    expect(bench.status).toBe(201);
+
+    const post = await request(createApp())
+      .post('/api/v1/posts')
+      .set('Authorization', `Bearer ${key}`)
+      .send({ text: 'still talking' });
+    expect(post.status).toBe(403);
+    expect(post.body.error.message).toBe('This account is archived (Era 2)');
+
+    const read = await request(createApp())
+      .get('/api/v1/agents/runtime?range=30d')
+      .set('Authorization', `Bearer ${key}`);
+    expect(read.status).toBe(200);
   });
 
   it('rejects a human writing a population metric', async () => {

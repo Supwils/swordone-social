@@ -59,6 +59,79 @@ describe('feed.service', () => {
     vi.restoreAllMocks();
   });
 
+  describe('since filter', () => {
+    const OLD = new Date('2026-01-01T00:00:00Z');
+    const NEW = new Date('2026-10-14T00:00:00Z');
+    const SINCE = new Date('2026-06-01T00:00:00Z');
+
+    async function seedOldAndNew(authorId: string, extra: Partial<typeof posts.$inferInsert> = {}) {
+      const old = await seedPost(authorId, { text: 'old', createdAt: OLD, ...extra });
+      const fresh = await seedPost(authorId, { text: 'new', createdAt: NEW, ...extra });
+      return { old, fresh };
+    }
+
+    it('global filters both sort paths', async () => {
+      const a = await seedUser('since-global');
+      const { fresh } = await seedOldAndNew(a.id);
+      const ranked = await global(null, null, 10, 'recommended', SINCE);
+      expect(ranked.items.map((p) => p.id)).toEqual([fresh.id]);
+      const latest = await global(null, null, 10, 'latest', SINCE);
+      expect(latest.items.map((p) => p.id)).toEqual([fresh.id]);
+    });
+
+    it('treats since as inclusive and absent since as unfiltered', async () => {
+      const a = await seedUser('since-incl');
+      const { old, fresh } = await seedOldAndNew(a.id);
+      const incl = await global(null, null, 10, 'latest', OLD);
+      expect(incl.items.map((p) => p.id).sort()).toEqual([old.id, fresh.id].sort());
+      const none = await global(null, null, 10, 'latest');
+      expect(none.items).toHaveLength(2);
+    });
+
+    it('a future since yields an empty page', async () => {
+      const a = await seedUser('since-future');
+      await seedOldAndNew(a.id);
+      const out = await global(null, null, 10, 'latest', new Date('2999-01-01T00:00:00Z'));
+      expect(out.items).toEqual([]);
+      expect(out.nextCursor).toBeNull();
+    });
+
+    it('following filters', async () => {
+      const viewer = await seedUser('since-viewer');
+      const a = await seedUser('since-followed');
+      await seedFollow(viewer.id, a.id);
+      const { fresh } = await seedOldAndNew(a.id);
+      const out = await following(viewer, null, 10, 'latest', SINCE);
+      expect(out.items.map((p) => p.id)).toEqual([fresh.id]);
+    });
+
+    it('byTag filters', async () => {
+      const a = await seedUser('since-tag');
+      const tag = await seedTag('since-tag-slug');
+      const { fresh } = await seedOldAndNew(a.id, { tagIds: [tag.id] });
+      const out = await byTag('since-tag-slug', null, null, 10, 'recommended', SINCE);
+      expect(out.items.map((p) => p.id)).toEqual([fresh.id]);
+    });
+
+    it('byBoard filters', async () => {
+      const a = await seedUser('since-board');
+      const [board] = await db
+        .insert(boards)
+        .values({ slug: 'since-board', name: 'Since', sortOrder: 5 })
+        .returning();
+      const { fresh } = await seedOldAndNew(a.id, { boardId: board.id });
+      const out = await byBoard('since-board', null, null, 10, 'latest', SINCE);
+      expect(out.items.map((p) => p.id)).toEqual([fresh.id]);
+    });
+
+    it('byAuthor filters', async () => {
+      const a = await seedUser('since-author');
+      const { fresh } = await seedOldAndNew(a.id);
+      const out = await byAuthor('since-author', null, null, 10, SINCE);
+      expect(out.items.map((p) => p.id)).toEqual([fresh.id]);
+    });
+  });
+
   describe('global (ranked / score)', () => {
     it('omits public posts filed to a reserved board', async () => {
       const author = await seedUser('author-reserved');
@@ -434,6 +507,7 @@ describe('feed.service', () => {
       // `agentBackend ? …` and `latest ? …` conditionals in the agents mapping.
       const bareAgent = await seedUser('bareagent', { isAgent: true });
       const human = await seedUser('humanguy');
+      const sealed = await seedUser('sealedbot', { isAgent: true, archivedAt: new Date() });
 
       // Agent has two posts; distinct-on(author) must surface the newest.
       await seedPost(agent.id, { text: 'first agent post', createdAt: ago(2000), feedScore: 1 });
@@ -479,6 +553,7 @@ describe('feed.service', () => {
       expect(bareEntry?.latestPostExcerpt).toBeNull();
 
       expect(summary.agents.find((a) => a.id === human.id)).toBeUndefined();
+      expect(summary.agents.find((a) => a.id === sealed.id)).toBeUndefined();
       expect(summary.trendingTags.map((t) => t.slug)).toContain(tag.slug);
       expect(summary.featuredPost).not.toBeNull();
 

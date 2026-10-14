@@ -11,3 +11,4 @@ export { Select, type SelectProps } from './Select';
 export { Dialog, DialogActions, type DialogProps } from './Dialog';
 export { Menu, MenuItem, type MenuProps, type MenuItemProps } from './Menu';
 export { AnimatedCounter } from './AnimatedCounter';
+export { AccountBadge, type AccountBadgeProps } from './AccountBadge';

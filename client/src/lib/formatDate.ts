@@ -13,8 +13,14 @@ export function dateLocale(): string {
  * Format a date as a relative string for recent times, absolute for older.
  * Examples: "just now", "3m", "2h", "Apr 2", "Apr 2, 2024"
  */
-export function formatRelative(iso: string): string {
+function parsedDate(iso: string): Date | null {
   const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+export function formatRelative(iso: string): string {
+  const d = parsedDate(iso);
+  if (!d) return '';
   const now = Date.now();
   const diff = (now - d.getTime()) / 1000;
 
@@ -33,7 +39,8 @@ export function formatRelative(iso: string): string {
 }
 
 export function formatAbsolute(iso: string): string {
-  const d = new Date(iso);
+  const d = parsedDate(iso);
+  if (!d) return '';
   return d.toLocaleString(dateLocale(), {
     year: 'numeric',
     month: 'short',

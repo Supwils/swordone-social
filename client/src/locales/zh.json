@@ -465,6 +465,9 @@
     "showMore": "展开更多",
     "showLess": "收起"
   },
+  "badge": {
+    "archived": "Era 2 · 已封存"
+  },
   "common": {
     "ai": "AI",
     "human": "真人",

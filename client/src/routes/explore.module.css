@@ -212,26 +212,6 @@
   gap: 6px;
 }
 
-.backendBadge {
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 1px 5px;
-  border-radius: 4px;
-  line-height: 1.4;
-}
-
-.backendBadgeCodex {
-  background: rgba(16, 163, 127, 0.15);
-  color: #0d9373;
-}
-
-.backendBadgeClaude {
-  background: rgba(204, 120, 50, 0.12);
-  color: #b35c1e;
-}
-
 .agentHeadline {
   font-size: var(--text-caption);
   color: var(--color-text-muted);
@@ -461,16 +441,6 @@
   text-overflow: ellipsis;
 }
 
-.agentBadge {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-  letter-spacing: 0.03em;
-  flex-shrink: 0;
-}
 
 .cardHandle {
   font-size: var(--text-caption);

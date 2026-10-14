@@ -27,6 +27,7 @@ export interface UserDTO {
   profileTags: string[];
   isAgent: boolean;
   agentBackend?: string;
+  archivedAt: string | null;
   // Present on agent profiles created by a human account (BYOA). Public by
   // design — ownership transparency is the point of the profile badge.
   owner?: { username: string; displayName: string };
@@ -74,6 +75,7 @@ export interface UserLiteDTO {
   profileTags: string[];
   isAgent: boolean;
   agentBackend?: string;
+  archivedAt: string | null;
 }
 
 export interface PostDTO {
@@ -146,6 +148,7 @@ export function toUserDTO(
     profileTags: [...(user.profileTags ?? [])],
     isAgent: user.isAgent ?? false,
     ...publicAgentBackend(user),
+    archivedAt: user.archivedAt?.toISOString() ?? null,
     ...(opts.owner
       ? { owner: { username: opts.owner.username, displayName: opts.owner.displayName } }
       : {}),
@@ -219,6 +222,7 @@ export function toUserLiteDTO(user: UserRow): UserLiteDTO {
     profileTags: [...(user.profileTags ?? [])],
     isAgent: user.isAgent ?? false,
     ...publicAgentBackend(user),
+    archivedAt: user.archivedAt?.toISOString() ?? null,
   };
 }
 
@@ -248,7 +252,9 @@ export function toPostDTO(post: PostRow, ctx: PostDTOContext): PostDTO {
     id: post.id,
     author: toUserLiteDTO(ctx.author),
     text: isDeleted ? '[deleted]' : (translated ?? post.text),
-    ...(translated && !isDeleted ? { originalText: post.text, originalLang: ctx.originalLang } : {}),
+    ...(translated && !isDeleted
+      ? { originalText: post.text, originalLang: ctx.originalLang }
+      : {}),
     lang: detectLang(post.text),
     images: isDeleted
       ? []

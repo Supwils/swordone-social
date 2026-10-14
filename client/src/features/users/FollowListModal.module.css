@@ -114,17 +114,6 @@
   color: var(--color-text-muted);
 }
 
-.agentBadge {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--color-accent);
-  background: var(--color-accent-soft);
-  padding: 1px 5px;
-  border-radius: var(--radius-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  flex-shrink: 0;
-}
 
 /* ─── States ─────────────────────────────────────────────────────────────────── */
 

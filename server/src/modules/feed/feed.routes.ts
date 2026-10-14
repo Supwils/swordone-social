@@ -21,6 +21,8 @@ const pagingQuery = z.object({
   // new key in every row's `translations` jsonb.
   lang: z.enum(['en', 'zh']).optional(),
   sort: z.enum(['recommended', 'latest']).optional(),
+  // ISO-8601; an unparseable value becomes an Invalid Date, which zod rejects (400).
+  since: z.coerce.date().optional(),
 });
 
 function pageToDtos(items: PostRow[], ctxById: Map<string, PostDTOContext>) {
@@ -44,7 +46,8 @@ feedRouter.get(
     const cursor =
       sort === 'latest' ? decodeCursor(req.query.cursor) : decodeScoreCursor(req.query.cursor);
     const limit = parseLimit(req.query.limit, 20);
-    const page = await feed.following(req.user, cursor, limit, sort);
+    const since = req.query.since as Date | undefined;
+    const page = await feed.following(req.user, cursor, limit, sort, since);
     await translatePosts(page.items, page.ctxById, req.user.preferences?.language ?? 'en');
     return ok(res, { items: pageToDtos(page.items, page.ctxById), nextCursor: page.nextCursor });
   }),
@@ -59,7 +62,8 @@ feedRouter.get(
     const cursor =
       sort === 'latest' ? decodeCursor(req.query.cursor) : decodeScoreCursor(req.query.cursor);
     const limit = parseLimit(req.query.limit, 20);
-    const page = await feed.global(req.user ?? null, cursor, limit, sort);
+    const since = req.query.since as Date | undefined;
+    const page = await feed.global(req.user ?? null, cursor, limit, sort, since);
     await translatePosts(page.items, page.ctxById, resolveLang(req), {
       content: autoTranslateOn(req),
     });
@@ -78,7 +82,8 @@ feedRouter.get(
     const cursor =
       sort === 'latest' ? decodeCursor(req.query.cursor) : decodeScoreCursor(req.query.cursor);
     const limit = parseLimit(req.query.limit, 20);
-    const page = await feed.byTag(req.params.slug, req.user ?? null, cursor, limit, sort);
+    const since = req.query.since as Date | undefined;
+    const page = await feed.byTag(req.params.slug, req.user ?? null, cursor, limit, sort, since);
     await translatePosts(page.items, page.ctxById, resolveLang(req), {
       content: autoTranslateOn(req),
     });
@@ -98,7 +103,8 @@ feedRouter.get(
     const cursor =
       sort === 'latest' ? decodeCursor(req.query.cursor) : decodeScoreCursor(req.query.cursor);
     const limit = parseLimit(req.query.limit, 20);
-    const page = await feed.byBoard(req.params.slug, req.user ?? null, cursor, limit, sort);
+    const since = req.query.since as Date | undefined;
+    const page = await feed.byBoard(req.params.slug, req.user ?? null, cursor, limit, sort, since);
     await translatePosts(page.items, page.ctxById, resolveLang(req), {
       content: autoTranslateOn(req),
     });
@@ -137,7 +143,8 @@ userPostsRouter.get(
   asyncHandler(async (req: Request, res: Response) => {
     const cursor = decodeCursor(req.query.cursor);
     const limit = parseLimit(req.query.limit, 20);
-    const page = await feed.byAuthor(req.params.username, req.user ?? null, cursor, limit);
+    const since = req.query.since as Date | undefined;
+    const page = await feed.byAuthor(req.params.username, req.user ?? null, cursor, limit, since);
     await translatePosts(page.items, page.ctxById, resolveLang(req), {
       content: autoTranslateOn(req),
     });

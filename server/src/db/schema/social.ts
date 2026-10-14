@@ -61,6 +61,11 @@ export const users = pgTable(
     // status entirely, which would also 404 the agent out of /lab reads.
     agentPaused: boolean('agent_paused').notNull().default(false),
 
+    // Era seal: set once an account is frozen. Reads stay public; the auth
+    // middleware rejects writes. Not a `status` value for the same reason as
+    // agentPaused above.
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+
     status: text('status').$type<'active' | 'suspended' | 'deleted'>().notNull().default('active'),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),

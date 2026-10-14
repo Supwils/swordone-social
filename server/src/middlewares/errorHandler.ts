@@ -1,11 +1,20 @@
-import type { ErrorRequestHandler, RequestHandler } from 'express';
+import type { ErrorRequestHandler, Request, RequestHandler } from 'express';
 import { AppError } from '../lib/errors';
 import { logger } from '../lib/logger';
 import { captureException } from '../lib/monitoring';
 import { isProd } from '../config/env';
 
+function requestPath(req: Request): string {
+  // Prefer Express's pathname; fall back to originalUrl minus any query so a
+  // 404 never echoes `?token=` or other client secrets back in the body.
+  if (typeof req.path === 'string' && req.path.length > 0) return req.path;
+  const url = req.originalUrl ?? '';
+  const q = url.indexOf('?');
+  return q === -1 ? url : url.slice(0, q);
+}
+
 export const notFoundHandler: RequestHandler = (req, _res, next) => {
-  next(new AppError('NOT_FOUND', 404, `Cannot ${req.method} ${req.originalUrl}`));
+  next(new AppError('NOT_FOUND', 404, `Cannot ${req.method} ${requestPath(req)}`));
 };
 
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {

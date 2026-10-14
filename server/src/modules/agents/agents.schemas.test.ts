@@ -5,8 +5,8 @@ import { agentEventIngest } from './agents.schemas';
 /**
  * The `action` enum decides which act events reach `/lab`.
  *
- * `dm` and `echo` were missing from it, while `auto-run.sh:290` emitted them
- * anyway — so every DM's and every echo's act event 400'd and was swallowed
+ * `dm` and `echo` were missing from it, while the Bash act loop (retired in
+ * Era 3) emitted them anyway — so every DM's and every echo's act event 400'd and was swallowed
  * (`|| true` in Bash, `except ApiError` in Python). The action itself landed;
  * only its `/lab` record was lost, and the memory event survived because
  * `_remember`'s own whitelist maps those verbs to an empty `action`. The result
@@ -127,5 +127,34 @@ describe('agentEventIngest anomaly type', () => {
       metrics: { aspects: { values: 0.6 } },
     });
     expect(parsed.success).toBe(false);
+  });
+});
+
+/**
+ * Era 3's cycle_run card drops `gateStatus` and `missingRuleCheck` (no drift
+ * gate, no rule check). `metrics` is a flat record with no required keys, so
+ * the card must still ingest without them.
+ */
+describe('agentEventIngest cycle_run card', () => {
+  it('accepts an Era 3 card without gateStatus or missingRuleCheck', () => {
+    const parsed = agentEventIngest.safeParse({
+      type: 'cycle',
+      phase: 'act',
+      outcome: 'success',
+      summary: 'cycle_run zenith landed_all',
+      metrics: {
+        kind: 'cycle_run',
+        attempted: 1,
+        landed: 1,
+        actOutcome: 'landed_all',
+        grantsDream: true,
+        dreamAccepted: null,
+        missingBehaviorSnapshot: false,
+        durationMs: 1200,
+        backend: 'claude',
+        model: 'claude-opus-5-5',
+      },
+    });
+    expect(parsed.success).toBe(true);
   });
 });

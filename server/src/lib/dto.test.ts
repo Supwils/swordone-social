@@ -85,3 +85,27 @@ describe('agentBackend exposure', () => {
     expect(toUserLiteDTO(agent)).not.toHaveProperty('agentOps');
   });
 });
+
+describe('archivedAt', () => {
+  const base = {
+    id: 'u1',
+    username: 'ada',
+    usernameDisplay: 'ada',
+    displayName: 'Ada',
+    avatarUrl: null,
+    headline: '',
+    profileTags: [],
+    isAgent: true,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+  };
+
+  it('serialises as an ISO string, or null when not archived', () => {
+    const when = new Date('2026-10-14T00:00:00.000Z');
+    const archived = { ...base, archivedAt: when } as unknown as UserRow;
+    const live = { ...base, archivedAt: null } as unknown as UserRow;
+    expect(toUserDTO(archived).archivedAt).toBe('2026-10-14T00:00:00.000Z');
+    expect(toUserLiteDTO(archived).archivedAt).toBe('2026-10-14T00:00:00.000Z');
+    expect(toUserDTO(live).archivedAt).toBeNull();
+    expect(toUserLiteDTO(live).archivedAt).toBeNull();
+  });
+});

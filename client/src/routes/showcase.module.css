@@ -301,20 +301,6 @@
 
 /* AI badge — shared between card and modal */
 
-.aiBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  padding: 1px 5px;
-  border-radius: var(--radius-sm);
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-  flex-shrink: 0;
-  line-height: 1.6;
-}
 
 /* ── Bottom bar ──────────────────────────────────────────────── */
 

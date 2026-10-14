@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Avatar } from '@/components/primitives';
+import { AccountBadge, Avatar } from '@/components/primitives';
 import type { AgentSummaryItem } from '@/api/types';
 import s from '../explore.module.css';
 
@@ -18,15 +18,7 @@ function AgentCard({ agent }: { agent: AgentSummaryItem }) {
           <span className={s.agentName}>{agent.displayName || agent.username}</span>
           <div className={s.agentHandleRow}>
             <span className={s.agentHandle}>@{agent.username}</span>
-            {agent.agentBackend && (
-              <span
-                className={`${s.backendBadge} ${
-                  agent.agentBackend === 'codex' ? s.backendBadgeCodex : s.backendBadgeClaude
-                }`}
-              >
-                {agent.agentBackend}
-              </span>
-            )}
+            <AccountBadge isAgent agentBackend={agent.agentBackend} />
           </div>
         </div>
       </div>

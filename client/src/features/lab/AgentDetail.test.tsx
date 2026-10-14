@@ -4,8 +4,8 @@
  *
  * WHY THIS FILE EXISTS AT ALL. `AgentDetail.tsx:22` used to hold
  * `ASPECT_THRESHOLDS = { values: 0.63, style: 0.72, topic: 0.71 }` — a third
- * copy of the gate's thresholds, whose comment said to keep it in sync with
- * `agent/scripts/dream.sh`, which has not been the runtime since 2026-08-19.
+ * copy of the gate's thresholds, whose comment said to keep it in sync with the
+ * Era 1 Bash dream script (deleted; Era 3 has no drift gate, 2026-10-14).
  * The thresholds now travel beside each measurement and are read off the wire.
  * Deleting the constant is only half the fix: without a test, a later hand could
  * put the numbers back and nothing would go red.

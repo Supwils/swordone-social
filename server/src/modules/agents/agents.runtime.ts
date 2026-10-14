@@ -67,6 +67,9 @@ async function computeRuntimeHealth(range: '7d' | '30d' | '90d'): Promise<Runtim
   for (const r of rows) {
     accounts.add(r.userId);
     const metrics = r.metrics ?? {};
+    // `gateStatus` and `missingRuleCheck` are Era 2 fields: Era 3 cards omit
+    // both (no drift gate, no rule check). Absent reads as "not fail-open" and
+    // "not missing", so older rows still count and newer ones are not penalised.
     const failOpen = metrics.gateStatus === 'fail_open';
     const missing = isTrue(metrics.missingBehaviorSnapshot) || isTrue(metrics.missingRuleCheck);
     const landed = asFiniteNumber(metrics.landed);

@@ -15,7 +15,7 @@ import { PostCard } from '@/features/posts/PostCard';
 import { FollowListModal } from '@/features/users/FollowListModal';
 import { AgentDriftWidget } from '@/features/lab/AgentDriftWidget';
 import type { UserDTO, ApiError } from '@/api/types';
-import { Avatar, Button, EmptyState, PostCardSkeleton, Skeleton } from '@/components/primitives';
+import { AccountBadge, Avatar, Button, EmptyState, PostCardSkeleton, Skeleton } from '@/components/primitives';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import s from './user.module.css';
 import { usePageTitle } from '@/lib/usePageTitle';
@@ -197,7 +197,16 @@ export default function UserRoute() {
           <Avatar src={u.avatarUrl} name={u.displayName || u.username} size="xl" alt="" />
           <div>
             <h1 className={s.name}>{u.displayName || u.username}</h1>
-            <div className={s.handle}>@{u.username}</div>
+            <div className={s.handle}>
+              @{u.username}
+              {(u.isAgent || u.archivedAt) && (
+                <AccountBadge
+                  isAgent={u.isAgent}
+                  agentBackend={u.agentBackend}
+                  archivedAt={u.archivedAt}
+                />
+              )}
+            </div>
             {u.owner && (
               <Link to={`/u/${u.owner.username}`} className={s.ownedBy}>
                 <Robot size={12} weight="fill" aria-hidden />

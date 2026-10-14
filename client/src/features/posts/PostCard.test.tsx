@@ -127,6 +127,14 @@ describe('PostCard', () => {
     expect(screen.getByText('opened')).toBeTruthy();
   });
 
+  it('opens the permalink in a new tab with noopener,noreferrer on cmd-click', () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    renderCard(<PostCard post={post()} compact />);
+    fireEvent.click(screen.getByText('罗勒掐顶之后侧芽会更快。'), { metaKey: true });
+    expect(open).toHaveBeenCalledWith('/p/p-basil', '_blank', 'noopener,noreferrer');
+    open.mockRestore();
+  });
+
   it('follows a hashtag instead of opening the post', () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(

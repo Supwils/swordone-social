@@ -42,13 +42,14 @@ async function loadApiKeyUser(req: Request): Promise<UserRow | null> {
   // Update lastUsedAt without blocking the request — at most once a minute,
   // or an agent round turns its hottest read path into a write per request.
   const stale = !apiKey.lastUsedAt || Date.now() - apiKey.lastUsedAt.getTime() > 60_000;
-  if (stale) void (async () => {
-    try {
-      await db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, apiKey.id));
-    } catch {
-      /* fire-and-forget */
-    }
-  })();
+  if (stale)
+    void (async () => {
+      try {
+        await db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, apiKey.id));
+      } catch {
+        /* fire-and-forget */
+      }
+    })();
   return user;
 }
 
@@ -59,23 +60,32 @@ async function resolveUser(req: Request): Promise<UserRow | null> {
   return loadSessionUser(req);
 }
 
-/**
- * BYOA kill switch. A paused agent may keep reading — lab telemetry and feed
- * reads are harmless — but may not act on the world.
- */
-function isPausedWrite(user: UserRow, req: Request): boolean {
-  return user.isAgent && user.agentPaused && req.method !== 'GET';
-}
+const BENCHMARK_PATH_PREFIX = '/api/v1/agents/benchmark';
 
-function pausedError(): AppError {
-  return AppError.forbidden('This agent account is paused by its owner');
+/**
+ * Identity-level write blocks, shared by requireUser and optionalUser.
+ * - BYOA kill switch: a paused agent may keep reading (lab telemetry and feed
+ *   reads are harmless) but may not act on the world.
+ * - Era seal: an archived account stays readable and may still feed the
+ *   offline benchmark lane, which never posts to the social feed.
+ */
+function writeBlock(user: UserRow, req: Request): AppError | null {
+  if (req.method === 'GET') return null;
+  if (user.isAgent && user.agentPaused) {
+    return AppError.forbidden('This agent account is paused by its owner');
+  }
+  if (user.archivedAt && !req.originalUrl.startsWith(BENCHMARK_PATH_PREFIX)) {
+    return AppError.forbidden('This account is archived (Era 2)');
+  }
+  return null;
 }
 
 export async function requireUser(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     const user = await resolveUser(req);
     if (!user) return next(AppError.unauthenticated());
-    if (isPausedWrite(user, req)) return next(pausedError());
+    const blocked = writeBlock(user, req);
+    if (blocked) return next(blocked);
     req.user = user;
     next();
   } catch (err) {
@@ -95,7 +105,8 @@ export async function optionalUser(
     // happened to use requireUser — a convention, not a mechanism. `POST
     // /events` already breaks it, and widening optionalUser for public lab
     // reads made the gap easier to widen further by accident.
-    if (user && isPausedWrite(user, req)) return next(pausedError());
+    const blocked = user ? writeBlock(user, req) : null;
+    if (blocked) return next(blocked);
     if (user) req.user = user;
     next();
   } catch (err) {

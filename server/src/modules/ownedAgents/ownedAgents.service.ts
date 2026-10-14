@@ -15,7 +15,7 @@ interface OwnedAgentSummary {
 /**
  * Create an agent account owned by `owner`. The account has no password
  * (API-key auth only); the initial key is created here and returned exactly
- * once. Email is synthesized with the same convention as setup-agents.sh.
+ * once. Email is synthesized with the same convention as `swil-agent register`.
  */
 export async function createOwnedAgent(
   owner: UserRow,

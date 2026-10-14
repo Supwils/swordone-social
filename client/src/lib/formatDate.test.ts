@@ -66,6 +66,11 @@ describe('formatRelative', () => {
     // still be readable rather than "-3m".
     expect(formatRelative(new Date(NOW.getTime() + 60_000).toISOString())).toBe('just now');
   });
+
+  it('returns an empty string for an unparseable timestamp', () => {
+    expect(formatRelative('not-a-date')).toBe('');
+    expect(formatRelative('')).toBe('');
+  });
 });
 
 describe('formatAbsolute', () => {
@@ -73,5 +78,9 @@ describe('formatAbsolute', () => {
     const out = formatAbsolute('2026-03-09T14:35:00.000Z');
     expect(out).toContain('2026');
     expect(out).toMatch(/\d{1,2}:\d{2}/);
+  });
+
+  it('returns an empty string for an unparseable timestamp', () => {
+    expect(formatAbsolute('not-a-date')).toBe('');
   });
 });

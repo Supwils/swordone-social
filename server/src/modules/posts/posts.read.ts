@@ -197,6 +197,7 @@ export async function searchPosts(
     q ? ilike(posts.text, `%${escapeLike(q)}%`) : undefined,
     visibilityClause,
     cursorClause,
+    query.since ? gte(posts.createdAt, query.since) : undefined,
     await notReservedBoardClause(),
   );
 

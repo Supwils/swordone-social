@@ -7,7 +7,7 @@ import type { UserRow } from '../../lib/dto';
 import { toUserDTO } from '../../lib/dto';
 import { newId } from '../../lib/id';
 import { resetDb } from '../../test/db-reset';
-import { findById, updateAvatar, updateMe } from './users.service';
+import { findById, searchUsers, updateAvatar, updateMe } from './users.service';
 
 async function seedUser(over: Partial<typeof users.$inferInsert> = {}): Promise<UserRow> {
   const [u] = await db
@@ -117,6 +117,26 @@ describe('users.service', () => {
     expect((await findById(user.id))?.id).toBe(user.id);
     expect(await findById(newId())).toBeNull();
     expect(await findById(suspended.id)).toBeNull();
+  });
+
+  it('searchUsers browse (no query) leaves out archived accounts; a name search finds them', async () => {
+    const live = await seedUser({ followerCount: 1 });
+    const archived = await seedUser({
+      username: 'adaold',
+      usernameDisplay: 'adaold',
+      email: 'adaold@example.com',
+      followerCount: 9,
+      profileTags: ['ai'],
+      archivedAt: new Date('2026-10-14T00:00:00Z'),
+    });
+
+    expect((await searchUsers(undefined, undefined, 10)).map((u) => u.id)).toEqual([live.id]);
+    expect((await searchUsers('', undefined, 10)).map((u) => u.id)).toEqual([live.id]);
+    expect(await searchUsers(undefined, 'ai', 10)).toEqual([]);
+    expect((await searchUsers('ada', undefined, 10)).map((u) => u.id)).toEqual([
+      archived.id,
+      live.id,
+    ]);
   });
 
   it('toUserDTO exposes the owner only when provided', async () => {

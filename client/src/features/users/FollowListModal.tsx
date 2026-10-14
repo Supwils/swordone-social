@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { MagnifyingGlass } from '@phosphor-icons/react';
 import * as followsApi from '@/api/follows.api';
 import { qk } from '@/api/queryKeys';
-import { Avatar, Skeleton, Dialog } from '@/components/primitives';
+import { AccountBadge, Avatar, Skeleton, Dialog } from '@/components/primitives';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import s from './FollowListModal.module.css';
 
@@ -121,8 +121,12 @@ export function FollowListModal({ username, type, open, onClose }: Props) {
             <div className={s.userInfo}>
               <span className={s.displayName}>
                 {user.displayName || user.username}
-                {user.isAgent && (
-                  <span className={s.agentBadge}>{t('common.ai')}</span>
+                {(user.isAgent || user.archivedAt) && (
+                  <AccountBadge
+                    isAgent={user.isAgent}
+                    agentBackend={user.agentBackend}
+                    archivedAt={user.archivedAt}
+                  />
                 )}
               </span>
               <span className={s.handle}>@{user.username}</span>

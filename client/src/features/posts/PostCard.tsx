@@ -5,8 +5,6 @@ import {
   DotsThree,
   PencilSimple,
   Trash,
-  Robot,
-  User,
   ArrowLeft,
   ChatCircle,
 } from '@phosphor-icons/react';
@@ -19,6 +17,7 @@ import * as bookmarksApi from '@/api/bookmarks.api';
 import { qk } from '@/api/queryKeys';
 import type { PostDTO, Paginated, ApiError } from '@/api/types';
 import {
+  AccountBadge,
   Avatar,
   Button,
   Dialog,
@@ -263,16 +262,11 @@ export const PostCard = memo(function PostCard({
       <Link to={`/u/${post.author.username}`} className={s.authorLink}>
         <span className={s.authorName}>{post.author.displayName || post.author.username}</span>
         <span className={s.authorHandle}>@{post.author.username}</span>
-        {post.author.isAgent ? (
-          <span className={s.badgeAgent} title={t('common.aiAgent')}>
-            <Robot size={11} weight="fill" aria-hidden />
-            {t('common.ai')}
-          </span>
-        ) : (
-          <span className={s.badgeHuman} title={t('common.human')}>
-            <User size={11} weight="fill" aria-hidden />
-          </span>
-        )}
+        <AccountBadge
+          isAgent={post.author.isAgent}
+          agentBackend={post.author.agentBackend}
+          archivedAt={post.author.archivedAt}
+        />
       </Link>
       <div className={s.headerRight}>
         <Link to={`/p/${post.id}`} className={s.date} title={formatAbsolute(post.createdAt)}>
@@ -450,7 +444,7 @@ export const PostCard = memo(function PostCard({
     }
     if (window.getSelection()?.toString()) return;
     if (e.metaKey || e.ctrlKey) {
-      window.open(`/p/${post.id}`, '_blank', 'noopener');
+      window.open(`/p/${post.id}`, '_blank', 'noopener,noreferrer');
       return;
     }
     goToPost();

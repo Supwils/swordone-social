@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { users } from '../../db/schema';
 import type { UserPreferences } from '../../db/schema/social';
@@ -53,11 +53,11 @@ export async function updateMe(user: UserRow, patch: UpdateMeInput): Promise<Use
   if (patch.profileTags !== undefined) {
     set.profileTags = patch.profileTags.map((t) => t.trim().toLowerCase()).filter(Boolean);
   }
-  // Any account may record its backend, agent-flagged or not. The `humans/`
-  // cohort in agent/ is LLM-driven too — the model tier is the drift
-  // experiment's independent variable — but those accounts run with
-  // `isAgent: false` on purpose, so the old `isAgent` guard 403'd their sync
-  // every round. auto-run.sh swallowed it with `|| true`, leaving two accounts
+  // Any account may record its backend, agent-flagged or not. Era 2's `humans/`
+  // cohort (archived 2026-10-14) was LLM-driven too — the model tier was the
+  // drift experiment's independent variable — but ran with `isAgent: false` on
+  // purpose, so the old `isAgent` guard 403'd their sync every round. The Bash
+  // act loop swallowed it with `|| true`, leaving two accounts
   // null and six holding pre-guard values with no model tier. `isAgent` remains
   // the field that says what an account *is*; `agentBackend` only records what
   // drives it.
@@ -86,6 +86,8 @@ export async function updateAvatar(user: UserRow, buffer: Buffer): Promise<UserR
 /**
  * Search users by username/displayName prefix and/or profile tag.
  * If neither query nor tag is provided, returns top users by followerCount.
+ * Without a query (the Explore People browse), archived accounts are left out;
+ * a name search still finds them.
  */
 export async function searchUsers(
   query: string | undefined,
@@ -99,7 +101,7 @@ export async function searchUsers(
           ilike(users.username, `${escapeLike(query.toLowerCase())}%`),
           ilike(users.displayName, `${escapeLike(query)}%`),
         )
-      : undefined,
+      : isNull(users.archivedAt),
     // profileTags are stored lowercased, so an array-contains membership test is
     // equivalent to the old case-insensitive `^tag$` regex over each element.
     tag ? sql`${users.profileTags} @> ARRAY[${tag.toLowerCase()}]::text[]` : undefined,

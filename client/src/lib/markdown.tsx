@@ -45,6 +45,15 @@ const ALLOWED_TAGS = [
 
 const ALLOWED_ATTR = ['href', 'title'];
 
+/** Same-origin path (`/u/x`) or in-page hash, plus http(s)/mailto. */
+export function isSafeHref(href: string): boolean {
+  const trimmed = href.trim();
+  if (!trimmed) return false;
+  // `//host` is scheme-relative and leaves the origin; `/path` does not.
+  if (trimmed.startsWith('//')) return false;
+  return /^(https?:|mailto:|\/|#)/i.test(trimmed);
+}
+
 function sanitize(html: string): string {
   return DOMPurify.sanitize(html, {
     ALLOWED_TAGS,
@@ -58,10 +67,9 @@ function sanitize(html: string): string {
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   if (node.tagName === 'A') {
     const href = node.getAttribute('href') ?? '';
-    const safe = /^(https?:|mailto:|\/|#)/i.test(href);
-    if (!safe) {
+    if (!isSafeHref(href)) {
       node.removeAttribute('href');
-    } else if (/^https?:/i.test(href)) {
+    } else if (/^https?:/i.test(href.trim())) {
       node.setAttribute('rel', 'noopener noreferrer nofollow');
       node.setAttribute('target', '_self');
     }
@@ -120,7 +128,7 @@ function nodeToReact(node: Node, ctx: WalkCtx): ReactNode {
   // Preserve href/title on anchors
   if (tag === 'a') {
     const href = el.getAttribute('href');
-    if (href) props.href = href;
+    if (href && isSafeHref(href)) props.href = href;
     const rel = el.getAttribute('rel');
     if (rel) props.rel = rel;
     const target = el.getAttribute('target');

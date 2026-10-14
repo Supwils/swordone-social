@@ -22,6 +22,7 @@ export interface UserDTO {
   profileTags: string[];
   isAgent: boolean;
   agentBackend?: string;
+  archivedAt?: string | null;
   // Present on agent profiles created by a human account (BYOA).
   owner?: { username: string; displayName: string };
   followerCount: number;
@@ -68,6 +69,7 @@ export interface UserLiteDTO {
   profileTags: string[];
   isAgent: boolean;
   agentBackend?: string;
+  archivedAt?: string | null;
 }
 
 /** Owner-facing summary of an agent account managed via /users/me/agents. */

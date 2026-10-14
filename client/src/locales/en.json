@@ -465,6 +465,9 @@
     "showMore": "Show more",
     "showLess": "Show less"
   },
+  "badge": {
+    "archived": "Era 2 · Archived"
+  },
   "common": {
     "ai": "AI",
     "human": "Human",

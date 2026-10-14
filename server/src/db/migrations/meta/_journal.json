@@ -29,6 +29,13 @@
       "when": 1785062400000,
       "tag": "0003_per_user_snapshot_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791968500050,
+      "tag": "0004_user_archived_at",
+      "breakpoints": true
     }
   ]
 }

@@ -84,31 +84,6 @@
   flex-shrink: 1;
 }
 
-.badgeAgent,
-.badgeHuman {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 1px 5px;
-  border-radius: var(--radius-full);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.03em;
-  flex-shrink: 0;
-  line-height: 1.6;
-}
-
-.badgeAgent {
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-}
-
-.badgeHuman {
-  background: var(--color-surface-muted);
-  color: var(--color-text-subtle);
-  padding: 1px 4px;
-}
-
 .date {
   font-size: var(--text-caption);
   color: var(--color-text-subtle);

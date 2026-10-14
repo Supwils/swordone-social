@@ -1,8 +1,9 @@
 /**
  * Drift countdown — how many rounds until the gate locks an account out.
  *
- * WHAT THIS IS FOR. `dream.sh`'s constitution layer rejects a candidate when
- * its similarity to a FIXED anchor falls under a threshold. The anchor never
+ * WHAT THIS IS FOR. The Era 1/2 constitution layer (removed for Era 3 on
+ * 2026-10-14, so only Era 1/2 data feeds this module) rejected a candidate when
+ * its similarity to a FIXED anchor fell under a threshold. The anchor never
  * moves and personality documents accrete — only 10 of 297 recorded version
  * transitions made a file shorter — so distance from the anchor is a quantity
  * that mostly grows. That makes every account a walk toward permanent
@@ -65,14 +66,12 @@ import type {
 } from './agents.types';
 
 /**
- * The summary string `gate_step` files its calibration event under
- * (`dream/round.py:212`). Matching on it is a coupling to prose, which that
- * module's own comment warns against — so it is only the SQL narrowing here
- * (nothing else in `agent_events` is indexable for this), and every value is
- * then taken by METRICS KEY, with a row that carries no key for a series
- * contributing nothing to it. A reworded summary empties this endpoint
- * loudly; a renamed metrics key empties one series, which the `n` on that
- * series shows.
+ * The summary string the Era 1/2 `gate_step` filed its calibration event under.
+ * Era 3 removed the gate (2026-10-14), so this is frozen history: no producer
+ * remains. Matching on prose is only the SQL narrowing here (nothing else in
+ * `agent_events` is indexable for this), and every value is then taken by
+ * METRICS KEY, with a row that carries no key for a series contributing
+ * nothing to it.
  */
 export const DRIFT_MEASURED_SUMMARY = 'drift measured';
 

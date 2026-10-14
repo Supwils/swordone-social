@@ -135,6 +135,43 @@ describe('auth middleware', () => {
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'FORBIDDEN', status: 403 }));
   });
 
+  it('blocks non-GET requests from archived accounts, but not GET', async () => {
+    const user = await seedUser({ isAgent: true, archivedAt: new Date() });
+    const session = { userId: user.id, destroy: vi.fn() } as never;
+
+    const post = makeReq({ method: 'POST', originalUrl: '/api/v1/posts', session });
+    const nextPost = vi.fn() as NextFunction;
+    await requireUser(post, {} as Response, nextPost);
+    expect(post.user).toBeUndefined();
+    expect(nextPost).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 403, message: 'This account is archived (Era 2)' }),
+    );
+
+    const viaOptional = makeReq({ method: 'POST', originalUrl: '/api/v1/events', session });
+    const nextOpt = vi.fn() as NextFunction;
+    await optionalUser(viaOptional, {} as Response, nextOpt);
+    expect(nextOpt).toHaveBeenCalledWith(expect.objectContaining({ status: 403 }));
+
+    const get = makeReq({ method: 'GET', originalUrl: '/api/v1/feed/global', session });
+    const nextGet = vi.fn() as NextFunction;
+    await requireUser(get, {} as Response, nextGet);
+    expect(get.user?.id).toBe(user.id);
+    expect(nextGet).toHaveBeenCalledWith();
+  });
+
+  it('lets archived accounts write under /api/v1/agents/benchmark', async () => {
+    const user = await seedUser({ isAgent: true, archivedAt: new Date() });
+    const req = makeReq({
+      method: 'POST',
+      originalUrl: '/api/v1/agents/benchmark/runs',
+      session: { userId: user.id, destroy: vi.fn() } as never,
+    });
+    const next = vi.fn() as NextFunction;
+    await requireUser(req, {} as Response, next);
+    expect(req.user?.id).toBe(user.id);
+    expect(next).toHaveBeenCalledWith();
+  });
+
   it('blocks a paused agent writing through optionalUser too', async () => {
     // The kill switch used to live only in requireUser, which held only
     // because every write route happened to use it. `POST /events` is an

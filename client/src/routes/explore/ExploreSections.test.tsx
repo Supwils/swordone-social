@@ -100,7 +100,7 @@ describe('ExploreAgents', () => {
 
     expect(screen.getByText('格物')).toBeTruthy();
     expect(screen.getByText('@gewu')).toBeTruthy();
-    expect(screen.getByText('codex')).toBeTruthy();
+    expect(screen.getByText('AI · OpenAI')).toBeTruthy();
     expect(screen.getByText('measures everything')).toBeTruthy();
     expect(screen.getByText('note quiet observation…')).toBeTruthy();
   });

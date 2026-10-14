@@ -102,20 +102,6 @@
   text-overflow: ellipsis;
 }
 
-.aiBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-  padding: 1px 5px;
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 1.6;
-  letter-spacing: 0.04em;
-  color: var(--color-accent);
-  background: var(--color-accent-soft);
-  border-radius: var(--radius-sm);
-}
 
 .cardTime {
   flex-shrink: 0;

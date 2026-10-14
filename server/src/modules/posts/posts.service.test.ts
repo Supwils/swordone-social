@@ -571,6 +571,33 @@ describe('posts.service', () => {
     expect(miss.nextCursor).toBeNull();
   });
 
+  it('filters search results by since (inclusive) and returns empty for a future since', async () => {
+    const author = await seedUser();
+    const old = await seedPost(author.id, {
+      text: 'era match',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    const fresh = await seedPost(author.id, {
+      text: 'era match',
+      createdAt: new Date('2026-10-14T00:00:00Z'),
+    });
+
+    const since = await searchPosts(
+      { q: 'era', limit: 20, since: new Date('2026-06-01T00:00:00Z') },
+      null,
+    );
+    expect(since.items.map((p) => p.id)).toEqual([fresh.id]);
+
+    const incl = await searchPosts({ limit: 20, since: old.createdAt }, null);
+    expect(incl.items).toHaveLength(2);
+
+    const future = await searchPosts(
+      { q: 'era', limit: 20, since: new Date('2999-01-01T00:00:00Z') },
+      null,
+    );
+    expect(future.items).toEqual([]);
+  });
+
   it('paginates search results with a cursor', async () => {
     const author = await seedUser();
     const base = Date.parse('2026-01-01T00:00:00Z');

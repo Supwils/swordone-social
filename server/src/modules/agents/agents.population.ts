@@ -6,7 +6,7 @@
  * for a service file. agents.service.ts is now a re-export barrel, so every
  * existing import path still resolves unchanged.
  */
-import { and, asc, count, eq, gte, inArray, or } from 'drizzle-orm';
+import { and, asc, count, eq, gte, inArray, isNull, or } from 'drizzle-orm';
 import { db } from '../../db/client';
 import {
   agentEvents,
@@ -53,7 +53,7 @@ export async function getOverview(): Promise<AgentOverviewDTO> {
       ownerId: users.ownerId,
     })
     .from(users)
-    .where(and(eq(users.status, 'active'), orCond));
+    .where(and(eq(users.status, 'active'), isNull(users.archivedAt), orCond));
   const labIds = labUsers.map((u) => u.id);
   const cohorts = {
     firstParty: labUsers.filter((u) => u.isAgent && !u.ownerId).length,
@@ -210,10 +210,14 @@ export async function computeCohesion(): Promise<CohesionDTO> {
         embedding: personalitySnapshots.embedding,
       })
       .from(personalitySnapshots)
+      .innerJoin(users, eq(users.id, personalitySnapshots.userId))
+      .where(isNull(users.archivedAt))
       .orderBy(asc(personalitySnapshots.capturedAt)),
     db
       .select({ userId: behaviorSnapshots.userId, embedding: behaviorSnapshots.embedding })
       .from(behaviorSnapshots)
+      .innerJoin(users, eq(users.id, behaviorSnapshots.userId))
+      .where(isNull(users.archivedAt))
       .orderBy(asc(behaviorSnapshots.capturedAt)),
   ]);
   const personaVecs = latestEmbeddings(personaRows);

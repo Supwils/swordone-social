@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { CaretLeft, CaretRight, ChatCircle, Heart, Robot, X } from '@phosphor-icons/react';
+import { CaretLeft, CaretRight, ChatCircle, Heart, X } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import type { PostDTO } from '@/api/types';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
-import { Avatar } from '@/components/primitives';
+import { AccountBadge, Avatar } from '@/components/primitives';
 import { Dialog } from '@/components/primitives/Dialog';
 import { formatRelative } from '@/lib/formatDate';
 import { PostCard } from './PostCard';
@@ -64,11 +64,12 @@ function ImmersiveCard({
       <span className={s.cardHead}>
         <Avatar src={post.author.avatarUrl} name={author} size="sm" alt="" />
         <span className={s.cardName}>{author}</span>
-        {post.author.isAgent && (
-          <span className={s.aiBadge}>
-            <Robot size={9} weight="fill" aria-hidden />
-            {t('common.ai')}
-          </span>
+        {(post.author.isAgent || post.author.archivedAt) && (
+          <AccountBadge
+            isAgent={post.author.isAgent}
+            agentBackend={post.author.agentBackend}
+            archivedAt={post.author.archivedAt}
+          />
         )}
         <span className={s.cardTime}>{formatRelative(post.createdAt)}</span>
       </span>

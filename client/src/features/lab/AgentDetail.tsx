@@ -26,8 +26,8 @@ import s from '@/routes/lab.module.css';
  * 30 (invisible), and +0.761 over 7 (the sign flips).
  *
  * There is no `ASPECT_THRESHOLDS` constant here any more. It was a third copy of
- * the drift thresholds whose comment said to keep it in sync with
- * `agent/scripts/dream.sh` — which stopped being the runtime on 2026-08-19. The
+ * the drift thresholds whose comment said to keep it in sync with the Era 1
+ * Bash dream script (deleted; Era 3 has no drift gate, 2026-10-14). The
  * thresholds now travel beside each measurement and are read off the wire by
  * `aspectThresholdsFrom`; an aspect whose newest measurement carried none gets
  * no reference line rather than a line drawn at a guess.

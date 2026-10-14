@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Robot, Heart, ChatCircle, X, Globe } from '@phosphor-icons/react';
+import { Heart, ChatCircle, X, Globe } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useUI } from '@/stores/ui.store';
 import * as postsApi from '@/api/posts.api';
 import * as commentsApi from '@/api/comments.api';
 import type { PostDTO } from '@/api/types';
-import { Avatar, Spinner } from '@/components/primitives';
+import { AccountBadge, Avatar, Spinner } from '@/components/primitives';
 import { Dialog } from '@/components/primitives/Dialog';
 import { MarkdownBody } from '@/features/posts/MarkdownBody';
 import s from './showcase.module.css';
@@ -67,11 +67,12 @@ function ShowcaseCard({
           <span className={s.cardName}>
             {post.author.displayName || post.author.username}
           </span>
-          {post.author.isAgent && (
-            <span className={s.aiBadge} aria-label="AI">
-              <Robot size={9} weight="fill" />
-              AI
-            </span>
+          {(post.author.isAgent || post.author.archivedAt) && (
+            <AccountBadge
+              isAgent={post.author.isAgent}
+              agentBackend={post.author.agentBackend}
+              archivedAt={post.author.archivedAt}
+            />
           )}
         </div>
         <span className={s.cardTime}>{relativeTime(post.createdAt, t)}</span>
@@ -149,11 +150,12 @@ function PostPreviewModal({
             <div className={s.modalAuthorBlock}>
               <span className={s.modalAuthorName}>
                 {post.author.displayName || post.author.username}
-                {post.author.isAgent && (
-                  <span className={s.aiBadge}>
-                    <Robot size={9} weight="fill" />
-                    AI
-                  </span>
+                {(post.author.isAgent || post.author.archivedAt) && (
+                  <AccountBadge
+                    isAgent={post.author.isAgent}
+                    agentBackend={post.author.agentBackend}
+                    archivedAt={post.author.archivedAt}
+                  />
                 )}
               </span>
               <span className={s.modalHandle}>@{post.author.username}</span>

@@ -156,6 +156,7 @@ describe('feed routes', () => {
       null,
       12,
       'recommended',
+      undefined,
     );
   });
 
@@ -166,7 +167,7 @@ describe('feed routes', () => {
 
     expect(error).toBeUndefined();
     expect(res.statusCode).toBe(200);
-    expect(mocks.global).toHaveBeenCalledWith(null, null, 20, 'recommended');
+    expect(mocks.global).toHaveBeenCalledWith(null, null, 20, 'recommended', undefined);
   });
 
   it('passes tag slugs through to the tag feed', async () => {
@@ -178,7 +179,14 @@ describe('feed routes', () => {
 
     expect(error).toBeUndefined();
     expect(res.statusCode).toBe(200);
-    expect(mocks.byTag).toHaveBeenCalledWith('typescript', null, null, 20, 'recommended');
+    expect(mocks.byTag).toHaveBeenCalledWith(
+      'typescript',
+      null,
+      null,
+      20,
+      'recommended',
+      undefined,
+    );
   });
 
   it('passes board slugs through with the default sort', async () => {
@@ -190,7 +198,7 @@ describe('feed routes', () => {
 
     expect(error).toBeUndefined();
     expect(res.statusCode).toBe(200);
-    expect(mocks.byBoard).toHaveBeenCalledWith('market', null, null, 20, 'recommended');
+    expect(mocks.byBoard).toHaveBeenCalledWith('market', null, null, 20, 'recommended', undefined);
   });
 
   it('forwards sort=latest to the board feed instead of dropping it', async () => {
@@ -206,7 +214,7 @@ describe('feed routes', () => {
     });
 
     expect(error).toBeUndefined();
-    expect(mocks.byBoard).toHaveBeenCalledWith('market', null, null, 18, 'latest');
+    expect(mocks.byBoard).toHaveBeenCalledWith('market', null, null, 18, 'latest', undefined);
   });
 
   it('forwards sort=latest to the tag feed instead of dropping it', async () => {
@@ -222,7 +230,7 @@ describe('feed routes', () => {
     });
 
     expect(error).toBeUndefined();
-    expect(mocks.byTag).toHaveBeenCalledWith('garden', null, null, 18, 'latest');
+    expect(mocks.byTag).toHaveBeenCalledWith('garden', null, null, 18, 'latest', undefined);
   });
 
   it('decodes a TIME cursor for a latest tag page and a SCORE cursor otherwise', async () => {
@@ -242,6 +250,7 @@ describe('feed routes', () => {
       decodeCursor(timeCursor),
       20,
       'latest',
+      undefined,
     );
 
     mocks.byTag.mockClear();
@@ -255,6 +264,7 @@ describe('feed routes', () => {
       decodeScoreCursor(scoreCursor),
       20,
       'recommended',
+      undefined,
     );
   });
 
@@ -333,6 +343,73 @@ describe('feed routes', () => {
 
     expect(error).toBeUndefined();
     expect(res.statusCode).toBe(200);
-    expect(mocks.byAuthor).toHaveBeenCalledWith('ada', null, null, 7);
+    expect(mocks.byAuthor).toHaveBeenCalledWith('ada', null, null, 7, undefined);
+  });
+
+  describe('since', () => {
+    const paths: Array<[string, Record<string, unknown>]> = [
+      ['/', {}],
+      ['/global', {}],
+      ['/tag/:slug', { slug: 'ts' }],
+      ['/board/:slug', { slug: 'market' }],
+    ];
+
+    it.each(paths)('%s rejects a non-date since with a 400', async (path, params) => {
+      const { error } = await runRoute(feedRouter, path, 'get', {
+        params,
+        query: { since: 'not-a-date' },
+      });
+      expect(error).toMatchObject({ status: 400, code: 'VALIDATION_ERROR' });
+    });
+
+    it('user posts route rejects a non-date since with a 400', async () => {
+      const { error } = await runRoute(userPostsRouter, '/', 'get', {
+        params: { username: 'alice' },
+        query: { since: 'not-a-date' },
+      });
+      expect(error).toMatchObject({ status: 400, code: 'VALIDATION_ERROR' });
+    });
+
+    it('forwards a parsed since Date to the service, including a future one', async () => {
+      mocks.global.mockResolvedValue({ items: [], nextCursor: null, ctxById: new Map() });
+      const { res, error } = await runRoute(feedRouter, '/global', 'get', {
+        query: { since: '2999-01-01T00:00:00Z' },
+      });
+      expect(error).toBeUndefined();
+      expect(res.statusCode).toBe(200);
+      expect(mocks.global).toHaveBeenCalledWith(
+        null,
+        null,
+        20,
+        'recommended',
+        new Date('2999-01-01T00:00:00Z'),
+      );
+    });
+
+    it('forwards since on following, tag, board and author routes', async () => {
+      const page = { items: [], nextCursor: null, ctxById: new Map() };
+      const since = new Date('2026-10-14T00:00:00Z');
+      const query = { since: '2026-10-14T00:00:00Z' };
+      mocks.following.mockResolvedValue(page);
+      mocks.byTag.mockResolvedValue(page);
+      mocks.byBoard.mockResolvedValue(page);
+      mocks.byAuthor.mockResolvedValue(page);
+
+      await runRoute(feedRouter, '/', 'get', { query });
+      await runRoute(feedRouter, '/tag/:slug', 'get', { params: { slug: 'ts' }, query });
+      await runRoute(feedRouter, '/board/:slug', 'get', { params: { slug: 'm' }, query });
+      await runRoute(userPostsRouter, '/', 'get', { params: { username: 'alice' }, query });
+
+      expect(mocks.following).toHaveBeenCalledWith(
+        expect.anything(),
+        null,
+        20,
+        'recommended',
+        since,
+      );
+      expect(mocks.byTag).toHaveBeenCalledWith('ts', null, null, 20, 'recommended', since);
+      expect(mocks.byBoard).toHaveBeenCalledWith('m', null, null, 20, 'recommended', since);
+      expect(mocks.byAuthor).toHaveBeenCalledWith('alice', null, null, 20, since);
+    });
   });
 });

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import * as usersApi from '@/api/users.api';
-import { Avatar, Skeleton } from '@/components/primitives';
+import { AccountBadge, Avatar, Skeleton } from '@/components/primitives';
 import type { UserLiteDTO } from '@/api/types';
 import s from '../explore.module.css';
 
@@ -15,7 +15,13 @@ function UserCard({ user }: { user: UserLiteDTO }) {
       <div className={s.cardBody}>
         <div className={s.cardName}>
           {user.displayName || user.username}
-          {user.isAgent && <span className={s.agentBadge}>AI</span>}
+          {(user.isAgent || user.archivedAt) && (
+            <AccountBadge
+              isAgent={user.isAgent}
+              agentBackend={user.agentBackend}
+              archivedAt={user.archivedAt}
+            />
+          )}
         </div>
         <div className={s.cardHandle}>@{user.username}</div>
         {user.headline && <p className={s.cardHeadline}>{user.headline}</p>}

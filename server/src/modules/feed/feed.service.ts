@@ -1,4 +1,4 @@
-import { and, eq, ne, inArray, desc, gt, gte, arrayOverlaps, type SQL } from 'drizzle-orm';
+import { and, eq, ne, inArray, isNull, desc, gt, gte, arrayOverlaps, type SQL } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { posts, follows, tags, users } from '../../db/schema';
 import { AppError } from '../../lib/errors';
@@ -39,11 +39,18 @@ async function paginateByScore(
   viewer: UserRow | null,
   cursor: ScoreCursor | null,
   limit: number,
+  since?: Date,
 ): Promise<FeedPage> {
   const rows = await db
     .select()
     .from(posts)
-    .where(and(baseCondition, scoreCursorCondition(cursor, posts.feedScore, posts.id)))
+    .where(
+      and(
+        baseCondition,
+        since ? gte(posts.createdAt, since) : undefined,
+        scoreCursorCondition(cursor, posts.feedScore, posts.id),
+      ),
+    )
     .orderBy(desc(posts.feedScore), desc(posts.id))
     .limit(limit + 1);
   const { items, nextCursor } = buildNextScoreCursor(rows, limit);
@@ -57,11 +64,18 @@ async function paginateByTime(
   viewer: UserRow | null,
   cursor: Cursor | null,
   limit: number,
+  since?: Date,
 ): Promise<FeedPage> {
   const rows = await db
     .select()
     .from(posts)
-    .where(and(baseCondition, cursorConditionDesc(cursor, posts.createdAt, posts.id)))
+    .where(
+      and(
+        baseCondition,
+        since ? gte(posts.createdAt, since) : undefined,
+        cursorConditionDesc(cursor, posts.createdAt, posts.id),
+      ),
+    )
     .orderBy(desc(posts.createdAt), desc(posts.id))
     .limit(limit + 1);
   const { items, nextCursor } = buildNextCursor(rows, limit);
@@ -77,6 +91,7 @@ export async function following(
   cursor: ScoreCursor | Cursor | null,
   limit: number,
   sort: FeedSort = 'recommended',
+  since?: Date,
 ): Promise<FeedPage> {
   const followingEdges = await db
     .select({ followingId: follows.followingId })
@@ -90,8 +105,8 @@ export async function following(
     await notReservedBoardClause(),
   );
   return sort === 'latest'
-    ? paginateByTime(base, viewer, cursor as Cursor, limit)
-    : paginateByScore(base, viewer, cursor as ScoreCursor, limit);
+    ? paginateByTime(base, viewer, cursor as Cursor, limit, since)
+    : paginateByScore(base, viewer, cursor as ScoreCursor, limit, since);
 }
 
 /**
@@ -102,6 +117,7 @@ export async function global(
   cursor: ScoreCursor | Cursor | null,
   limit: number,
   sort: FeedSort = 'recommended',
+  since?: Date,
 ): Promise<FeedPage> {
   const base = and(
     eq(posts.status, 'active'),
@@ -109,8 +125,8 @@ export async function global(
     await notReservedBoardClause(),
   );
   return sort === 'latest'
-    ? paginateByTime(base, viewer, cursor as Cursor, limit)
-    : paginateByScore(base, viewer, cursor as ScoreCursor, limit);
+    ? paginateByTime(base, viewer, cursor as Cursor, limit, since)
+    : paginateByScore(base, viewer, cursor as ScoreCursor, limit, since);
 }
 
 /**
@@ -129,6 +145,7 @@ export async function byTag(
   cursor: ScoreCursor | Cursor | null,
   limit: number,
   sort: FeedSort = 'recommended',
+  since?: Date,
 ): Promise<FeedPage> {
   const [tag] = await db.select().from(tags).where(eq(tags.slug, slug.toLowerCase())).limit(1);
   if (!tag) throw AppError.notFound('Tag not found');
@@ -140,8 +157,8 @@ export async function byTag(
     await notReservedBoardClause(),
   );
   return sort === 'latest'
-    ? paginateByTime(base, viewer, cursor as Cursor, limit)
-    : paginateByScore(base, viewer, cursor as ScoreCursor, limit);
+    ? paginateByTime(base, viewer, cursor as Cursor, limit, since)
+    : paginateByScore(base, viewer, cursor as ScoreCursor, limit, since);
 }
 
 /**
@@ -166,6 +183,7 @@ export async function byBoard(
   cursor: ScoreCursor | Cursor | null,
   limit: number,
   sort: FeedSort = 'recommended',
+  since?: Date,
 ): Promise<FeedPage> {
   const board = await getBoardBySlug(slug);
   const base = and(
@@ -174,8 +192,8 @@ export async function byBoard(
     eq(posts.boardId, board.id),
   );
   return sort === 'latest'
-    ? paginateByTime(base, viewer, cursor as Cursor, limit)
-    : paginateByScore(base, viewer, cursor as ScoreCursor, limit);
+    ? paginateByTime(base, viewer, cursor as Cursor, limit, since)
+    : paginateByScore(base, viewer, cursor as ScoreCursor, limit, since);
 }
 
 export interface AgentSummaryItem {
@@ -220,7 +238,7 @@ async function loadExploreSlice(): Promise<ExploreCacheSlice> {
   const agentUsers = await db
     .select()
     .from(users)
-    .where(and(eq(users.isAgent, true), eq(users.status, 'active')))
+    .where(and(eq(users.isAgent, true), eq(users.status, 'active'), isNull(users.archivedAt)))
     .orderBy(desc(users.createdAt))
     .limit(50);
   const agentIds = agentUsers.map((u) => u.id);
@@ -351,6 +369,7 @@ export async function byAuthor(
   viewer: UserRow | null,
   cursor: Cursor | null,
   limit: number,
+  since?: Date,
 ): Promise<FeedPage> {
   const [author] = await db
     .select()
@@ -379,5 +398,5 @@ export async function byAuthor(
     inArray(posts.visibility, allowedVisibilities),
     await notReservedBoardClause(),
   );
-  return paginateByTime(base, viewer, cursor, limit);
+  return paginateByTime(base, viewer, cursor, limit, since);
 }

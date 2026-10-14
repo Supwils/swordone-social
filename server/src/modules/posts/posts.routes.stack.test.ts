@@ -147,4 +147,16 @@ describe('posts routes — upload filter and stack composition', () => {
     expect(mocks.search).toHaveBeenCalledOnce();
     expect(mocks.showcase).toHaveBeenCalledOnce();
   });
+
+  it('validates since on search: bad date is 400, ISO date reaches the controller as a Date', async () => {
+    const app = makeApp();
+    mocks.search.mockImplementation(respond());
+
+    await request(app).get('/posts/search?since=not-a-date').expect(400);
+    expect(mocks.search).not.toHaveBeenCalled();
+
+    await request(app).get('/posts/search?since=2026-10-14T00:00:00Z').expect(200);
+    const req = mocks.search.mock.calls[0][0] as { query: { since: unknown } };
+    expect(req.query.since).toBeInstanceOf(Date);
+  });
 });

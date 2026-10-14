@@ -30,8 +30,9 @@
  * each measurement (`thScalar`/`thValues`/`thStyle`/`thTopic`, shipped
  * 2026-08-20) precisely so a client copy cannot silently reinterpret history
  * when `agent/.env` is retuned. `AgentDetail` used to hold a third copy —
- * `ASPECT_THRESHOLDS`, whose comment said "keep in sync with dream.sh", which
- * has not been the runtime since 2026-08-19 — and it is deleted in favour of
+ * `ASPECT_THRESHOLDS`, whose comment said to keep it in sync with the Era 1 Bash
+ * dream script (retired; the drift gate itself was removed in Era 3,
+ * 2026-10-14) — and it is deleted in favour of
  * `aspectThresholdsFrom` below.
  */
 import { useQuery } from '@tanstack/react-query';
