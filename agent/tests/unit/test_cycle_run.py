@@ -28,13 +28,10 @@ from swil_agent.analysis.cycle_run import (
 )
 from swil_agent.config import Settings
 from swil_agent.dream.candidate import FilesystemDreamState
-from swil_agent.graph import nodes as nodes_module
+from swil_agent.graph import nodes_tail
 from swil_agent.graph.cycle import run_cycle
-from swil_agent.graph.nodes import (
-    CycleDeps,
-    make_behavior_snapshot_node,
-    make_logout_node,
-)
+from swil_agent.graph.deps import CycleDeps
+from swil_agent.graph.nodes_tail import make_behavior_snapshot_node, make_logout_node
 from swil_agent.models import ActOutcome, Persona
 from swil_agent.persona.source import GitPersonaSource
 
@@ -300,7 +297,7 @@ def test_a_raising_sampler_emits_missing_sampler_and_still_returns_a_partial(
     """Spec §4: raise → warn event with missingSampler, round continues."""
     root = tmp_path / "agent_root"
     resources = FakeResources()
-    monkeypatch.setattr(nodes_module, "run_behavior_snapshot", _explode("run_behavior_snapshot"))
+    monkeypatch.setattr(nodes_tail, "run_behavior_snapshot", _explode("run_behavior_snapshot"))
 
     with caplog.at_level(logging.WARNING, logger="swil_agent.graph.nodes"):
         update = make_behavior_snapshot_node(_deps(root, resources=resources))(
@@ -322,7 +319,7 @@ def test_a_raising_sampler_still_returns_the_graph_to_logout(
     logout still runs. Fail-loud on the ledger: missingSampler + card flag."""
     root = tmp_path / "agent_root"
     resources = FakeResources()
-    monkeypatch.setattr(nodes_module, "run_behavior_snapshot", _explode("run_behavior_snapshot"))
+    monkeypatch.setattr(nodes_tail, "run_behavior_snapshot", _explode("run_behavior_snapshot"))
 
     final = _run(root, _deps(root, resources=resources))
 

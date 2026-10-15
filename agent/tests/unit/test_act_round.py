@@ -21,14 +21,17 @@ from typing import Any
 import httpx
 import pytest
 
-from swil_agent.act.round import _memory_event, allowed_for, run_act
+from swil_agent.act.memory_log import _memory_event
+from swil_agent.act.round import allowed_for
 from swil_agent.api.auth import ApiKeyAuth
 from swil_agent.api.client import ApiClient, ApiError
 from swil_agent.api.resources import Resources
-from swil_agent.llm.base import Backend
-from swil_agent.locks import LockBusy, act_lock_path, dream_lock_path
+from swil_agent.llm.protocol import Backend
+from swil_agent.locks.file import act_lock_path, dream_lock_path
+from swil_agent.locks.lease import LeaseBusy
 from swil_agent.models import Action, ActOutcome, ActResult, Persona
 
+from ._phases import run_act_phase
 from ._runners import ExplodingBackend, FakeResources, SilentBackend, StubBackend, make_persona
 
 NOW = datetime(2026, 8, 17, 10, 0, 0)
@@ -82,7 +85,7 @@ def _run(
     rng: random.Random | None = None,
     access_key: str | None = None,
 ) -> ActResult:
-    return run_act(
+    return run_act_phase(
         persona=persona or _persona(tmp_path),
         resources=resources if resources is not None else FakeResources(),
         backend=backend or StubBackend('{"plan":[{"action":"nothing"}]}'),
@@ -288,7 +291,12 @@ def test_backend_unavailable_is_not_the_same_as_planner_empty(tmp_path: Path) ->
 # ── health probe ordering (contract 01 §1) ──────────────────────────────────
 
 
-def test_offline_health_check_never_touches_the_lock(tmp_path: Path) -> None:
+def test_offline_health_check_does_nothing_else_and_leaves_no_lock_behind(
+    tmp_path: Path,
+) -> None:
+    """An OFFLINE act makes the probe and nothing else, and leaves no lock
+    file: the act lease it held for the run is released on the way out. (It
+    no longer probes BEFORE taking the lease -- S3 §12.2(c).)"""
     calls: list[str] = []
 
     def _health() -> bool:
@@ -301,14 +309,14 @@ def test_offline_health_check_never_touches_the_lock(tmp_path: Path) -> None:
     assert not act_lock_path(tmp_path, "zenith").exists()
 
 
-# ── lock behavior (ruling R6: LockBusy propagates, is not an ActOutcome) ───
+# ── lock behavior (ruling R6: a busy lease propagates, is not an ActOutcome) ─
 
 
-def test_run_act_raises_lock_busy_when_the_account_lock_is_held(tmp_path: Path) -> None:
+def test_the_act_phase_raises_lease_busy_when_the_account_lock_is_held(tmp_path: Path) -> None:
     lock = act_lock_path(tmp_path, "zenith")
     lock.parent.mkdir(parents=True, exist_ok=True)
     lock.write_text("1", encoding="utf-8")
-    with pytest.raises(LockBusy):
+    with pytest.raises(LeaseBusy):
         _run(tmp_path)
     # Someone else's lock, untouched by the failed acquire attempt.
     assert lock.read_text(encoding="utf-8") == "1"
@@ -735,7 +743,7 @@ def test_a_real_run_still_contends_for_the_lock(tmp_path: Path) -> None:
     lock = act_lock_path(tmp_path, "zenith")
     lock.parent.mkdir(parents=True, exist_ok=True)
     lock.write_text("999", encoding="utf-8")
-    with pytest.raises(LockBusy):
+    with pytest.raises(LeaseBusy):
         _run(tmp_path, dry_run=False)
 
 
@@ -1030,7 +1038,7 @@ def test_an_already_following_409_warns_and_writes_no_memory_line(
     backend = StubBackend(_plan_json([Action(kind="follow", username="vex")]))
 
     with caplog.at_level(logging.WARNING, logger="swil_agent.act.executor"):
-        result = run_act(
+        result = run_act_phase(
             persona=persona,
             resources=_live_resources(transport),
             backend=backend,
@@ -1068,7 +1076,7 @@ def test_a_409_files_a_warn_lab_event_not_a_success_one(tmp_path: Path) -> None:
             events.append(_json_loads(request.content))
         return transport.handler(request)  # type: ignore[attr-defined]
 
-    run_act(
+    run_act_phase(
         persona=_persona(tmp_path),
         resources=_live_resources(httpx.MockTransport(capturing)),
         backend=StubBackend(_plan_json([Action(kind="follow", username="vex")])),
@@ -1096,7 +1104,7 @@ def test_a_genuine_204_follow_still_lands_dones_and_remembers(
     persona = _persona(tmp_path)
 
     with caplog.at_level(logging.INFO, logger="swil_agent.act.executor"):
-        result = run_act(
+        result = run_act_phase(
             persona=persona,
             resources=_live_resources(transport),
             backend=StubBackend(_plan_json([Action(kind="follow", username="vex")])),
@@ -1189,7 +1197,7 @@ def _wire_transport(
 
 
 def _run_on_the_wire(tmp_path: Path, action: Action, transport: httpx.MockTransport) -> ActResult:
-    return run_act(
+    return run_act_phase(
         persona=_persona(tmp_path),
         resources=_live_resources(transport),
         backend=StubBackend(_plan_json([action])),

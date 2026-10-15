@@ -1,6 +1,6 @@
 """The assembled cycle graph (Plan 3 Task 8, spec §5.4).
 
-`graph/nodes.py` is ten adapters; this is the wiring BETWEEN them, plus the
+`graph/nodes_*.py` are ten adapters; this is the wiring BETWEEN them, plus the
 two things that wrap the whole run -- the lease and the checkpointer. So what
 these tests can see, and no earlier suite can, is:
 
@@ -46,7 +46,7 @@ from swil_agent.act import round as act_round
 from swil_agent.api.client import ApiError, TransportError
 from swil_agent.config import Settings
 from swil_agent.graph import cycle as cycle_module
-from swil_agent.graph import nodes as nodes_module
+from swil_agent.graph import nodes_act, nodes_dream, nodes_tail
 from swil_agent.graph.checkpoint import open_checkpointer
 from swil_agent.graph.cycle import (
     BEHAVIOR_SNAPSHOT,
@@ -63,13 +63,14 @@ from swil_agent.graph.cycle import (
     build_cycle,
     run_cycle,
 )
-from swil_agent.graph.leases import LEASE_TTL_SECONDS, RunLease
-from swil_agent.graph.nodes import CycleDeps
+from swil_agent.graph.deps import CycleDeps
 from swil_agent.graph.state import CycleState
-from swil_agent.llm.base import CompletionRequest
-from swil_agent.locks import act_lock_path, dream_lock_path
+from swil_agent.llm.runner import CompletionRequest
+from swil_agent.locks.file import act_lock_path, dream_lock_path
+from swil_agent.locks.lease import LEASE_TTL_SECONDS, RunLease
 from swil_agent.models import ActOutcome, Persona
 
+from ._node_modules import caller_of
 from ._runners import (
     FakeEmbedder,
     FakePersonaSource,
@@ -110,10 +111,10 @@ DREAM_REPLY = '{"recent": ["一件新事"]}'
 # Parses as no list at all: the dream fails and nothing is written.
 BAD_DREAM_REPLY = "我今天不想写。"
 
-# Every step `graph/nodes.py` calls, in the order a complete cycle calls them.
+# Every step the node modules call, in the order a complete cycle calls them.
 # Spying on these module globals is how this file observes WHICH nodes ran:
-# `nodes.py` binds each name into its own globals at import, so the module
-# under test resolves the spy (standing constraint §6).
+# each `graph/nodes_*.py` binds its names into its own globals at import, so
+# the module under test resolves the spy (patched via `caller_of`) (standing constraint §6).
 _ACT_STEPS = (
     "login_step",
     "sync_backend_step",
@@ -212,17 +213,17 @@ def _deps(tmp_path: Path, **overrides: Any) -> CycleDeps:
 
 
 def _trace_steps(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Record every step call `graph/nodes.py` makes, in order."""
+    """Record every step call the node modules make, in order."""
     trace: list[str] = []
 
     def install(step: str) -> None:
-        real = getattr(nodes_module, step)
+        real = getattr(caller_of(step), step)
 
         def spy(_step: str = step, _real: Any = real, **kwargs: Any) -> Any:
             trace.append(_step)
             return _real(**kwargs)
 
-        monkeypatch.setattr(nodes_module, step, spy)
+        monkeypatch.setattr(caller_of(step), step, spy)
 
     for step in (*_ACT_STEPS, *_DREAM_STEPS):
         install(step)
@@ -443,7 +444,7 @@ def test_a_permanent_execute_failure_is_not_retried(
         calls.append("execute")
         raise ApiError(404, "no such post", None)
 
-    monkeypatch.setattr(nodes_module, "execute_step", explode)
+    monkeypatch.setattr(nodes_act, "execute_step", explode)
     with pytest.raises(ApiError):
         _run(tmp_path)
     assert calls == ["execute"]
@@ -460,7 +461,7 @@ def test_a_transient_execute_failure_is_retried(
         calls.append("execute")
         raise TransportError(httpx.ConnectError("refused"))
 
-    monkeypatch.setattr(nodes_module, "execute_step", explode)
+    monkeypatch.setattr(nodes_act, "execute_step", explode)
     with pytest.raises(TransportError):
         _run(tmp_path)
     assert len(calls) > 1
@@ -482,7 +483,7 @@ def test_a_permanent_api_error_is_not_retried_at_the_login_node(
         calls.append("login")
         raise ApiError(503, "unavailable", None)
 
-    monkeypatch.setattr(nodes_module, "login_step", explode)
+    monkeypatch.setattr(nodes_act, "login_step", explode)
     with pytest.raises(ApiError):
         _run(tmp_path)
     assert calls == ["login"]
@@ -504,7 +505,7 @@ def test_a_transient_login_failure_is_retried(
         calls.append("login")
         raise TransportError(httpx.ConnectError("refused"))
 
-    monkeypatch.setattr(nodes_module, "login_step", explode)
+    monkeypatch.setattr(nodes_act, "login_step", explode)
     with pytest.raises(TransportError):
         _run(tmp_path)
     assert len(calls) > 1
@@ -531,7 +532,7 @@ def test_the_plan_node_is_attempted_exactly_once(
         calls.append("plan")
         raise httpx.CookieConflict("two cookies named sid")
 
-    monkeypatch.setattr(nodes_module, "plan_step", explode)
+    monkeypatch.setattr(nodes_act, "plan_step", explode)
     with pytest.raises(httpx.CookieConflict):
         _run(tmp_path)
     assert calls == ["plan"]
@@ -553,7 +554,7 @@ def test_a_permanent_api_error_is_not_retried_at_the_snapshot_node(
         calls.append("snapshot")
         raise ApiError(403, "forbidden", None)
 
-    monkeypatch.setattr(nodes_module, "snapshot_step", explode)
+    monkeypatch.setattr(nodes_dream, "snapshot_step", explode)
     with pytest.raises(ApiError):
         _run(tmp_path)
     assert calls == ["snapshot"]
@@ -575,7 +576,7 @@ def test_a_transient_snapshot_failure_is_retried(
         calls.append("snapshot")
         raise TransportError(httpx.ConnectError("refused"))
 
-    monkeypatch.setattr(nodes_module, "snapshot_step", explode)
+    monkeypatch.setattr(nodes_dream, "snapshot_step", explode)
     with pytest.raises(TransportError):
         _run(tmp_path)
     assert len(calls) > 1
@@ -702,13 +703,13 @@ def test_loop_three_reruns_the_act_phase_against_rebuilt_deps(
         ),
     }
     seen: list[str] = []
-    real_context = nodes_module.context_step
+    real_context = nodes_act.context_step
 
     def spy(**kwargs: Any) -> Any:
         seen.append(str(kwargs["memory_text"]))
         return real_context(**kwargs)
 
-    monkeypatch.setattr(nodes_module, "context_step", spy)
+    monkeypatch.setattr(nodes_act, "context_step", spy)
     final = _run(
         tmp_path,
         persona=persona,
@@ -772,7 +773,7 @@ def test_a_dead_backend_stops_before_the_guardrail(
     def no_plan(**_kwargs: Any) -> Any:
         return None
 
-    monkeypatch.setattr(nodes_module, "plan_step", no_plan)
+    monkeypatch.setattr(nodes_act, "plan_step", no_plan)
     final = _run(tmp_path)
     assert final["outcome"] is ActOutcome.BACKEND_UNAVAILABLE
     assert "guardrail_step" not in trace
@@ -1003,7 +1004,7 @@ def test_a_cycle_that_dies_mid_round_still_releases_both_leases(
     def explode(**_kwargs: Any) -> Any:
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(nodes_module, "write_step", explode)
+    monkeypatch.setattr(nodes_dream, "write_step", explode)
     with pytest.raises(RuntimeError):
         _run(tmp_path, persona=_persona(root), deps=_deps(tmp_path), db=db)
     assert _rows(db) == []
@@ -1017,7 +1018,7 @@ def test_a_busy_lease_stops_the_cycle_before_any_node_runs(
     """Bash logs `SKIP <name> — locked` and moves on; the lease raises
     `LeaseBusy` for the CLI to turn into the same SKIP. Nothing may run
     first -- a plan built and then discarded is a paid LLM call."""
-    from swil_agent.graph.leases import LeaseBusy
+    from swil_agent.locks.lease import LeaseBusy
 
     db = _lease_db(tmp_path)
     root = _agent_root(tmp_path)
@@ -1259,7 +1260,7 @@ def test_the_round_id_is_on_the_state_every_node_sees(
     """Task 2 stamps `metrics.roundId` from `state["round_id"]`, so every node
     -- not only the final state -- must see the id the thread is keyed on."""
     seen: dict[str, str | None] = {}
-    original = nodes_module.make_logout_node
+    original = nodes_tail.make_logout_node
 
     def spying_logout(deps: CycleDeps) -> Callable[[CycleState], CycleState]:
         inner = original(deps)

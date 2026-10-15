@@ -2,8 +2,8 @@
 
 Single home for these so `test_backends.py`, `test_embedder.py`, and any later
 task's tests (act/dream) import the same fakes instead of each hand-rolling
-one. All classes conform structurally to `swil_agent.llm.base.Runner` /
-`swil_agent.llm.base.Backend` / `swil_agent.dream.round.Embedder` /
+one. All classes conform structurally to `swil_agent.llm.runner.Runner` /
+`swil_agent.llm.protocol.Backend` / `swil_agent.dream.round.Embedder` /
 `swil_agent.dream.candidate.DreamState`.
 """
 
@@ -20,7 +20,8 @@ from swil_agent.api.client import ApiError
 from swil_agent.api.dto import LabEvent
 from swil_agent.api.resources import VectorFiling, WriteNotVerifiedError
 from swil_agent.embedder.client import EmbedderUnavailable
-from swil_agent.llm.base import BackendUnavailableError, CompletionRequest
+from swil_agent.llm.errors import BackendUnavailableError
+from swil_agent.llm.runner import CompletionRequest, RunResult
 from swil_agent.models import Persona
 
 
@@ -58,11 +59,28 @@ class RunnerCall:
 
 
 class RecordingRunner:
-    """Records every call and always returns the same fixed string."""
+    """Records every call and always returns the same fixed string.
 
-    def __init__(self, output: str = "ok") -> None:
+    Also a `StatusRunner`: `run_result` answers `run`'s stdout (so a subclass
+    that overrides `run` still drives it) with `returncode` / `timed_out`."""
+
+    def __init__(self, output: str = "ok", *, returncode: int = 0, timed_out: bool = False) -> None:
         self.output = output
+        self.returncode = returncode
+        self.timed_out = timed_out
         self.calls: list[RunnerCall] = []
+
+    def run_result(
+        self,
+        argv: list[str],
+        stdin: str | None = None,
+        env: dict[str, str] | None = None,
+        timeout: float = 300.0,
+    ) -> RunResult:
+        stdout = self.run(argv, stdin, env, timeout)
+        if self.timed_out:
+            return RunResult(stdout="", returncode=None, timed_out=True)
+        return RunResult(stdout=stdout, returncode=self.returncode)
 
     def run(
         self,
@@ -157,7 +175,7 @@ class FakeEmbedder:
 class StubBackend:
     """A `Backend` double that returns a fixed response and records requests.
 
-    Conforms structurally to `swil_agent.llm.base.Backend`. Used by planner
+    Conforms structurally to `swil_agent.llm.protocol.Backend`. Used by planner
     tests to inspect what `plan_round` sends as the system/user prompt
     without invoking a real CLI.
     """
@@ -181,7 +199,7 @@ class SilentBackend:
     Every concrete `Backend` (`ClaudeCLIBackend`, `CodexCLIBackend`,
     `DeepSeekCLIBackend`) signals "nothing came back" by raising
     `BackendUnavailableError` from `complete`, not by returning an empty
-    string -- see `llm/base.py`. A fake that just returned `""` would not be
+    string -- see `llm/runner.py`. A fake that just returned `""` would not be
     exercising the path a real backend actually takes.
     """
 

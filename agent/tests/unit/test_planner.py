@@ -12,7 +12,8 @@ from pathlib import Path
 
 from swil_agent.act.context import build_context
 from swil_agent.act.planner import PLATFORM_PREAMBLE, plan_round, render_planner_prompt
-from swil_agent.llm.base import BackendUnavailableError, CompletionRequest
+from swil_agent.llm.errors import BackendUnavailableError
+from swil_agent.llm.runner import CompletionRequest
 from swil_agent.models import ActContext, Persona
 from swil_agent.persona.format import PersonaDoc, render_persona
 from swil_agent.persona.loader import load_persona

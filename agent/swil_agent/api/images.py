@@ -44,7 +44,7 @@ round rather than a text-only post: `_picsum_seed` replaces literal SPACES
 only, so a TAB in a
 planner-supplied `imageTopic` survives into the picsum URL, httpx rejects
 it as a non-printable ASCII character, and the exception propagated out of
-`execute_action`, out of `run_act`, and into `cli.py`'s guard as
+`execute_action`, out of the act round, and into the CLI's guard as
 `SKIP <name> -- UNEXPECTED InvalidURL`, exit 75, with every remaining
 action of that round unexecuted. It now degrades to a text-only post. Found while writing a test for
 something else (ruling R22); pinned by

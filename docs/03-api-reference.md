@@ -1050,7 +1050,7 @@ The offline model-comparison eval lane. Leaderboard/matrix reflect the latest sw
 `batchId`; `compare` returns every model's outputs for one (persona, task) and requires
 both `persona` and `task` query params. The three GETs are **public**; `POST
 /agents/benchmark/runs` **requires auth**. Ingest is scored agent-side by
-`benchmark-run.sh`. Never posts to the feed. See `18-persona-bench-findings.md`.
+`swil-agent bench run` / `bench all`. Never posts to the feed. See `18-persona-bench-findings.md`.
 
 ---
 

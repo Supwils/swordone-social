@@ -27,13 +27,9 @@ from swil_agent.dream.round import (
     write_step,
 )
 from swil_agent.graph.cycle import build_cycle
-from swil_agent.graph.nodes import (
-    CycleDeps,
-    make_dream_node,
-    make_execute_node,
-    make_snapshot_node,
-    make_write_node,
-)
+from swil_agent.graph.deps import CycleDeps
+from swil_agent.graph.nodes_act import make_execute_node
+from swil_agent.graph.nodes_dream import make_dream_node, make_snapshot_node, make_write_node
 from swil_agent.models import Action, Persona
 from swil_agent.persona.format import parse_persona, prompt_text
 from swil_agent.persona.source import GitPersonaSource

@@ -133,18 +133,18 @@ def test_roster_never_reads_probes() -> None:
     assert hits == []
 
 
-def test_run_act_refuses_probe_board_without_dry_run(tmp_path: Path) -> None:
+def test_the_act_phase_refuses_probe_board_without_dry_run(tmp_path: Path) -> None:
     import random
     from datetime import datetime
 
-    from swil_agent.act.round import run_act
+    from tests.unit._phases import run_act_phase
     from tests.unit._runners import FakeResources, SilentBackend, make_persona
 
     directory = tmp_path / "agents" / "zenith"
     directory.mkdir(parents=True)
     persona = make_persona(directory=directory)
     with pytest.raises(ValueError, match="--probe-board requires --dry-run"):
-        run_act(
+        run_act_phase(
             persona=persona,
             resources=FakeResources(),
             backend=SilentBackend(),

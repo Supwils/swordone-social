@@ -3,9 +3,9 @@ from typing import Any
 
 import pytest
 
-from swil_agent.act.context import (
+from swil_agent.act.context import build_context
+from swil_agent.act.context_format import (
     _within_era,
-    build_context,
     engaged_post_ids,
     format_conversations,
     format_global_feed,

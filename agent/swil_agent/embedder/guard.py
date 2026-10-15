@@ -5,7 +5,7 @@ refcount directory that the parallel cycle-one.sh processes share; a second
 implementation in Python would race against it (spec §3.2). This is a thin
 wrapper, not a reimplementation.
 
-`Runner.run` (see `llm/base.py`) returns a plain string, never a return
+`Runner.run` (see `llm/runner.py`) returns a plain string, never a return
 code -- `SubprocessRunner` signals a failed or timed-out subprocess by
 returning `""`. `embedder-guard.sh` itself always exits 0 for `up`/`down`
 (its own comment: "a guard must never abort its caller"), so there is no
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from swil_agent.llm.base import Runner
+from swil_agent.llm.runner import Runner
 
 # `embedder-guard.sh` self-bounds a cold boot at its own START_TIMEOUT
 # (`EMBEDDER_START_TIMEOUT`, default 150s -- "cold MPS model load can be
@@ -32,7 +32,7 @@ from swil_agent.llm.base import Runner
 #
 # This is a backstop against a genuinely WEDGED process, not a policy knob
 # to tune down for a snappier round: `SubprocessRunner` enforces its timeout
-# by SIGKILLing the child (see `llm/base.py`), and `cmd_up`/`cmd_down` hold
+# by SIGKILLing the child (see `llm/runner.py`), and `cmd_up`/`cmd_down` hold
 # an mkdir spinlock (`_lock`/`_unlock`) for their entire body. A SIGKILL
 # mid-critical-section never runs `rmdir "$LOCKDIR"`, so it wedges every
 # other `up`/`down` call in a parallel round for up to that same 300s steal

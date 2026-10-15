@@ -35,7 +35,7 @@ trivia:
     `"→@{username}"`.
 
     **That is NOT the same as "DM bodies stay out of the observation
-    layer".** A second, independent event exists: `act/round.py`'s
+    layer".** A second, independent event exists: `act/memory_log.py`'s
     `_write_memory_line` fires `memory/memory/success` for every memory
     line, and its `summary` is the WHOLE note -- for a dm
     `dm | to=<user> conversationId=<id> | <first 80 chars of the body>`. So
@@ -52,14 +52,19 @@ trivia:
 from __future__ import annotations
 
 import logging
-import re
 from typing import Protocol
 
 import httpx
-from pydantic import BaseModel
 
+from swil_agent.act.execution_outcome import (
+    ExecutionOutcome,
+    _clean,
+    _clean_username,
+    _error_detail,
+    _outcome,
+    _skip,
+)
 from swil_agent.api.client import ApiError
-from swil_agent.api.dto import LabEvent
 from swil_agent.api.images import ImageFetchError, fetch_unsplash_image
 from swil_agent.api.resources import Resources, WriteNotVerifiedError
 from swil_agent.llm.extract import collapse_doubled_text
@@ -70,8 +75,6 @@ logger = logging.getLogger(__name__)
 _SUMMARY_CAP = 200
 _LOG_PREVIEW_CAP = 60
 _QUOTE_PREVIEW_CAP = 40
-_LAB_TYPE = "cycle"
-_LAB_PHASE = "act"
 
 # The two exception types a write can raise that must both be treated as
 # "did not land" — a transport/HTTP failure (`ApiError`, which
@@ -100,115 +103,6 @@ class ImageFetcher(Protocol):
         access_key: str,
         transport: httpx.BaseTransport | None = None,
     ) -> tuple[str, bytes]: ...
-
-
-class ExecutionOutcome(BaseModel):
-    """Everything one executed action produces: the `ActionResult` a round
-    tally cares about, the act-log line a caller may want to
-    print (contract `02` §5.2), and the exact `LabEvent` this module already
-    emits via `Resources.lab_event` (contract `02` §5.3) — exposed here too
-    so a future caller (a round-level orchestrator) can reconstruct or
-    re-log the same line without recomputing it from `ActionResult` alone.
-    """
-
-    result: ActionResult
-    log_line: str
-    lab_event: LabEvent
-
-
-def _clean(raw: str | None) -> str:
-    """Newlines deleted (not replaced with a space), runs of spaces collapsed
-    to one, then trimmed.
-
-    The trailing `.strip()` makes a whitespace-only text empty, so
-    `Action(kind="post", text="   ")` is a local SKIP with no `Resources`
-    call at all instead of a network round-trip the server would 400.
-    """
-    text = (raw or "").replace("\n", "")
-    text = re.sub(r" {2,}", " ", text)
-    return text.strip()
-
-
-def _clean_username(raw: str | None) -> str:
-    """Every `@` and
-    every whitespace character removed, anywhere in the string — not just
-    a leading `@` or surrounding trim.
-    """
-    return re.sub(r"[@\s]", "", raw or "")
-
-
-def _error_detail(exc: ApiError | WriteNotVerifiedError) -> str:
-    """The response body, preserved into the log (design spec §7.6).
-
-    `ApiError.__str__` already renders `"HTTP {status}: {body[:300]}"`
-    (`api/client.py`) — including `TransportError`, an `ApiError` subclass
-    for the "never got a response at all" case — so returning it unmodified
-    already fixes the `2>/dev/null` blind spot. `WriteNotVerifiedError` gets
-    an explicit "not verified" prefix so a 2xx-with-no-id failure reads as a
-    distinct failure class from a genuine 4xx/5xx wherever `detail` surfaces
-    (log line, `/lab`, a human skimming the act log).
-    """
-    if isinstance(exc, WriteNotVerifiedError):
-        return f"write not verified: {exc}"
-    return str(exc)
-
-
-def _outcome(
-    action: Action,
-    *,
-    landed: bool,
-    resource_id: str | None,
-    detail: str | None,
-    log_line: str,
-    lab_outcome: str,
-    lab_summary: str,
-    lab_reason: str | None = None,
-    lab_target_id: str | None = None,
-    conversation_id: str | None = None,
-    call_succeeded: bool | None = None,
-) -> ExecutionOutcome:
-    # `call_succeeded` DERIVES from `landed` unless a branch says otherwise,
-    # so the two cannot drift apart by accident: the only caller that passes
-    # it explicitly is `_execute_follow`'s 409/`CONFLICT` branch, the single
-    # place a follow can be landed without a memory line (loop-engine spec
-    # §6; see `ActionResult`).
-    result = ActionResult(
-        action=action,
-        landed=landed,
-        resource_id=resource_id,
-        detail=detail,
-        conversation_id=conversation_id,
-        call_succeeded=landed if call_succeeded is None else call_succeeded,
-    )
-    event = LabEvent(
-        type=_LAB_TYPE,
-        phase=_LAB_PHASE,
-        outcome=lab_outcome,
-        action=action.kind,
-        summary=lab_summary,
-        reason=lab_reason,
-        target_id=lab_target_id,
-    )
-    return ExecutionOutcome(result=result, log_line=log_line, lab_event=event)
-
-
-def _skip(
-    action: Action, *, agent_name: str, field_detail: str, lab_summary: str
-) -> ExecutionOutcome:
-    """Every per-kind field-validation skip (contract `02` §2, "the SKIP is
-    per-action rather than for the whole plan" — §1.4). No `Resources` call
-    is ever reached on this path; `resources.calls == []` is the test
-    assertion that carries that weight.
-    """
-    return _outcome(
-        action,
-        landed=False,
-        resource_id=None,
-        detail=f"{action.kind} — {field_detail}",
-        log_line=f"SKIP {agent_name} {action.kind} — {field_detail}",
-        lab_outcome="skip",
-        lab_summary=lab_summary,
-    )
 
 
 def _execute_post(
@@ -608,7 +502,7 @@ def execute_action(
     # Level from the lab outcome rather than by re-parsing the line's own
     # DONE/WARN/SKIP prefix -- same fact, already typed. The FILE handler
     # renders `[ts] <message>` with no level (Bash's `_log` format exactly,
-    # see `cli.py`); the level only shapes the stderr stream.
+    # see `cli/logs.py`); the level only shapes the stderr stream.
     logger.log(
         logging.INFO if outcome.lab_event.outcome == "success" else logging.WARNING,
         "%s",

@@ -19,19 +19,19 @@ from typing import Any
 
 import pytest
 
-from swil_agent.graph.leases import (
+from swil_agent.locks.file import (
+    STALE_AFTER_SECONDS,
+    act_lock_path,
+    dream_lock_path,
+    read_lock_identity,
+)
+from swil_agent.locks.lease import (
     LEASE_TTL_SECONDS,
     LeaseBusy,
     RunLease,
     ensure_schema,
     open_lease_db,
     sweep_expired,
-)
-from swil_agent.locks import (
-    STALE_AFTER_SECONDS,
-    act_lock_path,
-    dream_lock_path,
-    read_lock_identity,
 )
 
 _NOW = 1_700_000_000.0

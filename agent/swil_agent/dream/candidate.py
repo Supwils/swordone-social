@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Final, Protocol
 
-from swil_agent.llm.base import CompletionRequest
+from swil_agent.llm.runner import CompletionRequest
 from swil_agent.models import CooldownDecision, Persona
 
 # ── cooldown ────────────────────────────────────────────────────────────────

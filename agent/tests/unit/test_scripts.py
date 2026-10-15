@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -24,6 +25,12 @@ RETIRED = (
     "setup-humans.sh",
     "setup-agents.sh",
     "swil.sh",
+    # The Persona Bench, ported to `swil-agent bench` in S3 (`bench/`).
+    "llm.sh",
+    "deepseek-env.sh",
+    "benchmark-run.sh",
+    "benchmark-all.sh",
+    "llm-smoke.sh",
 )
 
 
@@ -115,43 +122,6 @@ def test_auto_commit_skips_and_stages_nothing_while_the_archive_is_untracked(
         check=True,
     )
     assert staged.stdout == ""
-
-
-_V2_PERSONA = (
-    "---\nusername: aa\ndisplay_name: 阿甲\nmodel: claude:claude-opus-5-5\n"
-    "board: making\nera: 3\n---\n# 阿甲\n\n一段人设。\n\n## 最近\n- 一条\n"
-)
-
-
-@pytest.mark.parametrize(
-    "raw",
-    [
-        _V2_PERSONA.encode(),
-        _V2_PERSONA.replace("\n", "\r\n").encode(),
-        b"\xef\xbb\xbf" + _V2_PERSONA.encode(),
-    ],
-    ids=["lf", "crlf", "bom"],
-)
-def test_benchmark_system_prompt_carries_no_frontmatter(tmp_path: Path, raw: bytes) -> None:
-    """The bench's SYS must never name the model under test."""
-    text = (SCRIPTS / "benchmark-run.sh").read_text(encoding="utf-8")
-    block = text[text.index('PTEXT="') : text.index('SYS="$PBODY"') + len('SYS="$PBODY"')]
-    persona = tmp_path / "personality.md"
-    persona.write_bytes(raw)
-    result = subprocess.run(
-        ["bash", "-c", block + '\nprintf "%s\\n===\\n%s" "$DISPLAY" "$SYS"'],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        env={"PFILE": str(persona), "PATH": "/usr/bin:/bin"},
-    )
-    assert result.returncode == 0, result.stderr
-    display, system = result.stdout.split("\n===\n")
-    assert display == "阿甲"
-    assert system.startswith("# 阿甲")
-    for leak in ("---", "model:", "claude-opus", "username:", "\r", "﻿"):
-        assert leak not in system
-    assert "## 最近\n- 一条" in system
 
 
 # ── prune-checkpoints.py: keeps the NEWEST rounds per account ──────────────
@@ -313,3 +283,64 @@ def test_the_embedder_down_warning_names_era_3_consequences() -> None:
     # No backticks inside that double-quoted string: bash would RUN them.
     line = next(x for x in text.splitlines() if "embedder would not start" in x)
     assert "`" not in line
+
+
+# ── shell entry points name real CLI commands and flags ────────────────────
+
+_INVOCATION_RE = re.compile(r"swil-agent((?:[ \t]+[^\s|&;>]+)+)")
+
+
+def _cli_tokens(text: str) -> list[tuple[str, list[str]]]:
+    """(command, flags) for every `swil-agent <command> … --flag` in script text.
+
+    Comment lines and prose mentions are skipped: only lines whose first
+    word is `exec` / `uv` / `swil-agent` count as invocations.
+    """
+    found: list[tuple[str, list[str]]] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("#") or not re.match(r"(exec\s+)?(uv\s+run\b|swil-agent\b)", line):
+            continue
+        for match in _INVOCATION_RE.finditer(line):
+            words = match.group(1).split()
+            command = next((w for w in words if not w.startswith("-")), None)
+            if command is None:
+                continue
+            found.append((command, [w for w in words if w.startswith("--")]))
+    return found
+
+
+def _unknown_cli_names(text: str) -> list[str]:
+    import typer.main
+
+    from swil_agent import cli
+
+    root = typer.main.get_command(cli.app)
+    commands = getattr(root, "commands", {})
+    bad: list[str] = []
+    for command, flags in _cli_tokens(text):
+        sub = commands.get(command)
+        if sub is None:
+            bad.append(command)
+            continue
+        known = {opt for param in sub.params for opt in (*param.opts, *param.secondary_opts)}
+        bad.extend(flag for flag in flags if flag not in known)
+    return bad
+
+
+@pytest.mark.parametrize("name", ["cycle-one.sh", "opportunistic-round.sh"])
+def test_shell_entry_points_name_real_cli_commands_and_flags(name: str) -> None:
+    text = (SCRIPTS / name).read_text(encoding="utf-8")
+    assert _unknown_cli_names(text) == []
+
+
+def test_cycle_one_actually_invokes_cycle_with_auto() -> None:
+    text = (SCRIPTS / "cycle-one.sh").read_text(encoding="utf-8")
+    assert ("cycle", ["--auto"]) in _cli_tokens(text)
+
+
+def test_cli_name_check_rejects_a_bogus_command_or_flag() -> None:
+    assert _unknown_cli_names("exec uv run --project x swil-agent cycl NAME --auto") == ["cycl"]
+    assert _unknown_cli_names("exec uv run --project x swil-agent cycle NAME --bogus") == [
+        "--bogus"
+    ]

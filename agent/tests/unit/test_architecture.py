@@ -10,7 +10,7 @@ _ROOT = PACKAGE.parent  # directory containing "swil_agent" — the dotted-name 
 def _own_package(path: Path) -> str:
     """Dotted package that owns `path`, matching Python's own `__package__`.
 
-    For `swil_agent/llm/base.py` that's `"swil_agent.llm"` — the package
+    For `swil_agent/llm/runner.py` that's `"swil_agent.llm"` — the package
     directly containing the file — whether or not the file is itself an
     `__init__.py` (a package's `__init__.py` IS that package, so it gets the
     same `__package__` as its sibling modules, not one level up).
@@ -38,12 +38,12 @@ def _imported_modules(path: Path) -> set[str]:
     """All modules a file imports, as fully-qualified dotted names.
 
     Handles four forms that must all resolve to the same name for
-    `swil_agent.llm.deepseek_cli`:
-      - `import swil_agent.llm.deepseek_cli`
-      - `from swil_agent.llm.deepseek_cli import DeepSeekCLIBackend`
-      - `from swil_agent.llm import deepseek_cli`             (module + name joined)
-      - `from .deepseek_cli import DeepSeekCLIBackend`        (relative, resolved)
-      - `from . import deepseek_cli`                          (relative, `module is
+    `swil_agent.llm.backends.claude`:
+      - `import swil_agent.llm.backends.claude`
+      - `from swil_agent.llm.backends.claude import DeepSeekCLIBackend`
+      - `from swil_agent.llm.backends import claude`           (module + name joined)
+      - `from .claude import DeepSeekCLIBackend`                (relative, resolved)
+      - `from . import claude`                                (relative, `module is
         None`, resolved via the anchor package + the imported name joined)
     A naive `{node.module for node in ImportFrom}` misses the last two: the
     plain-relative form resolves to the wrong string (or nothing, since
@@ -171,3 +171,286 @@ def test_nothing_imports_a_retired_dream_module() -> None:
         if module.startswith(retired)
     ]
     assert offenders == [], offenders
+
+
+def _constructs(path: Path, class_name: str) -> bool:
+    """True when `path` calls `class_name(...)`, by bare name or attribute."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Name) and func.id == class_name:
+            return True
+        if isinstance(func, ast.Attribute) and func.attr == class_name:
+            return True
+    return False
+
+
+# The Persona Bench (`bench/`, spec §8) may construct the DeepSeek backend for
+# `ds-flash`. It currently reaches it through `build_backend("deepseek", ...)`,
+# which reads the key the same way the roster does; the path stays allowed.
+_DEEPSEEK_CONSTRUCTION_ALLOWED = ("llm/backends/__init__.py", "bench/")
+
+
+def _deepseek_offenders(package: Path) -> list[str]:
+    offenders: list[str] = []
+    for path in package.rglob("*.py"):
+        relative = path.relative_to(package).as_posix()
+        if relative.startswith(_DEEPSEEK_CONSTRUCTION_ALLOWED):
+            continue
+        if _constructs(path, "DeepSeekCLIBackend"):
+            offenders.append(relative)
+    return offenders
+
+
+def test_deepseek_backend_is_constructed_only_by_build_backend_and_the_bench() -> None:
+    """DeepSeek is reachable only through an explicit `deepseek` selection
+    (`build_backend`) or the Persona Bench -- never as a roster default."""
+    assert _deepseek_offenders(PACKAGE) == []
+    assert _constructs(PACKAGE / "llm" / "backends" / "__init__.py", "DeepSeekCLIBackend")
+
+
+def test_the_deepseek_guard_can_actually_fail(tmp_path: Path) -> None:
+    pkg = tmp_path / "swil_agent"
+    (pkg / "act").mkdir(parents=True)
+    (pkg / "act" / "bad.py").write_text(
+        "from swil_agent.llm.backends.claude import DeepSeekCLIBackend\n"
+        "backend = DeepSeekCLIBackend(None, 'k')\n",
+        encoding="utf-8",
+    )
+    (pkg / "bench").mkdir()
+    (pkg / "bench" / "ok.py").write_text("b = x.DeepSeekCLIBackend(None, 'k')\n", encoding="utf-8")
+    assert _deepseek_offenders(pkg) == ["act/bad.py"]
+
+
+def test_the_default_backend_kind_stays_claude_cli() -> None:
+    from swil_agent.llm.selection import DEFAULT_KIND
+
+    assert DEFAULT_KIND == "claude_cli"
+
+
+def test_the_lease_module_does_not_import_langgraph() -> None:
+    for module in ("lease.py", "file.py", "__init__.py"):
+        imported = _imported_modules(PACKAGE / "locks" / module)
+        assert not any(m.split(".")[0] == "langgraph" for m in imported), module
+
+
+def test_the_pre_split_llm_and_lock_modules_stay_deleted() -> None:
+    for relative in (
+        "llm/base.py",
+        "llm/claude_cli.py",
+        "llm/codex_cli.py",
+        "llm/deepseek_cli.py",
+        "locks.py",
+        "graph/leases.py",
+    ):
+        assert not (PACKAGE / relative).exists(), relative
+
+
+_LOCKS_FILE = "swil_agent.locks.file"
+
+
+def _locks_file_offenders(package: Path) -> list[str]:
+    """Modules outside `locks/` that import `swil_agent.locks.file` in any
+    form -- the module itself, or any name from it (`FileLock`, `LockBusy`,
+    the path helpers)."""
+    offenders: list[str] = []
+    for path in package.rglob("*.py"):
+        relative = path.relative_to(package).as_posix()
+        if relative.startswith("locks/"):
+            continue
+        if any(
+            m == _LOCKS_FILE or m.startswith(f"{_LOCKS_FILE}.") for m in _imported_modules(path)
+        ):
+            offenders.append(relative)
+    return sorted(offenders)
+
+
+def test_nothing_outside_the_locks_package_imports_the_file_lock_module() -> None:
+    """S3 §5 / §12.11: one lock layer. `FileLock` is the file half of a
+    `RunLease`, and only `locks/lease.py` reaches for `locks/file.py` --
+    `act` and `dream` used to take a `FileLock` of their own beside the
+    cycle's leases. Tests may still import it."""
+    assert _locks_file_offenders(PACKAGE) == []
+    assert _LOCKS_FILE in _imported_modules(PACKAGE / "locks" / "lease.py")
+
+
+def test_the_file_lock_module_guard_can_actually_fail(tmp_path: Path, monkeypatch) -> None:
+    """All three import forms are caught; `locks/` itself and a module that
+    only reaches the lease are not. `_ROOT` is pointed at `tmp_path` for the
+    same reason `test_the_langgraph_guard_can_actually_fail` gives."""
+    monkeypatch.setattr("tests.unit.test_architecture._ROOT", tmp_path)
+    pkg = tmp_path / "swil_agent"
+    (pkg / "act").mkdir(parents=True)
+    (pkg / "act" / "by_name.py").write_text(
+        "from swil_agent.locks.file import act_lock_path\n", encoding="utf-8"
+    )
+    (pkg / "dream").mkdir()
+    (pkg / "dream" / "by_module.py").write_text(
+        "from swil_agent.locks import file\n", encoding="utf-8"
+    )
+    (pkg / "graph").mkdir()
+    (pkg / "graph" / "plain.py").write_text("import swil_agent.locks.file\n", encoding="utf-8")
+    (pkg / "graph" / "lease_only.py").write_text(
+        "from swil_agent.locks.lease import RunLease\n", encoding="utf-8"
+    )
+    (pkg / "locks").mkdir()
+    (pkg / "locks" / "lease.py").write_text("from .file import FileLock\n", encoding="utf-8")
+    assert _locks_file_offenders(pkg) == ["act/by_name.py", "dream/by_module.py", "graph/plain.py"]
+
+
+def test_the_run_act_and_run_dream_composers_stay_deleted() -> None:
+    """S3 §4: `act` and `dream` run the phase graph; a second hand composer
+    is a second implementation of the act path to keep in step."""
+    from swil_agent.act import round as act_round
+    from swil_agent.dream import round as dream_round
+
+    assert not hasattr(act_round, "run_act")
+    assert not hasattr(dream_round, "run_dream")
+
+
+MAX_MODULE_LINES = 600
+
+
+def _oversized_modules(package: Path, limit: int = MAX_MODULE_LINES) -> list[str]:
+    """`<relative path> (<lines>)` for every module over `limit` physical
+    lines, sorted. Physical lines as `wc -l` counts them: docstrings and
+    comments included, because they are what a reader has to page through."""
+    offenders: list[str] = []
+    for path in sorted(package.rglob("*.py")):
+        lines = len(path.read_text(encoding="utf-8").splitlines())
+        if lines > limit:
+            offenders.append(f"{path.relative_to(package).as_posix()} ({lines})")
+    return offenders
+
+
+def test_no_module_exceeds_600_lines() -> None:
+    """S3 §9: every `swil_agent/**/*.py` is at most 600 physical lines. A
+    module that outgrows it is split along its seams (verbatim moves), not
+    squeezed. Tests are exempt (§12.27)."""
+    assert _oversized_modules(PACKAGE) == []
+
+
+def test_the_size_cap_guard_can_actually_fail(tmp_path: Path) -> None:
+    (tmp_path / "act").mkdir()
+    (tmp_path / "act" / "big.py").write_text("x = 1\n" * 601, encoding="utf-8")
+    (tmp_path / "act" / "edge.py").write_text("x = 1\n" * 600, encoding="utf-8")
+    assert _oversized_modules(tmp_path) == ["act/big.py (601)"]
+
+
+def test_the_pre_split_node_module_stays_deleted() -> None:
+    """S3 §9 split `graph/nodes.py` by phase. A thin re-export put back in its
+    place would let `setattr(nodes, "<step>", spy)` succeed while patching a
+    name no node looks up -- the spy stays silent and the test passes
+    vacuously (§12.15)."""
+    assert not (PACKAGE / "graph" / "nodes.py").exists()
+
+
+_TESTS = Path(__file__).resolve().parent
+# Packages whose module globals the suite patches and S3 §9 split.
+_PATCHED_PACKAGES = ("swil_agent.act.", "swil_agent.graph.", "swil_agent.api.")
+
+
+def _module_aliases(tree: ast.Module) -> dict[str, str]:
+    """`alias -> dotted module` for every `import a.b as x` / `from a import b
+    [as x]` in a test file (function-local imports included) whose target is
+    a `swil_agent` module."""
+    aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname and alias.name.startswith("swil_agent."):
+                    aliases[alias.asname] = alias.name
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            for alias in node.names:
+                dotted = f"{node.module}.{alias.name}"
+                if (_ROOT / Path(*dotted.split("."))).with_suffix(".py").is_file():
+                    aliases[alias.asname or alias.name] = dotted
+    return aliases
+
+
+def _literal_patch_sites(tree: ast.Module) -> list[tuple[str, str, int]]:
+    """`(alias, name, line)` for every `<x>.setattr(<alias>, "<name>", ...)`."""
+    sites: list[tuple[str, str, int]] = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "setattr"
+            and len(node.args) >= 2
+            and isinstance(node.args[0], ast.Name)
+            and isinstance(node.args[1], ast.Constant)
+            and isinstance(node.args[1].value, str)
+        ):
+            sites.append((node.args[0].id, node.args[1].value, node.lineno))
+    return sites
+
+
+def _names_loaded_in_functions(path: Path) -> set[str]:
+    """Every bare name a module's FUNCTIONS read -- i.e. a global looked up at
+    call time, which is what a monkeypatch of that module's attribute
+    replaces. An import alone (a re-export) does not count."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    loaded: set[str] = set()
+    for func in ast.walk(tree):
+        if isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef):
+            for node in ast.walk(func):
+                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                    loaded.add(node.id)
+    return loaded
+
+
+def _vacuous_patch_sites(tests: Path) -> tuple[list[str], int]:
+    """`(offenders, checked)`: every literal `setattr(<module>, "<name>", ...)`
+    in `tests/*.py` on an `act`/`graph`/`api` module whose own functions never
+    read `<name>`."""
+    offenders: list[str] = []
+    checked = 0
+    for test_file in sorted(tests.glob("*.py")):
+        tree = ast.parse(test_file.read_text(encoding="utf-8"))
+        aliases = _module_aliases(tree)
+        for alias, name, line in _literal_patch_sites(tree):
+            module = aliases.get(alias)
+            if module is None or not module.startswith(_PATCHED_PACKAGES):
+                continue
+            checked += 1
+            source = (_ROOT / Path(*module.split("."))).with_suffix(".py")
+            if name not in _names_loaded_in_functions(source):
+                offenders.append(f"{test_file.name}:{line} patches {module}.{name}")
+    return offenders, checked
+
+
+def test_every_patched_module_global_is_looked_up_by_that_modules_own_code() -> None:
+    """S3 §12.15: a patch targets the module whose code calls the name. For
+    every literal `setattr(<module>, "<name>", ...)` the suite makes on an
+    `act`/`graph`/`api` module, that module's own functions must read
+    `<name>` -- otherwise the patch replaces a re-export nobody calls and the
+    test is vacuous. Loop-driven patches go through `_node_modules.caller_of`,
+    which enforces the same rule at run time."""
+    offenders, checked = _vacuous_patch_sites(_TESTS)
+    assert offenders == []
+    assert checked >= 20, checked  # the scan itself found the known sites
+
+
+def test_the_patch_target_guard_can_actually_fail(tmp_path: Path, monkeypatch) -> None:
+    """A re-export is flagged; a name the module's code calls is not."""
+    monkeypatch.setattr("tests.unit.test_architecture._ROOT", tmp_path)
+    act = tmp_path / "swil_agent" / "act"
+    act.mkdir(parents=True)
+    (act / "helper.py").write_text("def step():\n    return 1\n", encoding="utf-8")
+    (act / "caller.py").write_text(
+        "from swil_agent.act.helper import step\n\n\ndef run():\n    return step()\n",
+        encoding="utf-8",
+    )
+    (act / "reexport.py").write_text("from swil_agent.act.helper import step\n", encoding="utf-8")
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_x.py").write_text(
+        "from swil_agent.act import caller, reexport\n\n\n"
+        "def test_a(monkeypatch):\n"
+        '    monkeypatch.setattr(caller, "step", None)\n'
+        '    monkeypatch.setattr(reexport, "step", None)\n',
+        encoding="utf-8",
+    )
+    assert _vacuous_patch_sites(tests) == (["test_x.py:6 patches swil_agent.act.reexport.step"], 2)

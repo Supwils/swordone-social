@@ -41,9 +41,9 @@ from ._runners import RecordingRunner, make_persona
 
 
 def _cli() -> ModuleType:
-    """`swil_agent.cli`, imported only by the tests that drive the CLI seam,
+    """`swil_agent.cli.compose`, imported only by the tests that drive the CLI seam,
     so the renderer tests here do not depend on the whole CLI importing."""
-    return importlib.import_module("swil_agent.cli")
+    return importlib.import_module("swil_agent.cli.compose")
 
 
 AGENT_DIR = Path(__file__).resolve().parents[2]
@@ -885,7 +885,7 @@ def test_cli_context_now_ignores_a_stale_now_md_on_disk(tmp_path: Path) -> None:
     world = FakeWorld()
     world.global_feeds[15] = [_post("a" * 24)]
 
-    text = _cli()._context_now_for(
+    text = _cli().context_now_for(
         world,
         _persona("zenith"),
         _cli_settings(tmp_path),
@@ -915,7 +915,7 @@ def test_cli_context_now_reads_the_news_cache_under_the_configured_agent_root(
     _agent_root_with_news(tmp_path, "NEWS-MARKER-8814\n")
     world = FakeWorld()
 
-    text = _cli()._context_now_for(
+    text = _cli().context_now_for(
         world,
         _persona("zenith"),
         _cli_settings(tmp_path),
@@ -935,10 +935,8 @@ def test_cli_context_now_names_the_calling_account_not_a_shared_file(
     settings = _cli_settings(tmp_path)
     runner = RecordingRunner()
 
-    first = _cli()._context_now_for(world, _persona("zenith"), settings, now=NOW_A, runner=runner)
-    second = _cli()._context_now_for(
-        world, _persona("liushang"), settings, now=NOW_A, runner=runner
-    )
+    first = _cli().context_now_for(world, _persona("zenith"), settings, now=NOW_A, runner=runner)
+    second = _cli().context_now_for(world, _persona("liushang"), settings, now=NOW_A, runner=runner)
 
     assert "**当前 Agent：** zenith" in first
     assert "**当前 Agent：** liushang" in second
@@ -948,7 +946,7 @@ def test_cli_context_now_writes_no_file(tmp_path: Path) -> None:
     """R26: render in memory, write nothing, so parallel rounds cannot race
     on a shared `context/now.md`."""
     world = FakeWorld()
-    _cli()._context_now_for(
+    _cli().context_now_for(
         world,
         _persona("zenith"),
         _cli_settings(tmp_path),
@@ -973,7 +971,7 @@ def test_cli_feed_context_uses_the_username_bullet_not_the_directory_name(
     world.searches = {"alpha": [_post("a" * 24)]}
     persona = _persona("shengyin", topics=["alpha"], directory=tmp_path / "agents" / "sketch")
 
-    text = _cli()._feed_context_for(world, persona, now=NOW_A)
+    text = _cli().feed_context_for(world, persona, now=NOW_A)
 
     assert world.search_calls == [("alpha", 12)]
     assert "## #alpha" in text
@@ -990,7 +988,7 @@ def test_cli_feed_context_ignores_a_stale_feed_file_on_disk(tmp_path: Path) -> N
     world = FakeWorld()
     world.searches = {"alpha": [_post("a" * 24)]}
 
-    text = _cli()._feed_context_for(world, _persona("zenith", topics=["alpha"]), now=NOW_A)
+    text = _cli().feed_context_for(world, _persona("zenith", topics=["alpha"]), now=NOW_A)
 
     assert "STALE-MARKER" not in text
     assert "# 关联话题动态 (2026-08-20 07:42)" in text
@@ -998,14 +996,14 @@ def test_cli_feed_context_ignores_a_stale_feed_file_on_disk(tmp_path: Path) -> N
 
 def test_cli_feed_context_threads_the_era_start(tmp_path: Path) -> None:
     world = FakeWorld()
-    _cli()._feed_context_for(world, _persona("zenith", topics=["alpha"]), now=NOW_A, era_start=ERA)
+    _cli().feed_context_for(world, _persona("zenith", topics=["alpha"]), now=NOW_A, era_start=ERA)
     assert world.since_calls == [("search_posts", ERA.isoformat())]
 
 
 def test_cli_context_now_threads_the_configured_era_start(tmp_path: Path) -> None:
     world = FakeWorld()
     settings = Settings(agent_root=tmp_path, swil_url="https://example.test", era_start=ERA)
-    _cli()._context_now_for(
+    _cli().context_now_for(
         world, _persona("zenith", board="living"), settings, now=NOW_A, runner=RecordingRunner()
     )
     assert world.since_calls[0] == ("feed_board:living", ERA.isoformat())

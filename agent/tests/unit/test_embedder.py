@@ -129,7 +129,7 @@ def test_guard_up_invokes_the_bash_script_with_up() -> None:
 def test_guard_up_never_raises_when_the_script_fails() -> None:
     """The Bash script's own comment: 'a guard must never abort its caller.'
     `SubprocessRunner` signals a failed/timed-out subprocess by returning
-    `""` (see `llm/base.py`) -- that must not become a raised exception
+    `""` (see `llm/runner.py`) -- that must not become a raised exception
     here, since `up()` runs before the actual act/dream work and a raise
     would abort the round over what is meant to be best-effort plumbing."""
     runner = RecordingRunner(output="")

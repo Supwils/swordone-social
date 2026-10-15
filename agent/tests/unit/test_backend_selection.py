@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from swil_agent.config import Settings
-from swil_agent.llm.base import BackendConfigurationError
+from swil_agent.llm.errors import BackendConfigurationError
 from swil_agent.llm.selection import (
     WIRE_LABEL_MAX_LENGTH,
     apply_choice,

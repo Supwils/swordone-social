@@ -23,7 +23,7 @@
  *      This is the half that can be validated against a known collapse.
  *   2. SELF-SIMILARITY — the act path's `maxSim`: the round's candidate post
  *      against the account's own last 12 posts, filed as `agent_events` with
- *      `summary='act self-similarity measured'` (`act/round.py:1085-1149`).
+ *      `summary='act self-similarity measured'` (`act/similarity.py`, `_similarity_event`).
  *      It STARTS 2026-08-19 (`d53951b`) and only POSTING rounds emit it, so a
  *      comment-only, like-only or quiet round leaves no row.
  *
@@ -97,7 +97,7 @@ import type {
 
 /**
  * The summary `similarity_step` files a MEASURED sample under
- * (`agent/swil_agent/act/round.py:1139`). Keying SQL on prose is a coupling
+ * (`agent/swil_agent/act/similarity.py`, `_similarity_event`). Keying SQL on prose is a coupling
  * that module's own neighbourhood warns about, and it is used here for the same
  * reason the countdown uses its own: nothing else in `agent_events` narrows
  * this. The rounds where the measurement did NOT happen file

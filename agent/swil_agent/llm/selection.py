@@ -2,7 +2,7 @@
 
 One place resolves the question, so that every path -- act, dream, cycle --
 runs the same model for the same reason, and so the round can SAY which model
-it ran. `llm/base.py` knows how to talk to a backend; this module knows which
+it ran. `llm/backends/` knows how to talk to a backend; this module knows which
 one to build.
 
 **Precedence, highest first:**
@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import Final, Literal
 
 from swil_agent.config import Settings
-from swil_agent.llm.base import BackendConfigurationError
+from swil_agent.llm.errors import BackendConfigurationError
 from swil_agent.models import Persona
 
 BackendKind = Literal["claude_cli", "codex_cli", "deepseek_cli", "cursor_cli", "grok_cli", "api"]
@@ -309,9 +309,9 @@ def apply_choice(persona: Persona, choice: BackendChoice) -> Persona:
     """Return `persona` with `backend`/`model` set to what will actually run.
 
     This is what makes the resolution visible to the whole round without
-    threading a new parameter through `run_act`, `run_dream`, `CycleDeps` and
-    nine graph nodes. Three existing readers pick it up for free, and all three
-    want the resolved value rather than the file's:
+    threading a new parameter through `CycleDeps` and every graph node.
+    Three existing readers pick it up for free, and all three want the
+    resolved value rather than the file's:
 
       * `act/round.py`'s `_agent_backend_value` -- builds the `agentBackend`
         the profile sync PATCHes, i.e. the drift experiment's independent
@@ -335,7 +335,8 @@ def apply_choice(persona: Persona, choice: BackendChoice) -> Persona:
 def cli_choice_for(persona: Persona) -> BackendChoice:
     """The `BackendChoice` an already-resolved CLI persona implies.
 
-    Exists for one narrow caller: `cli.py`'s `_backend_for`, whose signature is
+    Exists for one narrow caller: `backend_for` (defined in
+    `cli/compose_backend.py`, re-bound as `compose.backend_for`), whose signature is
     frozen at `(persona, settings)` because ~18 tests replace that exact name
     with a two-argument lambda. It receives the resolved Persona but not the
     choice that produced it, and this reconstructs the half it needs.

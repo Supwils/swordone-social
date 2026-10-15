@@ -25,7 +25,6 @@ from __future__ import annotations
 import json
 import logging
 import random
-from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -39,12 +38,12 @@ from swil_agent.act.round import (
     guardrail_step,
     login_step,
     plan_step,
-    run_act,
     sync_backend_step,
 )
-from swil_agent.locks import FileLock, act_lock_path
+from swil_agent.locks.file import act_lock_path
 from swil_agent.models import Action, ActOutcome, Persona, Plan, RhythmPolicy
 
+from ._phases import run_act_phase
 from ._runners import FakeResources, SilentBackend, StubBackend, make_persona
 
 NOW = datetime(2026, 8, 17, 10, 0, 0)
@@ -156,7 +155,7 @@ def _run(
     dry_run: bool = False,
     **kwargs: Any,
 ) -> Any:
-    return run_act(
+    return run_act_phase(
         persona=persona or _persona(tmp_path),
         resources=resources if resources is not None else FakeResources(),
         backend=backend or StubBackend('{"plan":[{"action":"nothing"}]}'),
@@ -171,69 +170,32 @@ def _run(
 
 
 # ── login_step ──────────────────────────────────────────────────────────────
+#
+# Since S3 (§5, §12.11) `login_step` is the probe alone: the round's mutual
+# exclusion is `graph/run.py`'s `RunLease`, so the three tests that pinned the
+# step's own `FileLock` choice (offline / online / dry) went with the lock.
+# Their properties live on the lease now -- `test_graph_phases.py` (a dry ACT
+# takes no lease, a busy act lease SKIPs before the probe) and
+# `test_act_round.py`'s F4 pair (a dry run beside a held lock, a real run
+# contending for it).
 
 
-def test_login_step_offline_hands_back_no_real_lock(tmp_path: Path) -> None:
-    """An offline probe must yield a lock that CANNOT touch the filesystem.
-
-    `run_act` cannot catch this on its own -- it returns `OFFLINE` before it
-    ever enters `login.lock`, and `FileLock.__init__` writes nothing -- so
-    the hazard lands on the second caller: a Task 7 node doing `with
-    login.lock:` without branching on `online` would create
-    `.agent-state/lock_<name>`. During Stages 3-4 a concurrent Bash round
-    then hits `SKIP ... -- locked` and loses BOTH its act and its dream.
-
-    Mutation this kills: returning `FileLock(act_lock_path(...))` on the
-    offline branch (or hoisting the lock choice above the probe).
-    """
-    step = login_step(
-        persona=_persona(tmp_path),
-        agent_root=tmp_path,
-        health_check=lambda: False,
-    )
-
-    assert step.online is False
-    assert isinstance(step.lock, nullcontext)
-    assert not isinstance(step.lock, FileLock)
-    with step.lock:
-        pass
-    assert not act_lock_path(tmp_path, "zenith").exists()
-
-
-def test_login_step_online_locks_under_the_directory_name_not_the_username(
+def test_login_step_reports_the_probe_and_the_directory_name_and_locks_nothing(
     tmp_path: Path,
 ) -> None:
     """Bash's `agent_name` is `basename "$agent_dir"` (`auto-run.sh:437`),
     never the `Username` bullet -- the two diverge in the documented "stray
-    agents/<name> dir shadows a humans/ account" case, and a lock computed
-    from the wrong one voids cross-runtime exclusion with the suite green."""
+    agents/<name> dir shadows a humans/ account" case, and every lease and
+    log line keys on the directory name. The step creates no lock file on
+    either branch."""
     persona = _persona(tmp_path, username="zenith", dir_name="zenith_dir")
 
-    step = login_step(persona=persona, agent_root=tmp_path, health_check=lambda: True)
+    online = login_step(persona=persona, health_check=lambda: True)
+    offline = login_step(persona=persona, health_check=lambda: False)
 
-    assert step.online is True
-    assert step.agent_name == "zenith_dir"
-    assert isinstance(step.lock, FileLock)
-    with step.lock:
-        assert act_lock_path(tmp_path, "zenith_dir").exists()
-        assert not act_lock_path(tmp_path, "zenith").exists()
+    assert (online.online, online.agent_name) == (True, "zenith_dir")
+    assert (offline.online, offline.agent_name) == (False, "zenith_dir")
     assert not act_lock_path(tmp_path, "zenith_dir").exists()
-
-
-def test_login_step_dry_run_takes_no_lock(tmp_path: Path) -> None:
-    """F4: a dry run acquires NOTHING, so the documented "safe inspection
-    command" cannot cost a live Bash round its lock."""
-    step = login_step(
-        persona=_persona(tmp_path),
-        agent_root=tmp_path,
-        health_check=lambda: True,
-        dry_run=True,
-    )
-
-    assert step.online is True
-    assert isinstance(step.lock, nullcontext)
-    with step.lock:
-        pass
     assert not act_lock_path(tmp_path, "zenith").exists()
 
 

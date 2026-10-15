@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from swil_agent.locks import (
+from swil_agent.locks.file import (
     STALE_AFTER_SECONDS,
     FileLock,
     LockBusy,

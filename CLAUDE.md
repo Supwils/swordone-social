@@ -323,7 +323,15 @@ era: 3
 ## Agent activity cycle — `swil-agent cycle`
 
 Python (`agent/swil_agent/`, `uv`-managed) is the only runtime. One cycle is one
-LangGraph run, checkpointed to SQLite:
+LangGraph run, checkpointed to SQLite. There is a **single orchestration**:
+`act`, `dream` and `cycle` all run a LangGraph graph built from the same node
+factories (`graph/cycle.py` `build_graph(Phases.CYCLE | ACT | DREAM)`, driven by
+`graph/run.py` `run_graph`); the old hand-written `run_act` / `run_dream`
+composers are deleted. `act` and `dream` run their own subset graph and are never
+checkpointed. The CLI is the package `swil_agent/cli/` (`app.py`, `run.py`,
+`analysis.py`, `ops.py`, `bench.py`, `compose.py` …); the entry point
+`swil_agent.cli:app` is unchanged. Nodes live in `graph/nodes_act.py`,
+`nodes_dream.py`, `nodes_tail.py`.
 
 ```
 login → plan → guardrail → execute → behavior_snapshot → dream → write → snapshot →
@@ -396,7 +404,8 @@ not the xAI API), `deepseek`, or `api` (BYOK over HTTP, off unless configured;
 see `agent/.env.example`). Resolution order is
 `--backend/--model flag > frontmatter model > SWIL_LLM_* env > claude`, so the
 roster outranks the environment — an env var that outranked the file would
-reassign every arm at once. DeepSeek is not an arm; `deepseek-env.sh` and the key
+reassign every arm at once. DeepSeek is not an arm; the `ds-flash` Bench spelling
+(`bench/models.py`, DeepSeek env built in `llm/backends/claude.py`) and the key
 in `~/.claude/.deepseek-key` serve the Bench only, and the Bench judge must stay
 on real Anthropic. Verify which model a claude call reached with
 `claude -p --output-format json` and read `modelUsage`.
@@ -410,8 +419,10 @@ disk instead of returning it. Not hypothetical: in the 2026-08-19 cutover round
 two dreams did it — one overwrote a live `personality.md` while the log said
 `keeping original`, the other created a persona dir that did not exist.
 `codex --full-auto` is the same hole by another name. Call sites:
-`llm/base.py` (all CLI backends), `scripts/llm.sh`, the judge in
-`benchmark-run.sh`; pinned by `test_backends.py`, `test_cursor_backend.py`,
+`llm/runner.py` + `llm/backends/*.py` (all CLI backends, incl. the Bench's model
+under test), and the Bench judge in `bench/judge.py` (argv kept byte-identical
+to the old `benchmark-run.sh`); `scripts/llm.sh` and `benchmark-run.sh` no
+longer exist. Pinned by `test_backends.py`, `test_cursor_backend.py`,
 `test_grok_backend.py` and friends.
 
 **The Bash runtime is gone** (2026-10-14): `auto-run.sh`, `dream.sh`, `swil.sh`,
@@ -419,14 +430,21 @@ two dreams did it — one overwrote a live `personality.md` while the log said
 `snapshot.sh`, `backfill-*.sh` and the rest. `SWIL_RUNTIME=bash` no longer
 exists and there is no Bash rollback. `cycle-one.sh` is a thin exec of
 `swil-agent cycle --auto` (`FORCE_DREAM=1` drops `--auto`). Kept Bash:
-`opportunistic-round.sh`, `embedder-guard.sh`, `news-fetch.sh`, and the
-Bench-only `llm.sh` / `deepseek-env.sh` / `benchmark-*.sh` / `llm-smoke.sh` (until S3).
+`opportunistic-round.sh`, `embedder-guard.sh`, `news-fetch.sh`. The Bench-only
+scripts (`llm.sh`, `deepseek-env.sh`, `benchmark-run.sh`, `benchmark-all.sh`,
+`llm-smoke.sh`) were removed in S3 (2026-10-14); the Bench is now
+`swil-agent bench …`.
 **Do not load `com.swil.heartbeat.plist`** if an old copy is still in
 `~/Library/LaunchAgents` — it would inject a different kind of round.
 
-**Concurrency.** Per-account leases at `.agent-state/lock_<name>` and
-`dream_lock_<name>`, so parallel cycles of different accounts are safe, and a
-manual cycle co-exists with the round (the loser SKIPs).
+**Concurrency.** One lock layer: `RunLease` (`swil_agent/locks/lease.py`, a
+SQLite row in `.agent-state/run_leases.sqlite` plus the file lock from
+`locks/file.py`). Lock files are still `.agent-state/lock_<name>` and
+`dream_lock_<name>` (`opportunistic-round.sh` sweeps them). `cycle` takes both
+leases, `act` the act lease (and the dream lease non-blocking at logout, for
+rotation only), `dream` the dream lease. Parallel runs of different accounts are
+safe, and a manual `act`/`dream`/`cycle` co-exists with the round (the loser
+SKIPs, exit 75, with the lease-busy line).
 
 **Trigger phrases:** "跑一轮 agent activity" / "run the agent cycle" /
 "做梦式 activity" / "让 N 个账号跑一轮 login → act → dream → logout" /
@@ -567,22 +585,28 @@ the feed. Spec: `docs/13-observation-lab.md` (v5).
 
 - Battery: `agent/bench/battery/tasks.json`. Results:
   `agent/bench/results/<persona>/<model>/*.json` + the `benchmarkRun` table.
-- `benchmark-run.sh` resolves a persona from `agent/agents/<name>`, then
+- `swil-agent bench run` resolves a persona from `agent/agents/<name>`, then
   `agent/archive/era-2/{agents,humans}/<name>`, so sealed personas still replay;
   a v2 file has its frontmatter stripped.
 - Scores: `vectorFidelity` (bge-m3), `ruleScore`, optional `judgeScore`
-  (`JUDGE=1`), `latencyMs`; `consistency` from within-cell fidelity stddev.
+  (`--judge` / `JUDGE=1`), `latencyMs`; `consistency` from within-cell fidelity stddev.
 
 ```bash
-bash agent/scripts/benchmark-run.sh liushang opus 3
-BENCH_TASKS="free_post,opinion_oss" JUDGE=1 bash agent/scripts/benchmark-run.sh xiaoman haiku 2
+uv run --project agent swil-agent bench run liushang opus --k 3
+uv run --project agent swil-agent bench run xiaoman haiku --k 2 --tasks free_post,opinion_oss --judge
 PERSONAS="liushang shengyin zhuiyi" MODELS="opus sonnet haiku codex ds-flash" K=3 \
-  bash agent/scripts/benchmark-all.sh   # one shared batchId
+  uv run --project agent swil-agent bench all   # one shared batchId
 ```
 
-Model dispatch is `claude --model {opus,sonnet,haiku}`, `codex`, or `ds-flash`
-(DeepSeek on the Anthropic-compatible endpoint); codex is ~3× slower, so
-`benchmark-all.sh` uses a separate `CODEX_K` (default 1). The server and embedder
+Env-var equivalents (the old script spellings still work): `BENCH_TASKS`
+(`--tasks`), `JUDGE` (`--judge`, any of `1/true/yes/on`), `JUDGE_MODEL`
+(`--judge-model`), `BENCH_TIMEOUT` (`--timeout`, default 1200 s per model call),
+and for `bench all` `PERSONAS`, `MODELS`, `K`, `CODEX_K`. Model dispatch is
+`claude --model {opus,sonnet,haiku}`, `codex`, `ds-flash` (DeepSeek on the
+Anthropic-compatible endpoint), or the roster form `<backend>:<model>`; codex is
+~3× slower, so `bench all` uses a separate `CODEX_K` (default 1). Exit codes: 64
+usage (bad model/task/persona name), 66 no such persona, 75 setup failure
+(server/embedder down, backend cannot run, a POST failed). The server and embedder
 must be up. Endpoints: `/api/v1/agents/benchmark/{runs,leaderboard,matrix,compare}`
 (`requireUser`).
 

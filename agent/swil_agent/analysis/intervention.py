@@ -158,7 +158,7 @@ def build_intervention_event(
 
     `.astimezone(UTC)` on a naive datetime would have ANSWERED that question
     by assuming local time, silently, which is why the check comes first: the
-    "assume local" decision belongs at exactly one place, `cli.py`'s
+    "assume local" decision belongs at exactly one place, `cli/analysis.py`'s
     `_intervention_instant`, where the resolved instant is echoed back to the
     operator before anything is sent. A library caller gets an error instead
     of a guess.

@@ -13,10 +13,10 @@ exactly the wiring in between:
   * **A guard that stops being load-bearing on the graph path.** The two
     composition-shape pins in `test_dream_steps.py` monkeypatch
     `dream.round`'s MODULE GLOBALS, which is what makes them work for
-    `run_dream` -- and what makes them blind here: `nodes.py` binds
+    `run_dream` -- and what makes them blind here: `graph/nodes_dream.py` binds
     `write_step` / `snapshot_step` into its OWN globals at import, so those
     spies never see a node's call. The equivalents live in this file,
-    patching `graph.nodes`.
+    patching the node module that calls each step (`_node_modules.caller_of`).
   * **`dry_run` that reaches the steps that write.** A `--dry-run` shadow
     round runs against live accounts. A node that forgets to thread it posts
     to production.
@@ -42,22 +42,18 @@ import pytest
 from swil_agent.api.client import ApiError
 from swil_agent.config import Settings
 from swil_agent.dream.round import snapshot_content
-from swil_agent.graph import nodes as nodes_module
-from swil_agent.graph.nodes import (
-    CycleDeps,
-    NodeStateError,
-    agent_dir_name,
-    make_dream_node,
+from swil_agent.graph import nodes_dream
+from swil_agent.graph.deps import CycleDeps, NodeStateError, agent_dir_name
+from swil_agent.graph.nodes_act import (
     make_execute_node,
     make_guardrail_node,
     make_login_node,
-    make_logout_node,
     make_plan_node,
-    make_snapshot_node,
-    make_write_node,
 )
+from swil_agent.graph.nodes_dream import make_dream_node, make_snapshot_node, make_write_node
+from swil_agent.graph.nodes_tail import make_logout_node
 from swil_agent.graph.state import CycleState
-from swil_agent.locks import act_lock_path
+from swil_agent.locks.file import act_lock_path
 from swil_agent.models import (
     ActContext,
     Action,
@@ -69,6 +65,7 @@ from swil_agent.models import (
 )
 from swil_agent.persona.rhythm import decide_rhythm
 
+from ._node_modules import caller_of
 from ._runners import (
     FakeEmbedder,
     FakePersonaSource,
@@ -283,16 +280,17 @@ def _spy_on(monkeypatch: pytest.MonkeyPatch, step: str) -> dict[str, Any]:
     into step ARGUMENTS, so a mutation that passes the wrong argument is
     invisible to any assertion about what the node returned -- which is how
     sixteen of them survived the first mutation round. Patches
-    `graph.nodes`' own global, since that is the name a node resolves.
+    the calling node module's own global (`caller_of`), since that is the
+    name a node resolves.
     """
-    real = getattr(nodes_module, step)
+    real = getattr(caller_of(step), step)
     seen: dict[str, Any] = {}
 
     def spy(**kwargs: Any) -> Any:
         seen.update(kwargs)
         return real(**kwargs)
 
-    monkeypatch.setattr(nodes_module, step, spy)
+    monkeypatch.setattr(caller_of(step), step, spy)
     return seen
 
 
@@ -801,7 +799,7 @@ def test_the_write_node_hands_a_missing_list_to_the_step_rather_than_skipping_it
 ) -> None:
     """The composition-shape pin, on the NODE path: `recent=None` is THREADED
     into `write_step`, whose own guard is what keeps a failed dream off disk.
-    `nodes.py` binds `write_step` into its own globals, so this spy is the
+    `nodes_dream.py` binds `write_step` into its own globals, so this spy is the
     only one that sees the node's call."""
     seen = _spy_on(monkeypatch, "write_step")
     source = FakePersonaSource()
@@ -909,14 +907,14 @@ def test_the_snapshot_node_publishes_nothing_when_no_write_happened(
     load-bearing one.
     """
     resources = TracingResources()
-    real_snapshot = nodes_module.snapshot_step
+    real_snapshot = nodes_dream.snapshot_step
     seen: dict[str, Any] = {}
 
     def spy_snapshot(**kwargs: Any) -> Any:
         seen.update(kwargs)
         return real_snapshot(**kwargs)
 
-    monkeypatch.setattr(nodes_module, "snapshot_step", spy_snapshot)
+    monkeypatch.setattr(nodes_dream, "snapshot_step", spy_snapshot)
     node = make_snapshot_node(_deps(tmp_path, resources=resources))
 
     update = node({"persona": _persona(tmp_path), "recent": NEW_RECENT, "written": False})

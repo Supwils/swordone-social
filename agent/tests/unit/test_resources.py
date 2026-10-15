@@ -859,6 +859,42 @@ def test_create_behavior_snapshot_raises_write_not_verified_without_id() -> None
         _resources(handler).create_behavior_snapshot("zenith", {})
 
 
+# ── record_benchmark_run (benchmark-run.sh:178-180) ───────────────────────
+
+
+def test_record_benchmark_run_posts_the_body_and_returns_the_row_id() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(201, json={"data": {"id": "run-1"}})
+
+    body = {"batchId": "b", "persona": "aa", "model": "sonnet", "taskId": "free_post"}
+    assert _resources(handler).record_benchmark_run(body) == "run-1"
+    assert [(r.method, r.url.path) for r in seen] == [("POST", "/api/v1/agents/benchmark/runs")]
+    assert _json.loads(seen[0].content) == body
+    assert seen[0].headers["authorization"] == "Bearer k"
+
+
+def test_record_benchmark_run_without_an_id_is_not_verified() -> None:
+    """`jq -r '.data.id // "ERR"'` -- a 2xx with no id is a failed POST."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json={"data": {}})
+
+    with pytest.raises(WriteNotVerifiedError):
+        _resources(handler).record_benchmark_run({})
+
+
+def test_record_benchmark_run_raises_the_429_with_its_headers() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={"Retry-After": "12"}, json={"error": {}})
+
+    with pytest.raises(ApiError) as exc:
+        _resources(handler).record_benchmark_run({})
+    assert (exc.value.status, exc.value.headers["retry-after"]) == (429, "12")
+
+
 # ── record_population_metric (population-metric.sh:58-70) ─────────────────
 
 
@@ -1157,7 +1193,7 @@ def test_file_post_vector_answers_failed_on_any_other_rejection() -> None:
 def test_retry_after_reads_an_http_date_relative_to_now() -> None:
     from datetime import UTC, datetime
 
-    from swil_agent.api.resources import retry_after_seconds
+    from swil_agent.api.ingest_throttle import retry_after_seconds
 
     now = datetime(2026, 10, 14, 6, 0, 0, tzinfo=UTC)
     assert retry_after_seconds(

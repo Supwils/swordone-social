@@ -7,6 +7,55 @@ owner: era-3
 
 # Handoff
 
+## S3: runtime slimming — 2026-10-14
+
+Python agent runtime restructured, **no behaviour change for a `cycle`**.
+Built locally on top of S2, **nothing deployed or run against production, and not
+committed** (like S2). Spec: `docs/superpowers/specs/2026-10-14-s3-runtime-slimming-design.md`
+(§12 is binding); task reports and review ledger:
+`.superpowers/sdd/2026-10-14-s3-runtime-slimming/`. **Launch order is unchanged by
+S3**: the Era 3 checklist below applies as written.
+
+**What changed (all under `agent/`).**
+
+- **One orchestration.** `act`, `dream` and `cycle` all run a LangGraph graph built
+  from the same node factories (`graph/cycle.py` `build_graph(Phases.…)`, run by
+  `graph/run.py` `run_graph`; nodes in `graph/nodes_{act,dream,tail}.py`, deps in
+  `graph/deps.py`). `run_act` / `run_dream` and `graph/nodes.py` are deleted.
+  `act`/`dream` run subset graphs and are never checkpointed. Small deliberate
+  differences for `act` (spec §12.2): it now logs a `logout` line, takes the act lease
+  (`cycle` takes act+dream; a busy account SKIPs with the lease-busy text, exit 75,
+  before any read or news fetch), and the dream node's pre-call deadline check now
+  also applies to `dream`.
+- **One lock layer.** `RunLease` only (`locks/lease.py`, plus `locks/file.py`);
+  `swil_agent/locks.py` and `graph/leases.py` are gone. Lock file names
+  (`lock_<name>`, `dream_lock_<name>`), `run_leases.sqlite` and
+  `cycle_checkpoints.sqlite` are unchanged, so `opportunistic-round.sh` needed no edit.
+- **`cli.py` is the package `cli/`** (`app`, `run`, `analysis`, `ops`, `bench`,
+  `compose`, `stores`, `logs`, `errors`, `report`); entry point
+  `swil_agent.cli:app` unchanged; policy, doctor and measure-status logic moved to
+  `policy.py`, `doctor.py`, `analysis/measure_status.py`.
+- **`llm/`** split into `runner.py`, `protocol.py`, `complete.py`, `errors.py` and
+  `backends/{claude,codex,cursor,grok}.py` (`llm/base.py` and the `*_cli.py` files
+  are gone). Tool-less flags are unchanged and still pinned by tests.
+- **Persona Bench in Python**: `swil-agent bench run|all`; `llm.sh`,
+  `deepseek-env.sh`, `benchmark-run.sh`, `benchmark-all.sh`, `llm-smoke.sh` deleted.
+  The deliberate differences from Bash are listed in the S3 entry of
+  `docs/13-observation-lab.md` (latency series has a small known break; judge series
+  continuous). The lab's empty-state hint now shows `swil-agent bench all`.
+- **Size cap.** Every `agent/swil_agent/**/*.py` is <= 600 lines (`act/round.py`,
+  `api/resources.py`, `graph/nodes.py` were split; `api/` gained `writes.py`,
+  `lab.py`, `envelope.py`, `ingest_throttle.py`; `act/` gained `memory_log.py`,
+  `similarity.py`, `notifications.py`, `context_format.py`, `execution_outcome.py`).
+
+**Verified locally.** `npm run ci:check`, all 13 steps green (numbers in the Task 8
+report). Goldens: `cycle_*` and `dream_*` byte-identical to pre-S3; only the `act_*`
+files changed, by the spec §12.2 deltas. No production call, no live LLM call.
+
+**Not done.** Old dated sections of this file and of `13-observation-lab.md` still
+cite `cli.py`, `run_act`, `locks.py`, `llm.sh` and friends; they are history and were
+left as written. Some `agent/tests` docstrings still mention the deleted names (S5).
+
 ## S2: the lab measures Era 3 — 2026-10-14
 
 Built locally on top of the Era 3 staging below, **nothing deployed, migrated
@@ -125,8 +174,9 @@ pre-registered experiment had 0/6 clean rounds. Spec §1 has the numbers.
 - **Docs.** `CLAUDE.md` rewritten for Era 3; `13-observation-lab.md` has the
   2026-10-14 change point and marks the gate / read-niche entries Era 2.
 
-**Verified locally.** `npm run ci:check`, all 13 steps (see the Task 11 report
-in `.superpowers/sdd/2026-10-14-era-3-model-native-roster/`).
+**Verified locally.** `npm run ci:check`, all 13 steps green when it landed (S1's
+SDD workspace for the Era 3 roster has since been deleted; the specs under
+`docs/superpowers/specs/2026-10-14-era-3-*` are the record).
 
 ### Launch checklist (operator-gated — production writes)
 
@@ -193,10 +243,8 @@ Verbatim from spec §14, with the commands filled in:
 
 ### Not done (later slices)
 
-S2 is done (section above).
+S2 and S3 are done (sections above; both uncommitted).
 
-- **S3** — runtime slimming: cli split, single orchestration, llm module split,
-  lock unification; the Bench-only Bash (`llm.sh`, `benchmark-*.sh`) goes then.
 - **S4** — one API contract (no more hand-synced `dto.ts` / `api/types.ts`).
 - **S5** — docs consolidation (many older docs and `agent/tests` docstrings still
   cite deleted scripts as history), Mongo leftovers, FKs, repo hygiene, CI e2e.

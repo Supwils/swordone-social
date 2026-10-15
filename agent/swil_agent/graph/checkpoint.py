@@ -15,7 +15,7 @@ waiting for the upgrade to force the issue, is what this module does.
 
 Where the DB file lives: `agent/.agent-state/`, the same directory Task 3's
 `RunLease` / `FileLock` use for `lock_<name>` / `dream_lock_<name>` and that
-`FilesystemDreamState` (`cli.py:382`) uses for its own state -- one directory
+`FilesystemDreamState` (`cli/compose.py`'s `state_for`) uses for its own state -- one directory
 for every piece of "the Python runtime's local, per-account state" rather
 than a new top-level directory per feature. `leases.py` itself takes a bare
 `sqlite3.Connection` and does not choose a path (that call sits with a
@@ -93,7 +93,7 @@ from swil_agent.round_id import round_sort_key
 CHECKPOINT_DB_NAME: Final = "cycle_checkpoints.sqlite"
 _THREAD_ID_PARTS: Final = 3
 
-# The checkpointer's type, re-exported under a name of ours. `cli.py` is the
+# The checkpointer's type, re-exported under a name of ours. The CLI is the
 # composition root that holds one for the length of a cycle, and the AST
 # architecture test (§5.2) forbids it -- or anything else outside `graph/` --
 # from importing `langgraph` to say so. An alias here is what lets that rule
@@ -171,7 +171,7 @@ def checkpointer_at(db_path: Path) -> Iterator[Checkpointer]:
     caller (its own docstring), which is right for a test that wants to read
     the database back afterwards and wrong for a long-lived process that runs
     many cycles: `SqliteSaver` holds a `sqlite3.Connection` and nothing else
-    ever closes it. This is the composition-root shape, so `cli.py` does not
+    ever closes it. This is the composition-root shape, so the CLI does not
     have to reach for `.conn` -- which would also mean importing `langgraph`
     outside `graph/`.
     """

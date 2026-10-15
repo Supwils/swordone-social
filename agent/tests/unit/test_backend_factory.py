@@ -17,13 +17,10 @@ import pytest
 from swil_agent.act.planner import plan_round
 from swil_agent.config import Settings
 from swil_agent.llm.api_backend import ApiBackend
-from swil_agent.llm.base import (
-    BackendConfigurationError,
-    ClaudeCLIBackend,
-    CodexCLIBackend,
-    DeepSeekCLIBackend,
-    GrokCLIBackend,
-)
+from swil_agent.llm.backends.claude import ClaudeCLIBackend, DeepSeekCLIBackend
+from swil_agent.llm.backends.codex import CodexCLIBackend
+from swil_agent.llm.backends.grok import GrokCLIBackend
+from swil_agent.llm.errors import BackendConfigurationError
 from swil_agent.llm.factory import get_backend
 from swil_agent.llm.selection import resolve_backend_choice
 from swil_agent.models import ActContext, Persona
@@ -132,7 +129,7 @@ def test_the_resolved_model_is_not_injected_as_a_cli_default() -> None:
         _persona(declared_backend="claude", model="opus"), _settings()
     )
     backend = get_backend(choice, runner, _settings())
-    from swil_agent.llm.base import CompletionRequest
+    from swil_agent.llm.runner import CompletionRequest
 
     backend.complete(CompletionRequest(system="S", user="U", model=None))
     assert "--model" not in runner.calls[0].argv
@@ -147,7 +144,7 @@ def test_the_resolved_model_still_reaches_the_cli_through_the_request() -> None:
         _persona(declared_backend="claude", model="opus"), _settings()
     )
     backend = get_backend(choice, runner, _settings())
-    from swil_agent.llm.base import CompletionRequest
+    from swil_agent.llm.runner import CompletionRequest
 
     backend.complete(CompletionRequest(system="S", user="U", model=choice.model))
     argv = runner.calls[0].argv
@@ -228,11 +225,11 @@ def test_the_swap_test_can_actually_fail() -> None:
 def test_select_backend_builds_cli_kinds_through_the_patched_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from swil_agent import cli
+    from swil_agent.cli import compose
 
     sentinel = object()
-    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: sentinel)
-    _, backend = cli._select_backend(_persona(declared_backend="claude"), _settings())
+    monkeypatch.setattr(compose, "backend_for", lambda persona, settings: sentinel)
+    _, backend = compose.select_backend(_persona(declared_backend="claude"), _settings())
     assert backend is sentinel
 
 
@@ -244,9 +241,9 @@ def test_the_patched_name_takes_exactly_two_positional_arguments(
     function with exactly two positional arguments is what pins the shape."""
     import inspect
 
-    from swil_agent import cli
+    from swil_agent.cli import compose
 
-    params = list(inspect.signature(cli._backend_for).parameters.values())
+    params = list(inspect.signature(compose.backend_for).parameters.values())
     assert [p.name for p in params] == ["persona", "settings"]
     assert all(p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD for p in params)
 
@@ -255,10 +252,10 @@ def test_select_backend_returns_the_resolved_persona(monkeypatch: pytest.MonkeyP
     """The persona travelling back out is how `agentBackend`,
     `CompletionRequest.model` and the two `== "codex"` branches all see the
     override without a new parameter on `run_act`."""
-    from swil_agent import cli
+    from swil_agent.cli import compose
 
-    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: object())
-    resolved, _ = cli._select_backend(
+    monkeypatch.setattr(compose, "backend_for", lambda persona, settings: object())
+    resolved, _ = compose.select_backend(
         _persona(declared_backend="claude", model="opus"),
         _settings(),
         backend_override="codex",
@@ -273,13 +270,13 @@ def test_select_backend_does_not_route_api_through_the_cli_seam(
     `apply_choice` an api round's `backend` is the PROVIDER wire name (`xai`),
     which that mapping does not recognise -- so sending it there would take the
     `*)` fallback and quietly run the round on the claude CLI instead of xAI."""
-    from swil_agent import cli
+    from swil_agent.cli import compose
 
     def _explode(persona: Any, settings: Any) -> Any:
         raise AssertionError("an api round must not be built through the CLI seam")
 
-    monkeypatch.setattr(cli, "_backend_for", _explode)
-    _, backend = cli._select_backend(_persona(declared_backend=None), _api_settings())
+    monkeypatch.setattr(compose, "backend_for", _explode)
+    _, backend = compose.select_backend(_persona(declared_backend=None), _api_settings())
     assert isinstance(backend, ApiBackend)
 
 

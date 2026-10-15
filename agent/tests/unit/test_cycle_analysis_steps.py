@@ -27,17 +27,15 @@ import pytest
 from swil_agent.analysis import behavior_snapshot as behavior_module
 from swil_agent.config import Settings
 from swil_agent.dream.candidate import FilesystemDreamState
-from swil_agent.graph import nodes as nodes_module
+from swil_agent.graph import nodes_tail
 from swil_agent.graph.cycle import run_cycle
-from swil_agent.graph.nodes import (
-    CycleDeps,
-    make_behavior_snapshot_node,
-    make_population_metric_node,
-)
+from swil_agent.graph.deps import CycleDeps
+from swil_agent.graph.nodes_tail import make_behavior_snapshot_node, make_population_metric_node
 from swil_agent.graph.state import CycleState
 from swil_agent.models import ActOutcome, Persona
 from swil_agent.persona.source import GitPersonaSource
 
+from ._node_modules import caller_of
 from ._runners import FakeEmbedder, FakeResources, ScriptedBackend, make_persona
 
 NOW = datetime(2026, 8, 19, 10, 0, 0)
@@ -178,8 +176,8 @@ def _run(root: Path, persona: Persona, deps: CycleDeps, **kwargs: Any) -> CycleS
         lease_db.close()
 
 
-# Every call `graph/nodes.py` makes that this file needs to place in time.
-# Patched on `graph.nodes`' OWN globals, because that is the name each node
+# Every call the node modules make that this file needs to place in time.
+# Patched on the calling node module's OWN globals (`caller_of`), because that is the name each node
 # resolves at call time (standing constraint §6).
 _TRACEABLE = (
     "execute_step",
@@ -205,13 +203,13 @@ def _trace_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     trace: list[str] = []
 
     def install(name: str) -> None:
-        real = getattr(nodes_module, name)
+        real = getattr(caller_of(name), name)
 
         def spy(*args: Any, **kwargs: Any) -> Any:
             trace.append(name)
             return real(*args, **kwargs)
 
-        monkeypatch.setattr(nodes_module, name, spy)
+        monkeypatch.setattr(caller_of(name), name, spy)
 
     for name in _TRACEABLE:
         install(name)
@@ -299,7 +297,7 @@ def test_a_sampler_that_raises_is_swallowed_at_the_node(
     operator greps when a `/lab` series goes flat.
     """
     root = _root(tmp_path)
-    monkeypatch.setattr(nodes_module, "run_behavior_snapshot", _explode("run_behavior_snapshot"))
+    monkeypatch.setattr(nodes_tail, "run_behavior_snapshot", _explode("run_behavior_snapshot"))
 
     with caplog.at_level(logging.WARNING, logger="swil_agent.graph.nodes"):
         update = make_behavior_snapshot_node(_deps(root))({"persona": _persona(root)})
@@ -323,7 +321,7 @@ def test_a_sampler_does_not_swallow_a_keyboard_interrupt(
     def interrupt(*_args: Any, **_kwargs: Any) -> Any:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(nodes_module, "run_behavior_snapshot", interrupt)
+    monkeypatch.setattr(nodes_tail, "run_behavior_snapshot", interrupt)
 
     root = _root(tmp_path)
     with pytest.raises(KeyboardInterrupt):
@@ -490,7 +488,7 @@ def test_a_sampler_failure_leaves_the_whole_round_untouched(
         persona = _persona(root)
         with monkeypatch.context() as patch:
             if broken:
-                patch.setattr(nodes_module, step, _explode(step))
+                patch.setattr(caller_of(step), step, _explode(step))
             final = _run(root, persona, _deps(root, resources=resources))
         return {
             "outcome": final.get("outcome"),
@@ -626,7 +624,7 @@ def test_a_population_sample_failure_leaves_the_round_untouched(
     naming a different sampler sends them to the wrong panel.
     """
     root = _root(tmp_path)
-    monkeypatch.setattr(nodes_module, "run_population_metric", _explode("run_population_metric"))
+    monkeypatch.setattr(nodes_tail, "run_population_metric", _explode("run_population_metric"))
 
     with caplog.at_level(logging.WARNING, logger="swil_agent.graph.nodes"):
         final = _run(root, _persona(root), _deps(root))
@@ -651,7 +649,7 @@ def test_the_population_sample_does_not_swallow_a_keyboard_interrupt(
     def interrupt(*_args: Any, **_kwargs: Any) -> Any:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(nodes_module, "run_population_metric", interrupt)
+    monkeypatch.setattr(nodes_tail, "run_population_metric", interrupt)
 
     root = _root(tmp_path)
     with pytest.raises(KeyboardInterrupt):

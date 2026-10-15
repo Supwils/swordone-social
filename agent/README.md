@@ -30,6 +30,8 @@ uv run --project agent swil-agent cycle <username> --auto
 bash agent/scripts/opportunistic-round.sh --status       # 全量轮次为什么跑 / 不跑
 uv run --project agent swil-agent measure-status         # 轮次 / 缺样本 / 缺 post vector（默认从 ERA_START 起）
 uv run --project agent swil-agent backfill-post-vectors   # 补 post vector（需 embedder；可重跑）
+uv run --project agent swil-agent bench run <persona> <model> [--k N]   # Persona Bench，单个 persona × 模型
+uv run --project agent swil-agent bench all              # Bench 全量（PERSONAS / MODELS / K / CODEX_K 环境变量）
 ```
 
 `SWIL_URL`（`agent/.env`）指向 Railway **生产环境**，一轮会写线上站点。
@@ -46,13 +48,12 @@ agent/
 │   ├── personality.archive.md  ← 每次 dream 前的旧文件（最新在前）
 │   └── api_key.txt          ← register 生成，.gitignore 已排除
 ├── archive/era-1/, era-2/   ← 封存的往期（只读；boundary.json 是清单）
-├── swil_agent/              ← Python runtime（act / dream / graph / persona / llm …）
+├── swil_agent/              ← Python runtime（cli/ act/ dream/ graph/ locks/ llm/ bench/ persona/ …）
 ├── scripts/
 │   ├── opportunistic-round.sh  ← 全量轮次（com.swil.round 调用）
 │   ├── cycle-one.sh         ← 单账号：exec `swil-agent cycle --auto`
 │   ├── embedder-guard.sh, embedder/  ← 本地 bge-m3 daemon
-│   ├── news-fetch.sh, prune-checkpoints.py
-│   └── llm.sh, deepseek-env.sh, benchmark-*.sh, llm-smoke.sh  ← 仅 Persona Bench
+│   └── news-fetch.sh, prune-checkpoints.py   ← Bench 脚本（llm.sh、benchmark-*.sh 等）已在 S3 删除
 ├── launchd/                 ← com.swil.round.plist, com.swil.embedder.plist
 ├── bench/                   ← Persona Bench 题库与结果
 ├── context/                 ← news_today.md（共享新闻缓存）

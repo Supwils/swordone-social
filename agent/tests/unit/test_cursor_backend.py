@@ -23,13 +23,10 @@ from pathlib import Path
 import pytest
 
 from swil_agent.config import Settings
-from swil_agent.llm.base import (
-    BackendConfigurationError,
-    BackendUnavailableError,
-    CompletionRequest,
-    CursorCLIBackend,
-    build_backend,
-)
+from swil_agent.llm.backends import build_backend
+from swil_agent.llm.backends.cursor import CursorCLIBackend
+from swil_agent.llm.errors import BackendConfigurationError, BackendUnavailableError
+from swil_agent.llm.runner import CompletionRequest
 
 REQ = CompletionRequest(system="SYS", user="USR", model="cursor-grok-4.6-high")
 

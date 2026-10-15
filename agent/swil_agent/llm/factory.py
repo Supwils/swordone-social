@@ -16,7 +16,10 @@ import httpx
 
 from swil_agent.config import Settings
 from swil_agent.llm.api_backend import ApiBackend
-from swil_agent.llm.base import Backend, BackendConfigurationError, Runner, build_backend
+from swil_agent.llm.backends import build_backend
+from swil_agent.llm.errors import BackendConfigurationError
+from swil_agent.llm.protocol import Backend
+from swil_agent.llm.runner import Runner
 from swil_agent.llm.selection import BackendChoice
 
 # `build_backend` still speaks the roster's own spellings (`claude`, `codex`,
@@ -39,7 +42,7 @@ def get_backend(
 
     `deepseek_api_key` and `transport` are injection seams for tests only, and
     both follow patterns this codebase already uses -- see `build_backend`'s own
-    `deepseek_api_key` docstring and `cli.py`'s `_health_check` transport.
+    `deepseek_api_key` docstring and `cli/compose.py`'s `health_check` transport.
 
     Note what is NOT passed to the CLI backends: the resolved model. Their
     `default_model` stays as it was, and the model reaches them through

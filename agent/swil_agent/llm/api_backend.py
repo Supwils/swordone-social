@@ -24,7 +24,7 @@ depends on the model's only channel to disk being its return value.
 `claude -p` and `codex exec` are full agents with filesystem access. A chat
 completions call has no tools unless the request asks for them, and this one
 never does -- there is no `tools` key in either body below, and that absence is
-the same guarantee those flags buy. See `llm/base.py`'s `--tools ""` comment
+the same guarantee those flags buy. See `llm/backends/claude.py`'s `--tools ""` comment
 for the incident that made it a guarantee worth stating.
 """
 
@@ -34,12 +34,8 @@ from typing import Any
 
 import httpx
 
-from swil_agent.llm.base import (
-    DEFAULT_TIMEOUT,
-    BackendConfigurationError,
-    BackendUnavailableError,
-    CompletionRequest,
-)
+from swil_agent.llm.errors import BackendConfigurationError, BackendUnavailableError
+from swil_agent.llm.runner import DEFAULT_TIMEOUT, CompletionRequest
 from swil_agent.llm.selection import PROVIDERS, BackendChoice
 
 ANTHROPIC_VERSION = "2023-06-01"
@@ -77,7 +73,7 @@ class ApiBackend:
         self._model = model
         self._max_tokens = max_tokens
         self._timeout = timeout
-        # Same injection seam `cli.py`'s `_health_check` already uses, rather
+        # Same injection seam `cli/compose.py`'s `health_check` already uses, rather
         # than a mock library: tests pass an `httpx.MockTransport` and exercise
         # the real request-building and response-parsing code.
         self._transport = transport

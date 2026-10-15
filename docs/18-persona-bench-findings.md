@@ -109,7 +109,8 @@ feed — this is the controlled experiment next to the field study.
 ```bash
 # full sweep as run for this report (Haiku judge — superseded; see 2026 defaults below)
 PERSONAS="liushang shengyin chawendao mangniu zhuiyi" MODELS="opus sonnet haiku codex" \
-  K=2 CODEX_K=1 JUDGE=1 JUDGE_MODEL=haiku bash agent/scripts/benchmark-all.sh
+  K=2 CODEX_K=1 JUDGE=1 JUDGE_MODEL=haiku uv run --project agent swil-agent bench all
+# (this report ran the since-deleted agent/scripts/benchmark-all.sh; same env vars)
 # view: /lab?view=benchmark   (leaderboard + heatmap + side-by-side)
 ```
 
@@ -129,9 +130,9 @@ Sept 2026 pricing pick for Persona Bench. **Haiku is no longer a recommended def
 | Optional flagship | `opus` | Claude Opus 5 | Max quality; not default (cost) |
 | Optional legacy | `haiku` | Claude Haiku 4.5 | Kept as alias only — demoted from defaults |
 
-**CLI mapping:** `benchmark-run.sh` passes Claude aliases straight to `claude --model <id>`;
+**CLI mapping:** `swil-agent bench run` (formerly `benchmark-run.sh`) passes Claude aliases straight to `claude --model <id>`;
 short aliases (`sonnet` / `opus` / `haiku`) resolve to the CLI's current frontier for that
-tier. Codex uses `codex exec` (no model flag when empty). `ds-flash` → `llm_text deepseek deepseek-v4-flash`.
+tier. Codex uses `codex exec` (no model flag when empty). `ds-flash` → the DeepSeek backend with `deepseek-v4-flash` (`bench/models.py`).
 
 **Script defaults (after 2026-09-11):**
 - `JUDGE_MODEL` default → `sonnet` (was `opus` in script / Haiku in Round 1 practice)
@@ -142,11 +143,11 @@ tier. Codex uses `codex exec` (no model flag when empty). `ds-flash` → `llm_te
 ```bash
 # Recommended frontier sweep (generators = Codex + Sonnet 5 + ds-flash; judge = Sonnet 5)
 PERSONAS="liushang shengyin chawendao mangniu zhuiyi" MODELS="codex sonnet ds-flash" \
-  K=2 CODEX_K=2 JUDGE=1 JUDGE_MODEL=sonnet bash agent/scripts/benchmark-all.sh
+  K=2 CODEX_K=2 JUDGE=1 JUDGE_MODEL=sonnet uv run --project agent swil-agent bench all
 
 # Optional: include Opus flagship / Haiku baseline for comparison
 MODELS="codex sonnet opus haiku ds-flash" JUDGE=1 JUDGE_MODEL=sonnet \
-  bash agent/scripts/benchmark-all.sh
+  uv run --project agent swil-agent bench all
 ```
 
 ### Round 2 note + re-judge one-liner
@@ -166,8 +167,7 @@ re-judge-only script yet — this re-runs generation+judge):
 
 ```bash
 # After ~4:30am PT / Claude quota back — Sonnet 5 judge pass (codex arm)
-cd agent
 PERSONAS="liushang shengyin chawendao mangniu zhuiyi" MODELS="codex" \
   K=1 CODEX_K=2 JUDGE=1 JUDGE_MODEL=sonnet \
-  bash scripts/benchmark-all.sh
+  uv run --project agent swil-agent bench all
 ```

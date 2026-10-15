@@ -27,16 +27,15 @@ from typing import Any
 
 import pytest
 
-from swil_agent.act.round import (
+from swil_agent.act.round import execute_step
+from swil_agent.act.similarity import (
     DEFAULT_POST_DUPLICATE_THRESHOLD,
     DEFAULT_POST_DUPLICATE_WINDOW,
     MIN_COMPARISON_CORPUS,
     apply_duplicate_guard,
     candidate_post_text,
-    execute_step,
     measure_act_similarity,
     prior_post_texts,
-    run_act,
     similarity_step,
 )
 from swil_agent.api.client import ApiError
@@ -45,6 +44,7 @@ from swil_agent.config import Settings
 from swil_agent.embedder.client import EmbedderUnavailable
 from swil_agent.models import Action, ActOutcome, ActSimilarity, Persona, Plan
 
+from ._phases import run_act_phase
 from ._runners import (
     FakePersonaSource,
     FakeResources,
@@ -385,7 +385,7 @@ def test_run_act_reports_a_guard_emptied_round_as_vetoed_empty(tmp_path: Path) -
     resources.user_post_items = _own_posts(NEAR, FAR)
     resources.notification_items = [{"id": "n1", "type": "comment", "post": {"id": "p"}}]
 
-    result = run_act(
+    result = run_act_phase(
         persona=_persona(tmp_path),
         resources=resources,
         backend=StubBackend('{"plan":[{"action":"post","text":"' + CANDIDATE + '"}]}'),
@@ -414,7 +414,7 @@ def test_run_act_appends_the_duplicate_veto_after_the_guardrail_vetoes(tmp_path:
         '{"action":"like","postId":"' + "a" * 24 + '"}]}'
     )
 
-    result = run_act(
+    result = run_act_phase(
         persona=_persona(tmp_path),
         resources=resources,
         backend=StubBackend(plan),
@@ -881,7 +881,7 @@ def test_run_act_without_an_embedder_is_the_step_it_always_was(tmp_path: Path) -
     resources = TracingResources()
     resources.user_post_items = _own_posts(NEAR, FAR)
 
-    result = run_act(
+    result = run_act_phase(
         persona=_persona(tmp_path),
         resources=resources,
         backend=StubBackend('{"plan":[{"action":"post","text":"' + CANDIDATE + '"}]}'),
@@ -909,7 +909,7 @@ def test_run_act_with_an_embedder_takes_the_sample(tmp_path: Path) -> None:
     resources.user_post_items = _own_posts(NEAR, FAR)
     embedder = RecordingEmbedder()
 
-    run_act(
+    run_act_phase(
         persona=_persona(tmp_path),
         resources=resources,
         backend=StubBackend('{"plan":[{"action":"post","text":"' + CANDIDATE + '"}]}'),
@@ -932,13 +932,14 @@ def test_run_act_with_an_embedder_takes_the_sample(tmp_path: Path) -> None:
 def test_the_graph_execute_node_takes_the_sample_too(tmp_path: Path) -> None:
     """The graph path is the one `cycle-one.sh` actually runs.
 
-    `run_act` is not its composition -- `graph/nodes.py`'s execute node calls
+    `run_act` is not its composition -- `graph/nodes_act.py`'s execute node calls
     `execute_step` directly -- so a sampler placed in `run_act`'s body would
     exclude every production round from the calibration series while every
     direct-path test stayed green. The window and threshold come from
     `deps.settings`, pinned at 5 and 0.4 here: neither default.
     """
-    from swil_agent.graph.nodes import CycleDeps, make_execute_node
+    from swil_agent.graph.deps import CycleDeps
+    from swil_agent.graph.nodes_act import make_execute_node
 
     resources = TracingResources()
     resources.user_post_items = _own_posts(NEAR, FAR)
@@ -986,7 +987,7 @@ def test_no_sampling_failure_can_fail_the_round(
     read, `EmbedderUnavailable`/`ValueError` on the embed); the outer
     `except Exception` covers the class it does not -- an `OSError`, a
     `Resources` method that starts raising a type this module does not list.
-    `graph/nodes.py`'s `_fail_soft` catches the same breadth and records the
+    `graph/nodes_tail.py`'s `_fail_soft` catches the same breadth and records the
     reasoning: this is the observability layer, and a measurement outage may
     never decide whether a round happened.
     """
@@ -1358,7 +1359,7 @@ def test_run_act_threads_its_round_id_to_the_ingest_and_the_event(tmp_path: Path
     resources = TracingResources()
     resources.user_post_items = _own_posts(NEAR, FAR)
 
-    run_act(
+    run_act_phase(
         persona=_persona(tmp_path),
         resources=resources,
         backend=StubBackend('{"plan":[{"action":"post","text":"' + CANDIDATE + '"}]}'),

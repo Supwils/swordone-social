@@ -1,14 +1,14 @@
 """The dream: cooldown, one LLM call for a new 最近 list, the write, the snapshot.
 
-The four steps are separately callable so the cycle graph's nodes
-(`graph/nodes.py`) and `run_dream` (the `dream` command) run the same code.
-Each write step guards itself (`recent is None` -> nothing written; nothing
-written -> no snapshot), so a mis-wired caller cannot write a failed dream.
+The four steps are separately callable; their one composition is the phase
+graph (`graph/nodes_dream.py`), which both the `dream` command (`Phases.DREAM`) and
+the `cycle` command run (S3 §4). Each write step guards itself (`recent is
+None` -> nothing written; nothing written -> no snapshot), so a mis-wired
+caller cannot write a failed dream.
 
 Locking: `write_recent` takes no lock of its own. Every write here must run
-under `dream_lock_<name>`: `run_dream` takes it as a `FileLock` around the
-whole sequence, and `graph/cycle.py`'s `run_cycle` holds the same path as a
-`RunLease` for the whole cycle.
+under `dream_lock_<name>`: `graph/run.py`'s `run_graph` holds that path as a
+`RunLease` for the whole `dream` or `cycle` run.
 
 Lab events never change what a step returns (`_emit`).
 """
@@ -34,9 +34,10 @@ from swil_agent.dream.candidate import (
     parse_recent,
 )
 from swil_agent.embedder.client import EmbedderUnavailable
-from swil_agent.llm.base import Backend, BackendUnavailableError, complete_text
-from swil_agent.locks import FileLock, dream_lock_path
-from swil_agent.models import DreamResult, Persona
+from swil_agent.llm.complete import complete_text
+from swil_agent.llm.errors import BackendUnavailableError
+from swil_agent.llm.protocol import Backend
+from swil_agent.models import Persona
 from swil_agent.persona.format import PersonaDoc, PersonaFormatError, clamp_recent, prompt_text
 from swil_agent.persona.source import PersonaSource
 
@@ -298,70 +299,3 @@ def snapshot_step(
         LabEvent(type="snapshot", phase="snapshot", outcome="success", summary="snapshot uploaded"),
     )
     return SnapshotStep(ok=True, reason=None)
-
-
-def run_dream(
-    *,
-    persona: Persona,
-    persona_source: PersonaSource,
-    resources: Resources,
-    backend: Backend,
-    embedder: Embedder,
-    state: DreamState,
-    settings: Settings,
-    agent_root: Path,
-    now: datetime,
-    captured_at: datetime,
-    auto: bool = False,
-) -> DreamResult:
-    """One dream for one account, under `dream_lock_<name>`.
-
-    A held lock raises `LockBusy` out of this function; any exception
-    releases the lock. `now` is naive local time (archive stamp, memory line
-    date, cooldown marker); `captured_at` is the snapshot's UTC moment.
-    """
-    name = persona.directory.name
-    with FileLock(dream_lock_path(agent_root, name)):
-        cooldown = cooldown_step(
-            persona=persona,
-            persona_source=persona_source,
-            state=state,
-            settings=settings,
-            now=now,
-            auto=auto,
-        )
-        if not cooldown.proceed:
-            return DreamResult(proceeded=False, reason=cooldown.reason)
-
-        dreamt = dream_step(
-            persona=persona,
-            resources=resources,
-            backend=backend,
-            memory_text=cooldown.memory_text,
-        )
-        write = write_step(
-            persona=persona,
-            persona_source=persona_source,
-            state=state,
-            resources=resources,
-            recent=dreamt.recent,
-            now=now,
-        )
-        snapshot = snapshot_step(
-            persona=persona,
-            resources=resources,
-            embedder=embedder,
-            agent_root=agent_root,
-            captured_at=captured_at,
-            recent=dreamt.recent,
-            written=write.written,
-        )
-        if not write.written:
-            return DreamResult(proceeded=True, reason=dreamt.failure_reason or write.reason or "")
-        return DreamResult(
-            proceeded=True,
-            accepted=True,
-            recent=dreamt.recent,
-            snapshot_ok=snapshot.ok,
-            snapshot_reason=snapshot.reason,
-        )

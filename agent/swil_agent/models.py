@@ -43,8 +43,8 @@ class ActionResult(BaseModel):
     every other kind's "id of the thing I created" convention, so this is a
     second, dm-only field rather than overloading `resource_id` or `detail`
     (the latter is already a free-text failure/note channel matched by
-    shape elsewhere -- see `act/round.py`'s `_PARENT_UNUSABLE_DETAIL`
-    sentinel). It lets `act/round.py`'s memory-line writer record
+    shape elsewhere -- see `act/memory_log.py`'s `_PARENT_UNUSABLE_DETAIL`
+    sentinel). It lets `act/memory_log.py`'s memory-line writer record
     `conversationId=...` instead of a `messageId=` substitute.
 
     `call_succeeded` (ruling R19) answers a DIFFERENT question from `landed`:
@@ -135,7 +135,7 @@ class CooldownDecision(BaseModel):
 
 
 class DreamResult(BaseModel):
-    """The outcome of one `dream.round.run_dream`.
+    """The outcome of one dream (`graph/outcome.py`'s `dream_result_of`).
 
     `proceeded=False` is a cooldown SKIP (no LLM call). `accepted` means the
     new 最近 list was written; `recent` is that list as written (clamped).
@@ -185,7 +185,8 @@ class ActContext(BaseModel):
 
 
 class ActResult(BaseModel):
-    """The outcome of one `run_act` round (`act/round.py`, task 7).
+    """The outcome of one act round (`graph/outcome.py`'s `act_result_of`;
+    `run_act` produced it until S3 Task 4).
 
     `plan` and `context` are included even though task-7-brief.md's own
     step-1 code sketch omitted them from this class body -- the SAME
@@ -221,7 +222,7 @@ class ActResult(BaseModel):
 
 class ActSimilarity(BaseModel):
     """How close one round's candidate post sits to the account's OWN recent
-    posts (`act/round.py`'s `similarity_step`), and whether the duplicate
+    posts (`act/similarity.py`'s `similarity_step`), and whether the duplicate
     guard dropped it.
 
     `max_sim` is the maximum cosine over the window, not the mean: the

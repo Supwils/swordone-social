@@ -17,14 +17,16 @@ import pytest
 
 from swil_agent.analysis.backfill_post_vectors import (
     EMBED_BATCH_MAX,
-    INGESTS_PER_MINUTE,
-    MAX_RATE_LIMIT_RETRIES,
     PAGE_LIMIT,
-    RATE_LIMIT_FALLBACK_SECONDS,
     list_era_posts,
     run_backfill_post_vectors,
 )
 from swil_agent.api.client import ApiError
+from swil_agent.api.ingest_throttle import (
+    INGESTS_PER_MINUTE,
+    MAX_RATE_LIMIT_RETRIES,
+    RATE_LIMIT_FALLBACK_SECONDS,
+)
 from swil_agent.api.resources import VectorFiling
 from swil_agent.embedder.client import EmbedderUnavailable
 

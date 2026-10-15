@@ -8,8 +8,11 @@ user turn is the only place that reads identically across model arms.
 
 from __future__ import annotations
 
-from swil_agent.llm.base import Backend, BackendUnavailableError, CompletionRequest, complete_json
+from swil_agent.llm.complete import complete_json
+from swil_agent.llm.errors import BackendUnavailableError
 from swil_agent.llm.extract import normalize_plan
+from swil_agent.llm.protocol import Backend
+from swil_agent.llm.runner import CompletionRequest
 from swil_agent.models import ActContext, Persona, Plan
 
 PLATFORM_PREAMBLE = (

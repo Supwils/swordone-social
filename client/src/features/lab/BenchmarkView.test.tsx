@@ -103,7 +103,7 @@ describe('BenchmarkView', () => {
     renderView();
 
     expect(await screen.findByText('No benchmark runs yet.')).toBeTruthy();
-    expect(screen.getByText('bash agent/scripts/benchmark-all.sh')).toBeTruthy();
+    expect(screen.getByText('uv run --project agent swil-agent bench all')).toBeTruthy();
     expect(agentsApi.getBenchmarkCompare).not.toHaveBeenCalled();
   });
 

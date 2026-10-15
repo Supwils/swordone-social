@@ -82,7 +82,7 @@ export function BenchmarkView() {
       <section className={s.benchEmpty}>
         <div className={s.chartTitle}>{t('lab.bench.empty')}</div>
         <p className={s.blockSub}>{t('lab.bench.emptySub')}</p>
-        <pre className={s.benchCmd}>bash agent/scripts/benchmark-all.sh</pre>
+        <pre className={s.benchCmd}>uv run --project agent swil-agent bench all</pre>
       </section>
     );
   }

@@ -1,5 +1,4 @@
 import os
-import re
 import sys
 import threading
 from pathlib import Path
@@ -8,13 +7,9 @@ import pytest
 
 from swil_agent.config import Settings
 from swil_agent.dream.round import dream_step
-from swil_agent.llm.base import (
-    BackendBinaryMissingError,
-    BackendUnavailableError,
-    CompletionRequest,
-    SubprocessRunner,
-    build_backend,
-)
+from swil_agent.llm.backends import build_backend
+from swil_agent.llm.errors import BackendBinaryMissingError, BackendUnavailableError
+from swil_agent.llm.runner import CompletionRequest, SubprocessRunner
 from tests.unit._runners import FakeResources, RecordingRunner, make_persona
 
 
@@ -300,6 +295,28 @@ def test_subprocess_runner_env_empty_string_deletes_inherited_variable(
     assert os.environ["SWIL_TEST_STRIP_ME"] == "leaked-real-key"
 
 
+def test_subprocess_runner_run_result_keeps_the_exit_status_and_run_does_not_change() -> None:
+    """The opt-in status call the bench judge uses (S3 §12.19). `run` stays
+    exactly `run_result(...).stdout`, so every round caller is unchanged."""
+    from swil_agent.llm.runner import RunResult
+
+    runner = SubprocessRunner()
+    argv = [sys.executable, "-c", "import sys; print('resets at 3pm'); sys.exit(3)"]
+    assert runner.run_result(argv) == RunResult(stdout="resets at 3pm\n", returncode=3)
+    assert runner.run(argv) == "resets at 3pm\n"
+    ok = [sys.executable, "-c", "print('fine')"]
+    assert runner.run_result(ok) == RunResult(stdout="fine\n", returncode=0)
+
+
+def test_subprocess_runner_run_result_reports_a_timeout() -> None:
+    from swil_agent.llm.runner import RunResult
+
+    slow = [sys.executable, "-c", "import time; time.sleep(5)"]
+    result = SubprocessRunner().run_result(slow, timeout=0.2)
+    assert result == RunResult(stdout="", returncode=None, timed_out=True)
+    assert SubprocessRunner().run(slow, timeout=0.2) == ""
+
+
 def test_subprocess_runner_env_normal_override_is_visible_to_child(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -445,51 +462,68 @@ def test_codex_runs_read_only_and_never_full_auto() -> None:
     assert argv[argv.index("-s") : argv.index("-s") + 2] == ["-s", "read-only"]
 
 
-# ── the remaining shell LLM call sites carry the same invariant ──────────────
+# ── the Persona Bench's call sites carry the same invariant ─────────────────
 #
-# `llm.sh` and `benchmark-run.sh` (the judge) still invoke the claude CLI
-# directly, and the deepseek branch of `llm.sh` builds its argv independently
-# of `llm_text` -- which is how a fix applied to one site drifts away from the
-# others.
-
-_SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
-
-
-def _live_logical_lines(script: str) -> list[str]:
-    """A script's executable text, comments removed and continuations joined.
-
-    Both steps are load-bearing, and the first version of these tests shipped
-    without either — so a mutation that deleted the real flag left the tests
-    green, because the FIX'S OWN COMMENT still contained the string they
-    searched for. A guard that a comment can satisfy guards nothing.
-
-    Continuations must be joined because `llm.sh` spreads one invocation over
-    six backslash-terminated lines; matching per physical line would look for
-    the flag on the line that merely says `claude -p \\`.
-    """
-    text = (_SCRIPTS / script).read_text(encoding="utf-8")
-    text = re.sub(r"\\\n\s*", " ", text)  # join backslash continuations
-    return [line for line in text.splitlines() if not line.lstrip().startswith("#")]
+# The bench used to reach the claude and codex CLIs from Bash (`llm.sh`, and
+# the judge in `benchmark-run.sh`), pinned here by text searches over those
+# scripts. S3 ported it to `swil_agent/bench/`: the model under test goes
+# through the same backend classes as the round, and the judge is its own
+# argv over the `Runner`. These pin the Python argv of each bench call site.
 
 
-_CLAUDE_CALL = re.compile(r"\bclaude\b[^\n#]*\s-p\b")
+class _CodexOutRunner(RecordingRunner):
+    def run(
+        self,
+        argv: list[str],
+        stdin: str | None = None,
+        env: dict[str, str] | None = None,
+        timeout: float = 300.0,
+    ) -> str:
+        super().run(argv, stdin, env, timeout)
+        if argv[0] == "codex":
+            Path(argv[argv.index("-o") + 1]).write_text("out", encoding="utf-8")
+        return "out"
 
 
-@pytest.mark.parametrize("script", ["llm.sh", "benchmark-run.sh"])
-def test_every_bash_claude_invocation_disables_tools(script: str) -> None:
-    # `-p` does not always follow `claude` directly (`claude --model "$X" -p`),
-    # which a literal "claude -p" search misses entirely — and a search that
-    # misses a call site reports PASS for the one invocation nobody fixed.
-    calls = [line for line in _live_logical_lines(script) if _CLAUDE_CALL.search(line)]
-    assert calls, f"{script} no longer invokes the claude CLI — retarget this test"
-    for line in calls:
-        assert '--tools ""' in line, (
-            f'{script}: claude CLI invoked without `--tools ""`: {line.strip()}'
-        )
+def _bench_argv(spec: str) -> list[str]:
+    from swil_agent.bench.models import resolve_model
+
+    runner = _CodexOutRunner()
+    model = resolve_model(spec, runner, _settings(), deepseek_api_key="k")
+    model.backend.complete(CompletionRequest(system="S", user="U", model=model.model))
+    return runner.calls[0].argv
 
 
-def test_bash_codex_invocation_is_not_full_auto() -> None:
-    body = "\n".join(_live_logical_lines("llm.sh"))
-    assert "codex exec" in body, "llm.sh no longer invokes codex — retarget this test"
-    assert "--full-auto" not in body
-    assert "-s read-only" in body
+@pytest.mark.parametrize("spec", ["judge", "sonnet", "grok", "ds-flash", "claude:claude-opus-5-5"])
+def test_every_bench_claude_invocation_disables_tools(spec: str) -> None:
+    """The judge and every model-under-test spelling that lands on `claude -p`
+    (bare aliases, `ds-flash`, the roster form)."""
+    from swil_agent.bench.judge import judge_argv
+
+    argv = judge_argv("sonnet") if spec == "judge" else _bench_argv(spec)
+    assert argv[0] == "claude"
+    assert argv[argv.index("--tools") : argv.index("--tools") + 2] == ["--tools", ""]
+
+
+def test_the_bench_grok_roster_form_is_tool_less_and_read_only() -> None:
+    argv = _bench_argv("grok:grok-4.6")
+    assert argv[0] == "grok"
+    assert argv[argv.index("--tools") : argv.index("--tools") + 2] == ["--tools", ""]
+    assert argv[argv.index("--permission-mode") : argv.index("--permission-mode") + 2] == [
+        "--permission-mode",
+        "plan",
+    ]
+
+
+def test_the_bench_cursor_roster_form_runs_in_ask_mode() -> None:
+    argv = _bench_argv("cursor:gemini-3.7-flash-high")
+    assert argv[0] == "cursor-agent"
+    assert argv[argv.index("--mode") : argv.index("--mode") + 2] == ["--mode", "ask"]
+
+
+@pytest.mark.parametrize("spec", ["codex", "codex:gpt-5.6-luna"])
+def test_bench_codex_invocation_is_not_full_auto(spec: str) -> None:
+    argv = _bench_argv(spec)
+    assert argv[:2] == ["codex", "exec"]
+    assert "--full-auto" not in argv
+    assert argv[argv.index("-s") : argv.index("-s") + 2] == ["-s", "read-only"]

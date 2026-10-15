@@ -14,11 +14,8 @@ import httpx
 import pytest
 
 from swil_agent.llm.api_backend import ApiBackend
-from swil_agent.llm.base import (
-    BackendConfigurationError,
-    BackendUnavailableError,
-    CompletionRequest,
-)
+from swil_agent.llm.errors import BackendConfigurationError, BackendUnavailableError
+from swil_agent.llm.runner import CompletionRequest
 
 REQ = CompletionRequest(system="SYS", user="USR")
 

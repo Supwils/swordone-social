@@ -18,8 +18,9 @@ Every ingest is one hit on the server's per-user `snapshotIngestLimiter`
 (20/min, shared with the account's other lab writes), so the backfill keeps
 itself to `INGESTS_PER_MINUTE` attempts in any 60 s, and on a 429 waits what
 `Retry-After` / `RateLimit-Reset` says (`RATE_LIMIT_FALLBACK_SECONDS` when
-nothing does) and retries that post up to `MAX_RATE_LIMIT_RETRIES` times.
-One POST per post even when already filed: the idempotent replay is the only
+nothing does) and retries that post up to `MAX_RATE_LIMIT_RETRIES` times --
+the shared policy in `api/ingest_throttle.py`, which the bench's run ingest
+uses too. One POST per post even when already filed: the idempotent replay is the only
 way to learn that, and the throttle prices it in. Clock and sleep are
 injected so tests never sleep.
 
@@ -32,13 +33,20 @@ from __future__ import annotations
 
 import logging
 import time
-from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final, Protocol
 
 from swil_agent.api.client import ApiError
+from swil_agent.api.ingest_throttle import (
+    INGESTS_PER_MINUTE,
+    MAX_RATE_LIMIT_RETRIES,
+    THROTTLE_WINDOW_SECONDS,
+    IngestThrottle,
+    RateLimited,
+    retry_rate_limited,
+)
 from swil_agent.api.resources import Resources, VectorFiling
 from swil_agent.embedder.client import MAX_BATCH, EmbedderUnavailable
 
@@ -52,18 +60,6 @@ EMBED_BATCH_MAX: Final = MAX_BATCH
 
 MAX_PAGES: Final = 200
 """A runaway-cursor backstop: 20k posts is far beyond any Era 3 account."""
-
-INGESTS_PER_MINUTE: Final = 18
-"""Ingest attempts per rolling 60 s, under the server's 20/min per-user
-`snapshotIngestLimiter` with room for the account's other lab writes."""
-
-THROTTLE_WINDOW_SECONDS: Final = 60.0
-
-RATE_LIMIT_FALLBACK_SECONDS: Final = 60.0
-"""The wait after a 429 that names no reset (the limiter's window)."""
-
-MAX_RATE_LIMIT_RETRIES: Final = 3
-"""Retries of one post after a 429; past that the post counts as failed."""
 
 
 class Embedder(Protocol):
@@ -88,36 +84,6 @@ class BackfillResult:
     failed: int = 0
     skipped: int = 0
     reason: str | None = None
-
-
-class IngestThrottle:
-    """At most `limit` acquisitions in any rolling `window` seconds; an
-    acquisition past that sleeps until the oldest one leaves the window."""
-
-    def __init__(
-        self,
-        *,
-        limit: int,
-        window: float,
-        clock: Callable[[], float],
-        sleep: Callable[[float], None],
-    ) -> None:
-        self._limit = limit
-        self._window = window
-        self._clock = clock
-        self._sleep = sleep
-        self._stamps: deque[float] = deque()
-
-    def acquire(self) -> None:
-        now = self._clock()
-        while self._stamps and now - self._stamps[0] >= self._window:
-            self._stamps.popleft()
-        if len(self._stamps) >= self._limit:
-            self._sleep(self._stamps[0] + self._window - now)
-            now = self._clock()
-            while self._stamps and now - self._stamps[0] >= self._window:
-                self._stamps.popleft()
-        self._stamps.append(now)
 
 
 def _as_utc(moment: datetime) -> datetime:
@@ -272,10 +238,9 @@ def _file_with_retries(
     """One post's ingest: every attempt through the throttle, a 429 waited
     out and retried up to `MAX_RATE_LIMIT_RETRIES` times. Answers the final
     `VectorFiling.status` (`rate_limited` once the retries are spent)."""
-    outcome = VectorFiling("failed")
-    for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
-        throttle.acquire()
-        outcome = resources.file_post_vector(
+
+    def attempt() -> VectorFiling | RateLimited:
+        filing = resources.file_post_vector(
             username,
             post_id=post_id,
             round_id=None,
@@ -283,23 +248,23 @@ def _file_with_retries(
             card_sim=card_sim,
             max_sim=None,
         )
-        if outcome.status != "rate_limited":
-            return outcome.status
-        if attempt == MAX_RATE_LIMIT_RETRIES:
-            break
-        wait = outcome.retry_after
-        wait = RATE_LIMIT_FALLBACK_SECONDS if wait is None else max(0.0, wait)
+        return RateLimited(filing.retry_after) if filing.status == "rate_limited" else filing
+
+    def on_retry(wait: float) -> None:
         logger.warning(
             "backfill-post-vectors: %s — post %s rate-limited; retrying in %.0f s",
             username,
             post_id,
             wait,
         )
-        sleep(wait)
-    logger.warning(
-        "backfill-post-vectors: %s — post %s still rate-limited after %d retries",
-        username,
-        post_id,
-        MAX_RATE_LIMIT_RETRIES,
-    )
+
+    outcome = retry_rate_limited(attempt, throttle=throttle, sleep=sleep, on_retry=on_retry)
+    if isinstance(outcome, RateLimited):
+        logger.warning(
+            "backfill-post-vectors: %s — post %s still rate-limited after %d retries",
+            username,
+            post_id,
+            MAX_RATE_LIMIT_RETRIES,
+        )
+        return "rate_limited"
     return outcome.status

@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from swil_agent.act.context import build_context, posts_today
+from swil_agent.act.context import build_context
+from swil_agent.act.context_format import posts_today
 from swil_agent.act.memory import retrieve_memory
 from swil_agent.act.planner import render_planner_prompt
 from swil_agent.models import ActContext, Persona

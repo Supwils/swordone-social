@@ -780,7 +780,7 @@ describe('the act-similarity summary is a two-language contract', () => {
   /**
    * THE OTHER SIDE OF THIS COUPLING IS PYTHON. The similarity query narrows on
    * `summary = 'act self-similarity measured'`, a string built inline in
-   * `agent/swil_agent/act/round.py`'s `_similarity_event`. Nothing else in
+   * `agent/swil_agent/act/similarity.py`'s `_similarity_event`. Nothing else in
    * `agent_events` narrows it, so the coupling stays and gets a guard instead:
    * reword the Python side and this goes red, rather than the similarity half
    * silently reporting `n: 0` for every account — which reads like "nobody has
@@ -794,10 +794,13 @@ describe('the act-similarity summary is a two-language contract', () => {
    * conditional EXPRESSION the summary is built by, which is executable syntax
    * and cannot be produced by a docstring that merely mentions the phrase.
    */
-  const ROUND_PY = path.resolve(__dirname, '../../../../../agent/swil_agent/act/round.py');
+  const SIMILARITY_PY = path.resolve(
+    __dirname,
+    '../../../../../agent/swil_agent/act/similarity.py',
+  );
 
-  it('matches the literal `act/round.py` files a measured sample under', () => {
-    const source = readFileSync(ROUND_PY, 'utf8');
+  it('matches the literal `act/similarity.py` files a measured sample under', () => {
+    const source = readFileSync(SIMILARITY_PY, 'utf8');
     const executable = source
       .split('\n')
       .filter((line) => !line.trimStart().startsWith('#'))
@@ -805,7 +808,7 @@ describe('the act-similarity summary is a two-language contract', () => {
 
     expect(
       executable,
-      `agent/swil_agent/act/round.py no longer builds the summary "${ACT_SIMILARITY_SUMMARY}". ` +
+      `agent/swil_agent/act/similarity.py no longer builds the summary "${ACT_SIMILARITY_SUMMARY}". ` +
         'That string is what persona/collapse.ts narrows the similarity SQL on: if the ' +
         'Python side was reworded deliberately, change ACT_SIMILARITY_SUMMARY here in ' +
         'the same commit — otherwise the collapse watch silently reports basis: ' +

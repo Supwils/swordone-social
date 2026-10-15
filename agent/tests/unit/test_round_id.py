@@ -10,8 +10,13 @@ import pytest
 
 from swil_agent.round_id import (
     ROUND_ID_RE,
+    NoCheckpoint,
+    SweepResumeRefused,
+    act_round_id,
+    fresh_round_id,
     is_valid_round_id,
     manual_round_id,
+    resume_round_id,
     round_kind,
     round_sort_key,
     sweep_or_manual_round_id,
@@ -150,3 +155,56 @@ def test_sort_key_ranks_an_era_2_key_older_than_any_new_id() -> None:
     ids = ["20991231T235959", "20261014T091500Z-m", "garbage"]
     assert max(ids, key=round_sort_key) == "20261014T091500Z-m"
     assert sorted(ids, key=round_sort_key) == ["20991231T235959", "garbage", "20261014T091500Z-m"]
+
+
+# ── the command-level policy moved out of cli (S3 §6) ────────────────────
+
+
+def test_resume_continues_a_manual_thread_whatever_the_env_says() -> None:
+    manual = "20261014T080000Z-m"
+    assert resume_round_id(lambda: manual, env_round_id=None) == manual
+    assert resume_round_id(lambda: manual, env_round_id=SWEEP) == manual
+
+
+def test_resume_continues_a_sweep_thread_only_under_that_sweeps_own_id() -> None:
+    assert resume_round_id(lambda: SWEEP, env_round_id=f"  {SWEEP}\n") == SWEEP
+    with pytest.raises(SweepResumeRefused) as refused:
+        resume_round_id(lambda: SWEEP, env_round_id="20261015T091500Z-r")
+    assert refused.value.round_id == SWEEP
+    with pytest.raises(SweepResumeRefused):
+        resume_round_id(lambda: SWEEP, env_round_id=None)
+
+
+def test_resume_without_a_checkpointed_thread_raises_no_checkpoint() -> None:
+    with pytest.raises(NoCheckpoint):
+        resume_round_id(lambda: None, env_round_id=SWEEP)
+
+
+def test_resume_treats_a_pre_s2_key_as_resumable_not_as_a_sweep() -> None:
+    """An Era 2 suffixless key is not a valid S2 id, so it is never refused
+    as someone else's sweep."""
+    assert resume_round_id(lambda: "20260801T000000", env_round_id=None) == "20260801T000000"
+
+
+def test_fresh_round_id_is_the_sweep_or_manual_policy() -> None:
+    assert fresh_round_id(SWEEP, now=NOW, thread_exists=_never) == SWEEP
+    assert fresh_round_id(None, now=NOW, thread_exists=_never) == manual_round_id(NOW)
+    assert fresh_round_id(SWEEP, now=NOW, thread_exists=lambda rid: True) == manual_round_id(NOW)
+
+
+def test_act_round_id_without_a_database_to_ask_takes_the_exported_id() -> None:
+    """`None` = no checkpoint database (dry run, none yet, unreadable): the
+    guard is lost, the round is not."""
+    assert act_round_id(SWEEP, now=NOW, thread_exists=None) == SWEEP
+    assert act_round_id(None, now=NOW, thread_exists=None) == manual_round_id(NOW)
+
+
+def test_act_round_id_refuses_an_id_the_sweeps_cycle_already_used() -> None:
+    seen: list[str] = []
+
+    def used(rid: str) -> bool:
+        seen.append(rid)
+        return True
+
+    assert act_round_id(SWEEP, now=NOW, thread_exists=used) == manual_round_id(NOW)
+    assert seen == [SWEEP]

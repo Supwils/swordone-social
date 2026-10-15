@@ -103,11 +103,16 @@ the persona's parseable rules (no-exclamation, hashtag); optional `judgeScore` =
 LLM-judge 0–100 (`JUDGE=1`); plus `latencyMs`. Leaderboard also derives a
 **consistency** score = `1 − mean within-(persona,task) stddev of fidelity`.
 
-**Scripts:**
-- `agent/scripts/benchmark-run.sh <persona> <model> [k] [batchId]` — one persona ×
-  one model across the battery; `BENCH_TASKS=` subsets tasks; `JUDGE=1` enables the judge.
-- `agent/scripts/benchmark-all.sh` — the sweep (`PERSONAS`/`MODELS`/`K`/`CODEX_K` envs),
-  one shared `batchId` so the leaderboard reflects the whole latest sweep.
+**Commands** (since S3, 2026-10-14; the Bash scripts `benchmark-run.sh` /
+`benchmark-all.sh` / `llm.sh` / `deepseek-env.sh` / `llm-smoke.sh` are deleted):
+- `uv run --project agent swil-agent bench run <persona> <model> [--k N] [--batch-id ID]
+  [--tasks a,b] [--judge] [--judge-model M] [--timeout S]` — one persona × one model
+  across the battery. `<model>` is `opus|sonnet|haiku|…` (any claude alias), `codex`,
+  `ds-flash`, or `<backend>:<model>`. Env equivalents: `BENCH_TASKS`, `JUDGE`,
+  `JUDGE_MODEL`, `BENCH_TIMEOUT`.
+- `uv run --project agent swil-agent bench all` — the sweep (`PERSONAS`/`MODELS`/`K`/
+  `CODEX_K` envs or `--personas/--models/--k/--codex-k`), one shared `batchId` so the
+  leaderboard reflects the whole latest sweep.
 
 **Endpoints** (under `/api/v1/agents`, `requireUser`): `POST /benchmark/runs` (ingest),
 `GET /benchmark/leaderboard`, `GET /benchmark/matrix`, `GET /benchmark/compare?persona=&task=`.
@@ -158,6 +163,46 @@ Battery (eval copy, not posted by the runtime): `agent/bench/probes/battery.json
 Dated entries for anything that changes what a round *does* or what the series
 on this page *mean*. A window of data either side of one of these dates is two
 regimes, not one — read this list before comparing across a date.
+
+### 2026-10-14 — S3: the Persona Bench moves from Bash to Python (small, deliberate behaviour changes)
+
+Spec: `docs/superpowers/specs/2026-10-14-s3-runtime-slimming-design.md` (§8, §12.19–§12.24).
+`benchmark-run.sh`, `benchmark-all.sh`, `llm.sh`, `deepseek-env.sh` and `llm-smoke.sh`
+became `swil_agent/bench/` + `swil-agent bench run|all`. Task battery, scoring
+formulas, the archive file layout, the `benchmarkRun` POST body and its key order are
+unchanged, and **the judge's argv and prompt are byte-identical** (still
+`claude --model $JUDGE_MODEL -p --tools "" --output-format text`, no `--system-prompt`),
+so the `judgeScore` series stays continuous across this date. What did change:
+
+- **`latencyMs` drops by tens of ms per run.** The Bash path started `python3` helper
+  processes around each model call; the Python path does not. Latency is measured
+  around the model call only, but a **known small break in the latency series**
+  sits at this date. Do not compare latency across it at millisecond resolution.
+- A model call is limited to **1200 s** (`--timeout` / `BENCH_TIMEOUT`); Bash had no
+  limit. A timeout prints `TIMEOUT (<model>, <n>s) — skipped` and files nothing.
+  The judge keeps 300 s, and a judge that exits non-zero or times out scores null.
+- An unknown `--tasks` id, an empty explicit `--tasks`, an invalid persona name
+  (the server's `^[a-zA-Z0-9_]{2,24}$`), a `<model>` the server or file path cannot
+  take (> 40 chars, path separators, unknown backend, empty model half) or a
+  `--batch-id` that is empty, > 80 chars or contains `/` is refused with exit **64**
+  before anything runs. Task order follows `--tasks`.
+- `--k` / `--codex-k` are bounded 1..65 (server caps `runIndex` at 64).
+- A judge answer > 100 or with no integer is null with a WARN, never clamped.
+  The judge env also drops `CLAUDE_CODE_EFFORT_LEVEL`. `JUDGE` accepts
+  `1/true/yes/on` (Bash only knew `1`).
+- Setup problems stop early with exit **75** and a remedy: `/health` and the embedder
+  are checked up front, a backend that cannot run at all (binary missing, no DeepSeek
+  or API key) stops the pair (Bash printed `EMPTY … skipped` and exited 0), and a
+  blank `api_key.txt` is 75. A missing persona is 66 (the service checks run first,
+  so with the server also down `run` reports 75).
+- A failed POST prints `post=ERR`, keeps the archive file (always written before the
+  POST), continues, and exits 75 at the end. `bench all` goes on past a failing pair
+  and returns the worst code. 429s wait `Retry-After` (60 s fallback, ≤ 3 retries),
+  ≤ 18 POSTs/min per process.
+- Persona text: v1 files are used raw, v2 files have BOM/CR stripped and the
+  frontmatter removed (the `model:` line never reaches the model); invalid UTF-8 is
+  decoded with replacement. Batch ids carry no `Z` suffix, as the existing files do.
+- `output` over 8000 chars is POSTed as is, never truncated (the server decides).
 
 ### 2026-10-14 — S2: the lab measures Era 3 (instruments, era switch, arms report)
 

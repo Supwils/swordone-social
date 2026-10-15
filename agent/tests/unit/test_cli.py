@@ -2,18 +2,24 @@
 compose every layer built by Tasks 1-12 into `act`/`dream`/`version`
 commands.
 
-`cli.py` is the ONLY composition root in the package (module docstring), so
-these tests exercise it two ways:
+`swil_agent/cli/compose.py` is the ONLY composition root in the package (its
+module docstring), so these tests exercise it two ways:
 
   * through `typer.testing.CliRunner`, with every network/subprocess-facing
-    builder (`_resources_for`, `_backend_for`, `_embedder_for`, `_guard_for`,
-    `_health_check`) monkeypatched to an in-memory fake -- a CLI test must
-    never dial a real socket or spawn a real `claude`/`codex`/`bash` process;
-  * directly, for the builder helpers themselves (`_resources_for` with a
-    real `ApiClient` over `httpx.MockTransport`, `_health_check` the same
-    way, `_probe_embedder` against a fake `EmbedderClient`), so the
-    composition helpers are not only ever exercised through a monkeypatched
-    substitute of themselves.
+    builder (`compose.resources_for`, `compose.backend_for`,
+    `compose.embedder_for`, `compose.guard_for`, `compose.health_check`)
+    monkeypatched to an in-memory fake -- a CLI test must never dial a real
+    socket or spawn a real `claude`/`codex`/`bash` process;
+  * directly, for the builder helpers themselves (`compose.resources_for`
+    with a real `ApiClient` over `httpx.MockTransport`, `compose.health_check`
+    the same way, `compose.probe_embedder` against a fake `EmbedderClient`),
+    so the composition helpers are not only ever exercised through a
+    monkeypatched substitute of themselves.
+
+Patch targets follow the code that looks a name up at call time (S3 §12.15):
+`compose` for every collaborator and the clock (`compose.now`/`today`),
+`doctor` and `analysis.measure_status` for the operator probes, and the
+command module (`cli_run`, `cli_analysis`, `cli_ops`) for a runner it calls.
 
 No test in this file ever calls the real `load_settings()` against
 `agent/.env` -- that file is deliberately absent from this worktree (see
@@ -30,6 +36,7 @@ import os
 import re
 import time
 from collections.abc import Callable, Iterator
+from datetime import date as _real_date
 from datetime import datetime as _real_datetime
 from datetime import timedelta
 from pathlib import Path
@@ -38,24 +45,37 @@ import httpx
 import pytest
 from typer.testing import CliRunner
 
-from swil_agent import cli
+from swil_agent import cli, doctor
+from swil_agent.analysis import measure_status
 from swil_agent.api.auth import PasswordAuth
 from swil_agent.api.client import ApiError
+from swil_agent.cli import analysis as cli_analysis
+from swil_agent.cli import compose, compose_backend
+from swil_agent.cli import errors as cli_errors
+from swil_agent.cli import logs as cli_logs
+from swil_agent.cli import ops as cli_ops
+from swil_agent.cli import run as cli_run
+from swil_agent.cli import stores as cli_stores
 from swil_agent.config import Settings
 from swil_agent.embedder.client import EmbedderClient, EmbedderUnavailable
 from swil_agent.embedder.guard import EmbedderGuard
-from swil_agent.llm.base import (
-    BackendBinaryMissingError,
-    BackendUnavailableError,
-    SubprocessRunner,
-)
-from swil_agent.locks import act_lock_path
+from swil_agent.llm.errors import BackendBinaryMissingError, BackendUnavailableError
+from swil_agent.llm.runner import SubprocessRunner
+from swil_agent.locks.file import act_lock_path
 from swil_agent.models import Persona
 from swil_agent.persona.source import GitPersonaSource
+from swil_agent.register import RegisterError
 
+from ._golden_seams import (
+    _POST_PLAN,
+    DREAM_REPLY,
+    _cycle_backend,
+    _FakeEmbedderClient,
+    _FakeGuard,
+    _patch_cycle_seams,
+)
 from ._runners import (
     FakeResources,
-    RecordingRunner,
     ScriptedBackend,
     StubBackend,
     make_persona,
@@ -98,13 +118,12 @@ era: 3
 
 ZENITH_PERSONALITY = _personality("zenith")
 
-# The dream's reply: a new 最近 list, and one that parses as nothing at all.
-DREAM_REPLY = '{"recent": ["改写后的近况"]}'
+# The dream's reply that parses as nothing at all (the good one, `DREAM_REPLY`,
+# lives with the shared cycle seams in `_golden_seams.py`).
 BAD_DREAM_REPLY = "我今天什么也不想写。"
 
 _INITIAL_MEMORY = "2026-08-01 | act | did a thing\n"
 
-_POST_PLAN = '{"plan":[{"action":"post","text":"hello from zenith"}]}'
 _EMPTY_PLAN = '{"plan":[]}'
 
 # One `/posts/search` result for the follow-topics world-context block. The
@@ -127,51 +146,15 @@ def _write_zenith(tmp_path: Path, *, personality: str = ZENITH_PERSONALITY) -> P
     return directory
 
 
-class _FakeEmbedderClient:
-    """A minimal `EmbedderClient` double: `.embed()` for the `Embedder`
-    protocol `run_dream` needs, `.health()` for the R10 probe -- the real
-    `EmbedderClient` is the only production type that carries both, so this
-    stands in for the whole thing rather than composing two separate fakes.
-    """
-
-    def __init__(self, *, healthy: bool = True) -> None:
-        self.healthy = healthy
-        self.health_calls = 0
-
-    def health(self) -> dict[str, object]:
-        self.health_calls += 1
-        if not self.healthy:
-            raise EmbedderUnavailable("embedder down (test)")
-        return {"ok": True}
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        return [[1.0] for _ in texts]
-
-
-class _FakeGuard:
-    """A no-op `EmbedderGuard` double -- the real one shells out to
-    `bash embedder-guard.sh up/down`, which a unit test must never do."""
-
-    def __init__(self) -> None:
-        self.up_calls = 0
-        self.down_calls = 0
-
-    def up(self) -> None:
-        self.up_calls += 1
-
-    def down(self) -> None:
-        self.down_calls += 1
-
-
 def _memory_unchanged(tmp_agent: Path) -> bool:
     path = tmp_agent / "agents" / "zenith" / "memory.md"
     return path.read_text(encoding="utf-8") == _INITIAL_MEMORY
 
 
 def _hold_lock(tmp_agent: Path, name: str) -> None:
-    """A FRESH lock file (mtime "now") -- FileLock treats it as actively
-    held, not stale, so `run_act` must raise `LockBusy` rather than steal
-    it."""
+    """A FRESH lock file (mtime "now") -- the act lease's file half treats it
+    as actively held, not stale, so `run_graph` must raise `LeaseBusy` (which
+    the command turns into a SKIP) rather than steal it."""
     path = act_lock_path(tmp_agent, name)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("999999\n", encoding="utf-8")
@@ -211,12 +194,12 @@ def tmp_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         post_ceiling_per_day=10,
     )
 
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: FakeResources())
-    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: StubBackend(_POST_PLAN))
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: _FakeGuard())
-    monkeypatch.setattr(cli, "_health_check", lambda settings: True)
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: FakeResources())
+    monkeypatch.setattr(compose, "backend_for", lambda persona, settings: StubBackend(_POST_PLAN))
+    monkeypatch.setattr(compose, "embedder_for", lambda settings: _FakeEmbedderClient())
+    monkeypatch.setattr(compose, "guard_for", lambda settings: _FakeGuard())
+    monkeypatch.setattr(compose, "health_check", lambda settings: True)
     return tmp_path
 
 
@@ -235,7 +218,7 @@ def test_act_reports_the_outcome_name(tmp_agent: Path) -> None:
     assert "planner_empty" in result.stdout or "landed" in result.stdout
 
 
-def test_act_hands_run_act_an_embedder_and_the_configured_window(
+def test_act_hands_the_act_graph_an_embedder_and_the_configured_window(
     tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The duplicate guard's self-similarity sample reaches the wire from THIS
@@ -252,7 +235,7 @@ def test_act_hands_run_act_an_embedder_and_the_configured_window(
     """
     resources = FakeResources()
     resources.user_post_items = [{"text": "第一条"}, {"text": "第二条"}]
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: resources)
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: resources)
 
     result = runner.invoke(cli.app, ["act", "zenith"])
 
@@ -269,8 +252,8 @@ def test_an_unknown_account_exits_66(tmp_agent: Path) -> None:
 
 
 def _close_the_era(monkeypatch: pytest.MonkeyPatch) -> None:
-    unset = cli.load_settings().model_copy(update={"era_start": None})
-    monkeypatch.setattr(cli, "load_settings", lambda: unset)
+    unset = compose.load_settings().model_copy(update={"era_start": None})
+    monkeypatch.setattr(compose, "load_settings", lambda: unset)
 
 
 def test_act_without_era_start_exits_75_with_the_remedy_and_writes_nothing(
@@ -279,7 +262,7 @@ def test_act_without_era_start_exits_75_with_the_remedy_and_writes_nothing(
     _close_the_era(monkeypatch)
     result = runner.invoke(cli.app, ["act", "zenith"])
     assert result.exit_code == 75
-    assert cli.ERA_START_REMEDY in result.output
+    assert cli_errors.ERA_START_REMEDY in result.output
     assert _memory_unchanged(tmp_agent)
 
 
@@ -305,7 +288,7 @@ def test_a_real_act_run_lands_the_plan_and_exits_0(tmp_agent: Path) -> None:
     suite exercises.
 
     `/100` pins the rhythm settings' forwarding: the fixture sets
-    `post_probability=100`, and a `run_act` left on its own default would
+    `post_probability=100`, and ACT deps left on the `Settings` default would
     roll against 60 (and veto the post on most rolls)."""
     result = runner.invoke(cli.app, ["act", "zenith"])
     assert result.exit_code == 0
@@ -318,7 +301,7 @@ def test_a_real_act_run_lands_the_plan_and_exits_0(tmp_agent: Path) -> None:
 def test_act_dry_run_with_an_empty_plan_reports_nothing_and_planner_empty(
     tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: StubBackend(_EMPTY_PLAN))
+    monkeypatch.setattr(compose, "backend_for", lambda persona, settings: StubBackend(_EMPTY_PLAN))
     result = runner.invoke(cli.app, ["act", "zenith", "--dry-run"])
     assert result.exit_code == 0
     assert "(nothing)" in result.stdout
@@ -331,7 +314,7 @@ def test_act_reports_vetoed_actions(tmp_agent: Path, monkeypatch: pytest.MonkeyP
     Codex is no longer allow-listed (loop-engine spec §7); this veto is
     independent of backend."""
     dm_plan = '{"plan":[{"action":"dm","username":"vex","text":"hi"}]}'
-    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: StubBackend(dm_plan))
+    monkeypatch.setattr(compose, "backend_for", lambda persona, settings: StubBackend(dm_plan))
 
     result = runner.invoke(cli.app, ["act", "zenith", "--dry-run"])
     assert "vetoed" in result.stdout
@@ -349,7 +332,7 @@ def test_act_with_no_credentials_skips_with_the_remedy_and_exits_75(
     stand-in's."""
     _write_zenith(tmp_path)  # no api_key.txt written
     settings = Settings(agent_root=tmp_path, swil_url="https://example.test")
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
 
     result = runner.invoke(cli.app, ["act", "zenith"])
 
@@ -372,7 +355,7 @@ def test_act_with_a_blank_api_key_file_skips_with_the_remedy_and_exits_75(
     directory = _write_zenith(tmp_path)
     (directory / "api_key.txt").write_text("   \n", encoding="utf-8")
     settings = Settings(agent_root=tmp_path, swil_url="https://example.test")
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
 
     result = runner.invoke(cli.app, ["act", "zenith"])
 
@@ -406,7 +389,7 @@ def test_act_with_an_unparseable_persona_skips_with_the_remedy_and_exits_75(
     (directory / "personality.md").write_text("# no bullets here at all\n", encoding="utf-8")
     (directory / "memory.md").write_text("", encoding="utf-8")
     settings = Settings(agent_root=tmp_path)
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
 
     result = runner.invoke(cli.app, ["act", "zenith"])
 
@@ -430,9 +413,9 @@ def test_act_with_a_dead_deepseek_key_skips_with_the_remedy_and_exits_75(
         encoding="utf-8",
     )
     settings = Settings(agent_root=tmp_path)
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: FakeResources())
-    monkeypatch.setattr(cli, "_health_check", lambda settings: True)
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: FakeResources())
+    monkeypatch.setattr(compose, "health_check", lambda settings: True)
 
     def _dead_key(
         choice: object,
@@ -444,7 +427,7 @@ def test_act_with_a_dead_deepseek_key_skips_with_the_remedy_and_exits_75(
     ) -> object:
         raise BackendUnavailableError("deepseek key not found at /fake/.claude/.deepseek-key")
 
-    monkeypatch.setattr(cli, "get_backend", _dead_key)
+    monkeypatch.setattr(compose_backend, "get_backend", _dead_key)
 
     result = runner.invoke(cli.app, ["act", "zenith"])
 
@@ -464,10 +447,10 @@ def test_act_with_a_failed_login_skips_with_the_remedy_and_exits_75(
     invocation of a `SWIL_PASS` account, not only once at setup."""
     _write_zenith(tmp_path)
     settings = Settings(agent_root=tmp_path, swil_url="https://example.test", swil_pass="wrongpass")
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
-    monkeypatch.setattr(cli, "_health_check", lambda settings: True)
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
+    monkeypatch.setattr(compose, "health_check", lambda settings: True)
     monkeypatch.setattr(
-        cli,
+        compose,
         "resolve_auth",
         lambda directory, *, username, password: _FailingPasswordAuth(username, password),
     )
@@ -482,10 +465,11 @@ def test_act_with_a_failed_login_skips_with_the_remedy_and_exits_75(
 
 class _InjectedBugError(Exception):
     """A stand-in for a genuine programming error -- deliberately NOT an
-    `AccountSetupError` or `LockBusy`, so it cannot be misclassified as a
-    known setup failure. Injected directly into the composition root
-    (`_resources_for`), per the coordinator's instruction, rather than by
-    contriving a real dependency to break."""
+    `AccountSetupError` (the one known setup-failure type, which a busy lease
+    also becomes), so it cannot be misclassified as a known setup failure.
+    Injected directly into the composition root (`_resources_for`), per the
+    coordinator's instruction, rather than by contriving a real dependency
+    to break."""
 
 
 def test_act_an_unexpected_composition_failure_exits_75_and_logs_unexpected(
@@ -494,7 +478,7 @@ def test_act_an_unexpected_composition_failure_exits_75_and_logs_unexpected(
     def _boom(persona: Persona, settings: Settings) -> FakeResources:
         raise _InjectedBugError("boom -- not a setup failure")
 
-    monkeypatch.setattr(cli, "_resources_for", _boom)
+    monkeypatch.setattr(compose, "resources_for", _boom)
 
     with caplog.at_level("DEBUG"):
         result = runner.invoke(cli.app, ["act", "zenith"])
@@ -518,10 +502,10 @@ def test_act_seed_makes_the_rhythm_roll_reproducible(
     rhythm decision and plan."""
     _write_zenith(tmp_path, personality=ZENITH_PERSONALITY)
     settings = Settings(agent_root=tmp_path)
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: FakeResources())
-    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: StubBackend(_POST_PLAN))
-    monkeypatch.setattr(cli, "_health_check", lambda settings: True)
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: FakeResources())
+    monkeypatch.setattr(compose, "backend_for", lambda persona, settings: StubBackend(_POST_PLAN))
+    monkeypatch.setattr(compose, "health_check", lambda settings: True)
 
     first = runner.invoke(cli.app, ["act", "zenith", "--dry-run", "--seed", "7"])
     second = runner.invoke(cli.app, ["act", "zenith", "--dry-run", "--seed", "7"])
@@ -546,7 +530,7 @@ def test_dream_an_unknown_account_exits_66(tmp_agent: Path) -> None:
 
 
 def test_dream_a_held_lock_exits_75(tmp_agent: Path) -> None:
-    from swil_agent.locks import dream_lock_path
+    from swil_agent.locks.file import dream_lock_path
 
     path = dream_lock_path(tmp_agent, "zenith")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -560,7 +544,7 @@ def test_dream_with_no_credentials_skips_with_the_remedy_and_exits_75(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`dream`'s sibling of the `act` credentials test above: `_resources_for`
-    is built inside `_do_dream`, reached only after `_embedder_for`/
+    is built inside `_dream_deps_for`, reached only after `_embedder_for`/
     `_guard_for` -- those two are faked here (never the point of this test)
     so the only real thing running is auth resolution against a REAL,
     credential-less `tmp_path` roster. The guard must still bracket cleanly
@@ -568,9 +552,9 @@ def test_dream_with_no_credentials_skips_with_the_remedy_and_exits_75(
     _write_zenith(tmp_path)  # no api_key.txt written
     settings = Settings(agent_root=tmp_path, swil_url="https://example.test")
     guard = _FakeGuard()
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: guard)
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
+    monkeypatch.setattr(compose, "embedder_for", lambda settings: _FakeEmbedderClient())
+    monkeypatch.setattr(compose, "guard_for", lambda settings: guard)
 
     result = runner.invoke(cli.app, ["dream", "zenith"])
 
@@ -591,9 +575,9 @@ def test_dream_with_a_blank_api_key_file_skips_with_the_remedy_and_exits_75(
     directory = _write_zenith(tmp_path)
     (directory / "api_key.txt").write_text("   \n", encoding="utf-8")
     settings = Settings(agent_root=tmp_path, swil_url="https://example.test")
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: _FakeGuard())
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
+    monkeypatch.setattr(compose, "embedder_for", lambda settings: _FakeEmbedderClient())
+    monkeypatch.setattr(compose, "guard_for", lambda settings: _FakeGuard())
 
     result = runner.invoke(cli.app, ["dream", "zenith"])
 
@@ -616,8 +600,8 @@ def test_dream_with_an_unparseable_persona_skips_with_the_remedy_and_exits_75(
     (directory / "memory.md").write_text("", encoding="utf-8")
     settings = Settings(agent_root=tmp_path)
     guard = _FakeGuard()
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: guard)
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
+    monkeypatch.setattr(compose, "guard_for", lambda settings: guard)
 
     result = runner.invoke(cli.app, ["dream", "zenith"])
 
@@ -637,12 +621,12 @@ def test_dream_an_unexpected_composition_failure_exits_75_logs_unexpected_and_st
     unexpected exception, not only on the known ones the other guard-bracket
     test exercises."""
     guard = _FakeGuard()
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: guard)
+    monkeypatch.setattr(compose, "guard_for", lambda settings: guard)
 
     def _boom(settings: Settings) -> EmbedderClient:
         raise _InjectedBugError("boom -- not a setup failure")
 
-    monkeypatch.setattr(cli, "_embedder_for", _boom)
+    monkeypatch.setattr(compose, "embedder_for", _boom)
 
     with caplog.at_level("DEBUG"):
         result = runner.invoke(cli.app, ["dream", "zenith"])
@@ -657,12 +641,12 @@ def test_dream_an_unexpected_composition_failure_exits_75_logs_unexpected_and_st
 def test_dream_guard_brackets_the_whole_call_up_then_down(
     tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """R10 (progress.md task 2/12 forward requirement): the CLI, not
-    `run_dream`, owns the embedder guard bracket -- `run_dream`'s own
+    """R10 (progress.md task 2/12 forward requirement): the CLI, not the
+    DREAM graph, owns the embedder guard bracket -- the `dream` command's own
     docstring documents this explicitly. Proves `up()` runs before `down()`
     and both run exactly once for a single `dream` invocation."""
     guard = _FakeGuard()
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: guard)
+    monkeypatch.setattr(compose, "guard_for", lambda settings: guard)
 
     _set_last_dream(tmp_agent, "zenith", hours_ago=1)  # cheapest path: cooldown SKIP
     runner.invoke(cli.app, ["dream", "zenith", "--auto"])
@@ -681,7 +665,9 @@ def test_dream_logs_loudly_once_when_embedder_is_down_after_guard_up(
     own WARN, which is deliberately a different, quieter signal). Blocking
     the account on cooldown keeps this test from needing a working
     backend/runner -- the probe fires before the cooldown check either way."""
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient(healthy=False))
+    monkeypatch.setattr(
+        compose, "embedder_for", lambda settings: _FakeEmbedderClient(healthy=False)
+    )
     _set_last_dream(tmp_agent, "zenith", hours_ago=1)
 
     with caplog.at_level("ERROR"):
@@ -700,11 +686,11 @@ def test_dream_force_mode_writes_and_reports_the_new_list(
     other dream tests use to stay cheap."""
     directory = _write_zenith(tmp_path)
     settings = Settings(agent_root=tmp_path)
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: FakeResources())
-    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: StubBackend(DREAM_REPLY))
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: _FakeGuard())
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: FakeResources())
+    monkeypatch.setattr(compose, "backend_for", lambda persona, settings: StubBackend(DREAM_REPLY))
+    monkeypatch.setattr(compose, "embedder_for", lambda settings: _FakeEmbedderClient())
+    monkeypatch.setattr(compose, "guard_for", lambda settings: _FakeGuard())
 
     result = runner.invoke(cli.app, ["dream", "zenith"])
     assert result.exit_code == 0
@@ -721,11 +707,13 @@ def test_dream_force_mode_reports_an_unparseable_reply_as_a_failed_dream(
     shape."""
     directory = _write_zenith(tmp_path)
     settings = Settings(agent_root=tmp_path)
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: FakeResources())
-    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: StubBackend(BAD_DREAM_REPLY))
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: _FakeGuard())
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: FakeResources())
+    monkeypatch.setattr(
+        compose, "backend_for", lambda persona, settings: StubBackend(BAD_DREAM_REPLY)
+    )
+    monkeypatch.setattr(compose, "embedder_for", lambda settings: _FakeEmbedderClient())
+    monkeypatch.setattr(compose, "guard_for", lambda settings: _FakeGuard())
 
     result = runner.invoke(cli.app, ["dream", "zenith"])
     assert result.exit_code == 0
@@ -745,12 +733,6 @@ def test_dream_does_not_log_when_embedder_is_healthy(
 # ── cycle ────────────────────────────────────────────────────────────────
 
 
-def _cycle_backend() -> ScriptedBackend:
-    """One backend object for a whole cycle: the plan, then the dream's new
-    list -- in the order `run_cycle` spends them."""
-    return ScriptedBackend(_POST_PLAN, DREAM_REPLY)
-
-
 @pytest.fixture
 def tmp_cycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """`tmp_agent`'s sibling for the `cycle` command.
@@ -763,24 +745,6 @@ def tmp_cycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _write_zenith(tmp_path)
     _patch_cycle_seams(monkeypatch, tmp_path)
     return tmp_path
-
-
-def _patch_cycle_seams(monkeypatch: pytest.MonkeyPatch, agent_root: Path) -> None:
-    """Every network-, subprocess- and clock-facing seam a cycle reaches.
-
-    `_runner_for` is patched too: the world-context renderers shell out
-    through it, and a unit test must never spawn a real process.
-    """
-    # The rhythm roll always lets the planned post through, even after an
-    # earlier command in the same test already posted today.
-    settings = Settings(agent_root=agent_root, post_probability=100, post_ceiling_per_day=10)
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: FakeResources())
-    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: _cycle_backend())
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: _FakeGuard())
-    monkeypatch.setattr(cli, "_health_check", lambda settings: True)
-    monkeypatch.setattr(cli, "_runner_for", lambda settings: RecordingRunner())
 
 
 def test_cycle_runs_the_act_and_the_dream_in_one_process_and_exits_0(tmp_cycle: Path) -> None:
@@ -816,10 +780,10 @@ def test_cycle_without_era_start_exits_75_with_the_remedy_and_never_runs(
     def _never(**_kwargs: object) -> object:
         raise AssertionError("run_cycle must not start without ERA_START")
 
-    monkeypatch.setattr(cli, "run_cycle", _never)
+    monkeypatch.setattr(cli_run, "run_cycle", _never)
     result = runner.invoke(cli.app, ["cycle", "zenith", "--dry-run"])
     assert result.exit_code == 75
-    assert cli.ERA_START_REMEDY in result.output
+    assert cli_errors.ERA_START_REMEDY in result.output
 
 
 def test_cycle_exits_75_when_the_platform_is_unreachable(
@@ -829,7 +793,7 @@ def test_cycle_exits_75_when_the_platform_is_unreachable(
     decision `act` exits on. `OFFLINE` is one of the two outcomes that deny
     the round, so `cycle-one.sh`'s "act did not land, skip the dream" branch
     sees the code it expects."""
-    monkeypatch.setattr(cli, "_health_check", lambda settings: False)
+    monkeypatch.setattr(compose, "health_check", lambda settings: False)
     result = runner.invoke(cli.app, ["cycle", "zenith"])
     assert result.exit_code == 75
     assert "offline" in result.stdout
@@ -866,9 +830,9 @@ def test_cycle_with_no_credentials_skips_with_the_remedy_and_exits_75(
     _write_zenith(tmp_path)
     settings = Settings(agent_root=tmp_path, swil_url="https://example.test")
     guard = _FakeGuard()
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: guard)
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
+    monkeypatch.setattr(compose, "embedder_for", lambda settings: _FakeEmbedderClient())
+    monkeypatch.setattr(compose, "guard_for", lambda settings: guard)
 
     result = runner.invoke(cli.app, ["cycle", "zenith"])
 
@@ -890,7 +854,7 @@ def test_cycle_an_unexpected_failure_exits_75_and_logs_unexpected(
     def _boom(persona: Persona, settings: Settings) -> FakeResources:
         raise _InjectedBugError("boom -- not a setup failure")
 
-    monkeypatch.setattr(cli, "_resources_for", _boom)
+    monkeypatch.setattr(compose, "resources_for", _boom)
     with caplog.at_level("DEBUG"):
         result = runner.invoke(cli.app, ["cycle", "zenith"])
 
@@ -902,7 +866,7 @@ def test_cycle_an_unexpected_failure_exits_75_and_logs_unexpected(
 def test_cycle_leaves_no_lock_file_or_lease_row_behind(tmp_cycle: Path) -> None:
     """The orphan-lock class: a cycle that exits without releasing costs the
     account every round for the next 30 minutes, in BOTH runtimes."""
-    from swil_agent.locks import dream_lock_path
+    from swil_agent.locks.file import dream_lock_path
 
     result = runner.invoke(cli.app, ["cycle", "zenith"])
     assert result.exit_code == 0
@@ -921,7 +885,7 @@ def test_cycle_stores_opens_the_lease_db_with_wal_and_a_tuned_busy_timeout(tmp_p
     back, not inferred from which helper it happened to call.
     """
     settings = Settings(agent_root=tmp_path)
-    with cli._cycle_stores(settings, dry_run=False) as stores:
+    with compose.cycle_stores(settings, dry_run=False) as stores:
         journal_mode = stores.lease_db.execute("PRAGMA journal_mode").fetchone()[0]
         busy_timeout = stores.lease_db.execute("PRAGMA busy_timeout").fetchone()[0]
     assert str(journal_mode).lower() == "wal"
@@ -937,7 +901,7 @@ def test_cycle_stores_dry_run_lease_db_is_in_memory_but_still_tunes_busy_timeout
     harmless to set on a private in-memory connection nothing else can ever
     contend for; only WAL is the one pragma `:memory:` cannot honour."""
     settings = Settings(agent_root=tmp_path)
-    with cli._cycle_stores(settings, dry_run=True) as stores:
+    with compose.cycle_stores(settings, dry_run=True) as stores:
         busy_timeout = stores.lease_db.execute("PRAGMA busy_timeout").fetchone()[0]
     assert int(busy_timeout) == 8000
 
@@ -974,7 +938,7 @@ def test_cycle_dry_run_takes_no_lease_and_writes_nothing(
     creates its file whether or not anything is ever written through it.
     """
     probe = _LockWatchingProbe(tmp_cycle)
-    monkeypatch.setattr(cli, "_health_check", probe)
+    monkeypatch.setattr(compose, "health_check", probe)
 
     result = runner.invoke(cli.app, ["cycle", "zenith", "--dry-run"])
 
@@ -984,8 +948,8 @@ def test_cycle_dry_run_takes_no_lease_and_writes_nothing(
     assert (tmp_cycle / "agents" / "zenith" / "personality.md").read_text(
         encoding="utf-8"
     ) == ZENITH_PERSONALITY
-    assert not (tmp_cycle / ".agent-state" / cli.LEASE_DB_NAME).exists()
-    assert not (tmp_cycle / ".agent-state" / cli.CHECKPOINT_DB_NAME).exists()
+    assert not (tmp_cycle / ".agent-state" / cli_stores.LEASE_DB_NAME).exists()
+    assert not (tmp_cycle / ".agent-state" / cli_stores.CHECKPOINT_DB_NAME).exists()
 
 
 def test_cycle_dry_run_still_reports_the_plan_it_would_have_executed(tmp_cycle: Path) -> None:
@@ -1054,7 +1018,7 @@ def test_a_cycles_logout_record_lands_in_the_act_log(
     """§7.6's terminal record is the only line that says a cycle reached its
     end rather than dying somewhere in the middle, and it belongs where
     Bash's own `=== auto-run complete ===` is. It comes from
-    `swil_agent.graph.nodes`, the ONE module that emits both phases -- the
+    `swil_agent.graph.nodes`, the ONE logger family that emits both phases -- the
     dream node's deadline FAIL is a child logger for exactly this reason, so
     routing by module alone would put one of the two in the wrong file."""
     runner.invoke(cli.app, ["cycle", "zenith"])
@@ -1082,7 +1046,7 @@ def test_a_cycles_analysis_samplers_land_in_the_act_log(
 def test_a_cycles_dream_deadline_fail_lands_in_the_dream_log(
     tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch, round_log_level: None
 ) -> None:
-    """`swil_agent.graph.nodes` is the ONE module that emits records from both
+    """`swil_agent.graph.nodes` is the ONE logger family that emits records from both
     phases: the logout record (the cycle's own terminal line, act log) and the
     dream node's deadline `FAIL` (dream log). Routing by module alone puts one
     of the two in the wrong file, which is why the deadline line goes through
@@ -1100,12 +1064,13 @@ def test_a_cycles_dream_deadline_fail_lands_in_the_dream_log(
     """
     from dataclasses import replace
 
-    real_deps = cli._cycle_deps_for
+    real_deps = compose.cycle_deps_for
 
     def _no_time_at_all(*args: object, **kwargs: object) -> object:
-        return replace(real_deps(*args, **kwargs), dream_deadline_seconds=0.0)  # type: ignore[arg-type]
+        phase = real_deps(*args, **kwargs)  # type: ignore[arg-type]
+        return phase._replace(deps=replace(phase.deps, dream_deadline_seconds=0.0))
 
-    monkeypatch.setattr(cli, "_cycle_deps_for", _no_time_at_all)
+    monkeypatch.setattr(compose, "cycle_deps_for", _no_time_at_all)
     result = runner.invoke(cli.app, ["cycle", "zenith"])
     assert result.exit_code == 0
 
@@ -1121,7 +1086,9 @@ def test_a_cycles_embedder_probe_stays_in_the_dream_log(
     upload, and `swil-agent dream` already writes it to `dream.log`. A probe that changed
     file depending on which command ran it is the kind of inconsistency
     nobody notices until they grep for it during an outage."""
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient(healthy=False))
+    monkeypatch.setattr(
+        compose, "embedder_for", lambda settings: _FakeEmbedderClient(healthy=False)
+    )
     runner.invoke(cli.app, ["cycle", "zenith"])
 
     assert any("embedder unreachable" in line for line in _round_log_lines(tmp_cycle, "dream.log"))
@@ -1167,7 +1134,7 @@ def test_cycle_resume_continues_the_interrupted_run_without_re_acting(
     act phase and before any dream write, so the checkpoint the resume
     continues from is one where a post has already landed.
     """
-    from swil_agent.graph import nodes as nodes_module
+    from swil_agent.graph import nodes_dream
 
     posts: list[FakeResources] = []
 
@@ -1176,12 +1143,12 @@ def test_cycle_resume_continues_the_interrupted_run_without_re_acting(
         posts.append(resources)
         return resources
 
-    monkeypatch.setattr(cli, "_resources_for", _recording_resources)
+    monkeypatch.setattr(compose, "resources_for", _recording_resources)
 
     def _explode(**_kwargs: object) -> object:
         raise _InjectedBugError("interrupted mid-cycle")
 
-    monkeypatch.setattr(nodes_module, "write_step", _explode)
+    monkeypatch.setattr(nodes_dream, "write_step", _explode)
     first = runner.invoke(cli.app, ["cycle", "zenith"])
     assert first.exit_code == 75
     assert len(posts[0].created_posts) == 1
@@ -1194,7 +1161,7 @@ def test_cycle_resume_continues_the_interrupted_run_without_re_acting(
     monkeypatch.undo()
     monkeypatch.setenv("ERA_START", _ERA_START)
     _patch_cycle_seams(monkeypatch, tmp_cycle)
-    monkeypatch.setattr(cli, "_resources_for", _recording_resources)
+    monkeypatch.setattr(compose, "resources_for", _recording_resources)
 
     second = runner.invoke(cli.app, ["cycle", "zenith", "--resume"])
 
@@ -1371,9 +1338,9 @@ def test_cycle_feeds_the_planner_a_freshly_rendered_world_context(
     resources.search_results = {"alpha": [_SEARCH_HIT]}
 
     _patch_cycle_seams(monkeypatch, tmp_path)
-    monkeypatch.setattr(cli, "_backend_for", _recording_backend)
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: resources)
-    monkeypatch.setattr(cli, "datetime", _WorldContextClock)
+    monkeypatch.setattr(compose, "backend_for", _recording_backend)
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: resources)
+    monkeypatch.setattr(compose, "now", _WorldContextClock.now)
 
     result = runner.invoke(cli.app, ["cycle", "zenith", "--dry-run"])
 
@@ -1419,9 +1386,9 @@ def test_cycle_dates_every_block_of_the_prompt_from_one_clock_reading(
     resources.search_results = {"alpha": [_SEARCH_HIT]}
 
     _patch_cycle_seams(monkeypatch, tmp_path)
-    monkeypatch.setattr(cli, "_backend_for", _recording_backend)
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: resources)
-    monkeypatch.setattr(cli, "datetime", _advancing_clock())
+    monkeypatch.setattr(compose, "backend_for", _recording_backend)
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: resources)
+    monkeypatch.setattr(compose, "now", _advancing_clock().now)
 
     result = runner.invoke(cli.app, ["cycle", "zenith", "--dry-run"])
 
@@ -1461,8 +1428,8 @@ def test_cycle_budget_caps_what_the_guardrails_let_through(
         '{"action":"like","postId":"' + "c" * 24 + '"}]}'
     )
     monkeypatch.setattr(
-        cli,
-        "_backend_for",
+        compose,
+        "backend_for",
         lambda persona, settings: ScriptedBackend(three_likes, DREAM_REPLY),
     )
 
@@ -1490,7 +1457,7 @@ def test_cycle_carries_the_unsplash_key_down_to_the_executor(
     _write_zenith(tmp_path)
     _patch_cycle_seams(monkeypatch, tmp_path)
     monkeypatch.setattr(
-        cli,
+        compose,
         "load_settings",
         lambda: Settings(agent_root=tmp_path, unsplash_access_key="KEY-4471", post_probability=100),
     )
@@ -1526,13 +1493,13 @@ def test_cycle_reports_a_partial_round_as_landed_over_attempted(
         + '"}]}'
     )
     monkeypatch.setattr(
-        cli,
-        "_backend_for",
+        compose,
+        "backend_for",
         lambda persona, settings: ScriptedBackend(two_likes, DREAM_REPLY),
     )
     monkeypatch.setattr(
-        cli,
-        "_resources_for",
+        compose,
+        "resources_for",
         lambda persona, settings: FakeResources(like_raises=ApiError(500, "boom", None)),
     )
 
@@ -1543,37 +1510,11 @@ def test_cycle_reports_a_partial_round_as_landed_over_attempted(
 
 
 # ── cycle: the two reporting projections ──────────────────────────────────
-
-
-def test_the_dream_report_follows_the_write() -> None:
-    """`accepted` answers "did `personality.md` actually change", which is
-    `written` -- a claim about the FILE -- never `proceeded` or the presence
-    of a parsed list. The write node's dry-run guard returns `written=False`
-    with a list in hand, and a refused write does the same."""
-    state = {
-        "proceeded": True,
-        "recent": ["一件新事"],
-        "written": False,
-        "dream_reason": "file too large",
-    }
-    result = cli._dream_result_of(state)  # type: ignore[arg-type]
-    assert result.accepted is False
-    assert result.reason == "file too large"
-    assert result.recent == ["一件新事"]
-
-
-def test_a_cycle_with_no_outcome_yet_is_not_reported_as_a_failed_round() -> None:
-    """`run_cycle` returns the ACCUMULATED state, and a resumed thread with
-    nothing left to run carries whatever the interrupted run had already
-    recorded -- which may be nothing at all. Treating "not decided" as
-    "denied" would exit 75 on a cycle that simply had no work left, and
-    `cycle-one.sh` reads that as "the act did not land"."""
-    from swil_agent.models import ActOutcome
-
-    assert cli._cycle_granted_dream({}) is True
-    assert cli._cycle_granted_dream({"outcome": ActOutcome.OFFLINE}) is False
-    assert cli._cycle_granted_dream({"outcome": ActOutcome.LANDED_PARTIAL}) is True
-    assert cli._act_result_of({}) is None
+#
+# `test_the_dream_report_follows_the_write` and
+# `test_a_cycle_with_no_outcome_yet_is_not_reported_as_a_failed_round` moved
+# to `test_graph_phases.py` with the projections themselves (`graph/outcome.py`,
+# S3 Task 4).
 
 
 def test_cycle_dry_run_never_starts_or_probes_the_embedder(
@@ -1596,8 +1537,10 @@ def test_cycle_dry_run_never_starts_or_probes_the_embedder(
     _write_zenith(tmp_path)
     _patch_cycle_seams(monkeypatch, tmp_path)
     guard = _FakeGuard()
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: guard)
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient(healthy=False))
+    monkeypatch.setattr(compose, "guard_for", lambda settings: guard)
+    monkeypatch.setattr(
+        compose, "embedder_for", lambda settings: _FakeEmbedderClient(healthy=False)
+    )
 
     with caplog.at_level("ERROR"):
         result = runner.invoke(cli.app, ["cycle", "zenith", "--dry-run"])
@@ -1615,7 +1558,7 @@ def test_a_real_cycle_still_brackets_the_embedder_guard(
     keeps the `up`/`down` bracket exactly once each. Without this,
     skipping the guard unconditionally passes the dry-run test above."""
     guard = _FakeGuard()
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: guard)
+    monkeypatch.setattr(compose, "guard_for", lambda settings: guard)
 
     result = runner.invoke(cli.app, ["cycle", "zenith"])
 
@@ -1635,7 +1578,7 @@ def test_cycle_with_an_unparseable_persona_skips_with_the_remedy_and_exits_75(
     directory.mkdir(parents=True)
     (directory / "personality.md").write_text("# no bullets here at all\n", encoding="utf-8")
     (directory / "memory.md").write_text("", encoding="utf-8")
-    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
+    monkeypatch.setattr(compose, "load_settings", lambda: Settings(agent_root=tmp_path))
 
     result = runner.invoke(cli.app, ["cycle", "zenith"])
 
@@ -1674,8 +1617,8 @@ def test_cycle_writes_its_two_databases_into_the_agent_state_directory(
     incident."""
     result = runner.invoke(cli.app, ["cycle", "zenith"])
     assert result.exit_code == 0
-    assert (tmp_cycle / ".agent-state" / cli.CHECKPOINT_DB_NAME).is_file()
-    assert (tmp_cycle / ".agent-state" / cli.LEASE_DB_NAME).is_file()
+    assert (tmp_cycle / ".agent-state" / cli_stores.CHECKPOINT_DB_NAME).is_file()
+    assert (tmp_cycle / ".agent-state" / cli_stores.LEASE_DB_NAME).is_file()
 
 
 # ── version ──────────────────────────────────────────────────────────────
@@ -1706,7 +1649,7 @@ def test_resources_for_prefers_the_api_key_and_never_logs_in(tmp_path: Path) -> 
         seen_paths.append(request.url.path)
         raise AssertionError(f"unexpected request to {request.url.path}")
 
-    resources = cli._resources_for(persona, settings, transport=httpx.MockTransport(handler))
+    resources = compose.resources_for(persona, settings, transport=httpx.MockTransport(handler))
     assert seen_paths == []  # no login call for a bearer-token account
     assert resources is not None
 
@@ -1722,7 +1665,7 @@ def test_resources_for_logs_in_when_falling_back_to_password_auth(tmp_path: Path
         assert request.url.path == "/api/v1/auth/login"
         return httpx.Response(200, json={"data": {}}, headers={"set-cookie": "sid=abc123; Path=/"})
 
-    cli._resources_for(persona, settings, transport=httpx.MockTransport(handler))
+    compose.resources_for(persona, settings, transport=httpx.MockTransport(handler))
 
 
 def test_health_check_true_on_200(tmp_path: Path) -> None:
@@ -1732,7 +1675,7 @@ def test_health_check_true_on_200(tmp_path: Path) -> None:
         assert request.url.path == "/health"
         return httpx.Response(200)
 
-    assert cli._health_check(settings, transport=httpx.MockTransport(handler)) is True
+    assert compose.health_check(settings, transport=httpx.MockTransport(handler)) is True
 
 
 def test_health_check_false_on_non_200(tmp_path: Path) -> None:
@@ -1741,7 +1684,7 @@ def test_health_check_false_on_non_200(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503)
 
-    assert cli._health_check(settings, transport=httpx.MockTransport(handler)) is False
+    assert compose.health_check(settings, transport=httpx.MockTransport(handler)) is False
 
 
 def test_health_check_false_on_transport_error(tmp_path: Path) -> None:
@@ -1750,7 +1693,7 @@ def test_health_check_false_on_transport_error(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("refused", request=request)
 
-    assert cli._health_check(settings, transport=httpx.MockTransport(handler)) is False
+    assert compose.health_check(settings, transport=httpx.MockTransport(handler)) is False
 
 
 def test_act_plans_against_todays_date_not_a_file_on_disk(
@@ -1758,8 +1701,8 @@ def test_act_plans_against_todays_date_not_a_file_on_disk(
 ) -> None:
     """The `act` command's own half of the fix -- `cycle` is pinned above.
 
-    The two commands compose the world context independently (`run_act`'s
-    call site and `_cycle_deps_for`), so fixing one and not the other is a
+    The two commands compose the world context independently
+    (`_act_deps_for` and `_cycle_deps_for`), so fixing one and not the other is a
     live possibility: `swil-agent act` is what `heartbeat.sh` reaches, and it
     would have gone on planning against 2026-08-19 while `cycle` was fresh.
 
@@ -1780,9 +1723,9 @@ def test_act_plans_against_todays_date_not_a_file_on_disk(
 
     resources = FakeResources()
     resources.search_results = {"alpha": [_SEARCH_HIT]}
-    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: backend)
-    monkeypatch.setattr(cli, "_resources_for", _counting_resources)
-    monkeypatch.setattr(cli, "datetime", _WorldContextClock)
+    monkeypatch.setattr(compose, "backend_for", lambda persona, settings: backend)
+    monkeypatch.setattr(compose, "resources_for", _counting_resources)
+    monkeypatch.setattr(compose, "now", _WorldContextClock.now)
 
     result = runner.invoke(cli.app, ["act", "zenith", "--dry-run"])
 
@@ -1799,7 +1742,7 @@ def test_act_plans_against_todays_date_not_a_file_on_disk(
     assert resources.search_calls == [("alpha", 12), ("beta", 12)]
     assert not (tmp_agent / "context" / "feed_for_zenith.md").exists()
     # ONE `Resources` for the whole round. The world-context render happens
-    # beside `run_act`'s own arguments, so building a second one there is the
+    # inside `_act_deps_for`'s `finish`, so building a second one there is the
     # available mistake -- and for an account on the `SWIL_PASS` fallback it
     # would mean a second `POST /auth/login` per round, silently, 23 times.
     assert len(built) == 1
@@ -1820,9 +1763,9 @@ def test_act_dates_every_block_of_the_prompt_from_one_clock_reading(
     backend = StubBackend(_POST_PLAN)
     resources = FakeResources()
     resources.search_results = {"alpha": [_SEARCH_HIT]}
-    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: backend)
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: resources)
-    monkeypatch.setattr(cli, "datetime", _advancing_clock())
+    monkeypatch.setattr(compose, "backend_for", lambda persona, settings: backend)
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: resources)
+    monkeypatch.setattr(compose, "now", _advancing_clock().now)
 
     result = runner.invoke(cli.app, ["act", "zenith", "--dry-run"])
 
@@ -1834,7 +1777,7 @@ def test_act_dates_every_block_of_the_prompt_from_one_clock_reading(
 def test_persona_source_for_returns_a_working_git_persona_source(tmp_path: Path) -> None:
     _write_zenith(tmp_path)
     settings = Settings(agent_root=tmp_path)
-    source = cli._persona_source_for(settings)
+    source = compose.persona_source_for(settings)
     assert isinstance(source, GitPersonaSource)
     assert source.load("zenith").username == "zenith"
 
@@ -1842,19 +1785,19 @@ def test_persona_source_for_returns_a_working_git_persona_source(tmp_path: Path)
 def test_backend_for_builds_the_claude_backend_for_a_claude_persona(tmp_path: Path) -> None:
     settings = Settings(agent_root=tmp_path)
     persona = make_persona(username="zenith", directory=tmp_path, backend="claude")
-    backend = cli._backend_for(persona, settings)
+    backend = compose.backend_for(persona, settings)
     assert backend.name == "claude"
 
 
 def test_embedder_for_builds_a_real_embedder_client(tmp_path: Path) -> None:
     settings = Settings(agent_root=tmp_path, embedder_url="http://127.0.0.1:7777")
-    embedder = cli._embedder_for(settings)
+    embedder = compose.embedder_for(settings)
     assert isinstance(embedder, EmbedderClient)
 
 
 def test_guard_for_builds_a_real_embedder_guard(tmp_path: Path) -> None:
     settings = Settings(agent_root=tmp_path)
-    guard = cli._guard_for(settings)
+    guard = compose.guard_for(settings)
     assert isinstance(guard, EmbedderGuard)
 
 
@@ -1910,7 +1853,7 @@ def _sampling_resources(monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> Fa
     """
     resources = FakeResources(**kwargs)  # type: ignore[arg-type]
     resources.user_post_items = [dict(_TAGGED_POST)]
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: resources)
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: resources)
     return resources
 
 
@@ -1959,13 +1902,15 @@ def test_behavior_snapshot_with_a_dead_embedder_fails_open_and_exits_0(
     incident's blast radius, and the reason this path is fail-open."""
     _key(tmp_agent / "agents" / "zenith")
     resources = _sampling_resources(monkeypatch)
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient(healthy=False))
+    monkeypatch.setattr(
+        compose, "embedder_for", lambda settings: _FakeEmbedderClient(healthy=False)
+    )
 
     class _DeadEmbedder(_FakeEmbedderClient):
         def embed(self, texts: list[str]) -> list[list[float]]:
             raise EmbedderUnavailable("connection refused")
 
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _DeadEmbedder())
+    monkeypatch.setattr(compose, "embedder_for", lambda settings: _DeadEmbedder())
 
     result = runner.invoke(cli.app, ["behavior-snapshot", "zenith"])
 
@@ -1983,7 +1928,7 @@ def test_behavior_snapshot_does_not_start_the_embedder_daemon(
     _key(tmp_agent / "agents" / "zenith")
     _sampling_resources(monkeypatch)
     guard = _FakeGuard()
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: guard)
+    monkeypatch.setattr(compose, "guard_for", lambda settings: guard)
 
     result = runner.invoke(cli.app, ["behavior-snapshot", "zenith"])
 
@@ -2095,7 +2040,7 @@ def _intervention_args(
 
 def _intervention_resources(monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> FakeResources:
     resources = FakeResources(**kwargs)  # type: ignore[arg-type]
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: resources)
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: resources)
     return resources
 
 
@@ -2464,7 +2409,7 @@ def test_intervention_without_any_credential_exits_75_with_a_remedy(
     intervention block, which monkeypatches it away everywhere else.
     """
     _write_intervention_account(tmp_path)  # no api_key.txt, and swil_pass is None
-    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
+    monkeypatch.setattr(compose, "load_settings", lambda: Settings(agent_root=tmp_path))
 
     result = runner.invoke(cli.app, _intervention_args())
 
@@ -2488,8 +2433,8 @@ def test_intervention_with_a_password_and_no_api_key_still_records(
     """
     _write_intervention_account(tmp_path)  # no api_key.txt -- PasswordAuth takes over
     settings = Settings(agent_root=tmp_path, swil_url="https://example.test", swil_pass="hunter2")
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
-    build_resources = cli._resources_for  # captured before the monkeypatch below
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
+    build_resources = compose.resources_for  # captured before the monkeypatch below
     posted: list[tuple[str, object]] = []
     logins: list[str] = []
 
@@ -2503,8 +2448,8 @@ def test_intervention_with_a_password_and_no_api_key_still_records(
         return httpx.Response(201, json={"data": {"event": {"id": "evt-9"}}})
 
     monkeypatch.setattr(
-        cli,
-        "_resources_for",
+        compose,
+        "resources_for",
         lambda persona, settings: build_resources(
             persona, settings, transport=httpx.MockTransport(handler)
         ),
@@ -2523,7 +2468,7 @@ def test_intervention_with_a_password_and_no_api_key_still_records(
 
 def _metric_resources(monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> FakeResources:
     resources = FakeResources(**kwargs)  # type: ignore[arg-type]
-    monkeypatch.setattr(cli, "_resources_for_key", lambda directory, settings: resources)
+    monkeypatch.setattr(compose, "resources_for_key", lambda directory, settings: resources)
     return resources
 
 
@@ -2553,8 +2498,8 @@ def test_population_metric_without_a_name_uses_the_first_keyed_account(
     _key(human)
     chosen: list[str] = []
     monkeypatch.setattr(
-        cli,
-        "_resources_for_key",
+        compose,
+        "resources_for_key",
         lambda directory, settings: chosen.append(directory.name) or FakeResources(),
     )
 
@@ -2615,8 +2560,8 @@ def test_resources_for_key_names_a_blank_api_key_file(tmp_path: Path) -> None:
     directory.mkdir(parents=True)
     _key(directory, "   \n")
 
-    with pytest.raises(cli.AccountSetupError) as caught:
-        cli._resources_for_key(directory, Settings(agent_root=tmp_path))
+    with pytest.raises(cli_errors.AccountSetupError) as caught:
+        compose.resources_for_key(directory, Settings(agent_root=tmp_path))
 
     assert "no usable api_key.txt" in str(caught.value)
 
@@ -2638,8 +2583,8 @@ def test_resources_for_key_never_falls_back_to_the_session_cookie(tmp_path: Path
     _key(directory, "   \n")
     settings = Settings(agent_root=tmp_path, swil_pass="hunter2")
 
-    with pytest.raises(cli.AccountSetupError):
-        cli._resources_for_key(directory, settings)
+    with pytest.raises(cli_errors.AccountSetupError):
+        compose.resources_for_key(directory, settings)
 
 
 def test_summary_prints_the_dashboard_and_exits_0(
@@ -2650,7 +2595,7 @@ def test_summary_prints_the_dashboard_and_exits_0(
     was used" indistinguishable from "the default was used" -- which is
     exactly the coincidence standing constraint §4 is about, and it left a
     live mutation alive until the two were pulled apart."""
-    monkeypatch.setattr(cli, "datetime", _FixedClock)
+    monkeypatch.setattr(compose, "now", _FixedClock.now)
     (tmp_agent / "agents" / "zenith" / "memory.md").write_text(
         "2026-07-04 | post | 你好\n2026-07-04 | like | ok\n2026-08-19 | post | 今天\n",
         encoding="utf-8",
@@ -2685,7 +2630,7 @@ def test_summary_defaults_to_today_in_local_time(
     constraint §4): a stub that returned one instant for both `now()` and
     `now(UTC)` would format identically either way, and the assertion would
     name the right field while proving nothing."""
-    monkeypatch.setattr(cli, "datetime", _FixedClock)
+    monkeypatch.setattr(compose, "now", _FixedClock.now)
 
     result = runner.invoke(cli.app, ["summary"])
 
@@ -2698,7 +2643,7 @@ def test_summary_needs_no_account_no_server_and_no_credentials(
 ) -> None:
     """Local only: it reads `memory.md` files and touches no API. An empty
     roster is not an error -- there is no 66 and no 75 on this command."""
-    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
+    monkeypatch.setattr(compose, "load_settings", lambda: Settings(agent_root=tmp_path))
 
     result = runner.invoke(cli.app, ["summary", "2026-07-04"])
 
@@ -2724,7 +2669,9 @@ def test_resources_for_key_sends_the_bearer_token_and_nothing_else(tmp_path: Pat
         seen.append((request.url.path, request.headers.get("authorization")))
         return httpx.Response(200, json={"data": {"capturedAt": "2026-08-19T00:00:00.000Z"}})
 
-    resources = cli._resources_for_key(directory, settings, transport=httpx.MockTransport(handler))
+    resources = compose.resources_for_key(
+        directory, settings, transport=httpx.MockTransport(handler)
+    )
     resources.record_population_metric()
 
     assert seen == [("/api/v1/agents/population-metric", "Bearer k-secret")]
@@ -2742,7 +2689,7 @@ def test_an_unparseable_persona_skips_with_the_remedy_and_exits_75(
     directory.mkdir(parents=True)
     (directory / "personality.md").write_text("# no bullets here at all\n", encoding="utf-8")
     (directory / "memory.md").write_text("", encoding="utf-8")
-    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
+    monkeypatch.setattr(compose, "load_settings", lambda: Settings(agent_root=tmp_path))
 
     result = runner.invoke(cli.app, [command, "zenith"])
 
@@ -2765,7 +2712,7 @@ def test_an_unexpected_behavior_snapshot_failure_exits_75_not_1(
     def boom(*_args: object, **_kwargs: object) -> object:
         raise OSError("disk on fire")
 
-    monkeypatch.setattr(cli, "run_behavior_snapshot", boom)
+    monkeypatch.setattr(cli_analysis, "run_behavior_snapshot", boom)
 
     result = runner.invoke(cli.app, ["behavior-snapshot", "zenith"])
 
@@ -2780,12 +2727,12 @@ def test_an_unexpected_population_metric_failure_exits_75_not_1(
     rejection rather than raising, so anything that DOES escape it is a bug
     -- and must still leave the 0/66/75 contract intact."""
     _key(tmp_agent / "agents" / "zenith")
-    monkeypatch.setattr(cli, "_resources_for_key", lambda directory, settings: FakeResources())
+    monkeypatch.setattr(compose, "resources_for_key", lambda directory, settings: FakeResources())
 
     def boom(*_args: object, **_kwargs: object) -> object:
         raise OSError("disk on fire")
 
-    monkeypatch.setattr(cli, "run_metric", boom)
+    monkeypatch.setattr(cli_analysis, "run_metric", boom)
 
     result = runner.invoke(cli.app, ["population-metric", "zenith"])
 
@@ -2804,7 +2751,7 @@ def test_behavior_snapshot_stamps_captured_at_in_utc(
     answers are on different dates."""
     _key(tmp_agent / "agents" / "zenith")
     resources = _sampling_resources(monkeypatch)
-    monkeypatch.setattr(cli, "datetime", _FixedClock)
+    monkeypatch.setattr(compose, "now", _FixedClock.now)
 
     result = runner.invoke(cli.app, ["behavior-snapshot", "zenith"])
 
@@ -2826,7 +2773,7 @@ def test_population_metric_never_borrows_another_accounts_key(
     other = tmp_agent / "agents" / "aardvark"
     other.mkdir(parents=True)
     _key(other)  # a keyed account exists -- just not the one that was named
-    monkeypatch.setattr(cli, "_resources_for_key", lambda directory, settings: FakeResources())
+    monkeypatch.setattr(compose, "resources_for_key", lambda directory, settings: FakeResources())
 
     result = runner.invoke(cli.app, ["population-metric", "zenith"])
 
@@ -2965,8 +2912,8 @@ class _MissingBinaryBackend:
     CLI is absent from PATH.
 
     `SubprocessRunner.run` re-raises `subprocess`'s own `FileNotFoundError`
-    as `BackendBinaryMissingError` (`llm/base.py`), so this reproduces what
-    `run_act`/`run_dream` actually see -- rather than a hand-written
+    as `BackendBinaryMissingError` (`llm/errors.py`), so this reproduces what
+    the act and dream graphs actually see -- rather than a hand-written
     `FileNotFoundError`, which would only test the guard's shape and not the
     translation the fix depends on. The translation itself is pinned
     separately by
@@ -2992,7 +2939,7 @@ def test_act_a_missing_backend_binary_exits_75_with_a_remedy(tmp_agent: Path) ->
     """
     monkeypatch_backend = _MissingBinaryBackend()
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(cli, "_backend_for", lambda persona, settings: monkeypatch_backend)
+        mp.setattr(compose, "backend_for", lambda persona, settings: monkeypatch_backend)
         result = runner.invoke(cli.app, ["act", "zenith"])
 
     assert result.exit_code == 75
@@ -3016,7 +2963,7 @@ def test_dream_a_missing_backend_binary_exits_75_with_a_remedy(tmp_agent: Path) 
     "whole round silently drops every account on one backend" shape
     CLAUDE.md already records."""
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(cli, "_backend_for", lambda persona, settings: _MissingBinaryBackend())
+        mp.setattr(compose, "backend_for", lambda persona, settings: _MissingBinaryBackend())
         result = runner.invoke(cli.app, ["dream", "zenith"])
 
     assert result.exit_code == 75
@@ -3070,15 +3017,15 @@ def test_a_dream_writes_dream_log_and_leaves_auto_run_log_alone(
     """
     _write_zenith(tmp_path)
     settings = Settings(agent_root=tmp_path)
-    monkeypatch.setattr(cli, "load_settings", lambda: settings)
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: FakeResources())
+    monkeypatch.setattr(compose, "load_settings", lambda: settings)
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: FakeResources())
     monkeypatch.setattr(
-        cli,
-        "_backend_for",
+        compose,
+        "backend_for",
         lambda persona, settings: StubBackend(DREAM_REPLY),
     )
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: _FakeGuard())
+    monkeypatch.setattr(compose, "embedder_for", lambda settings: _FakeEmbedderClient())
+    monkeypatch.setattr(compose, "guard_for", lambda settings: _FakeGuard())
 
     result = runner.invoke(cli.app, ["dream", "zenith"])
     assert result.exit_code == 0
@@ -3108,8 +3055,8 @@ def test_an_act_writes_auto_run_log_and_leaves_dream_log_alone(
 def test_the_two_log_filenames_are_the_ones_the_scripts_use() -> None:
     """Pinned as literals against the scripts, so a rename shows up here
     rather than as a silently-empty file someone greps months later."""
-    assert cli.ACT_LOG_FILENAME == "auto-run.log"
-    assert cli.DREAM_LOG_FILENAME == "dream.log"
+    assert cli_logs.ACT_LOG_FILENAME == "auto-run.log"
+    assert cli_logs.DREAM_LOG_FILENAME == "dream.log"
 
 
 # ── doctor / measure-status / non-prod (spec §11) ──────────────────────────
@@ -3126,11 +3073,13 @@ def _doctor_ready(
 ) -> None:
     """A doctor invocation whose only variables are the ones the test is
     about: PATH, embedder, heartbeat, and the URL. Lock dir is tmp_path."""
-    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path, swil_url=url))
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
-    monkeypatch.setattr(cli, "_on_path", lambda name: True)
-    monkeypatch.setattr(cli, "_heartbeat_launchctl_status", lambda: "not loaded")
-    monkeypatch.setattr(cli, "_since_probe", lambda settings: (True, "ok"))
+    monkeypatch.setattr(
+        compose, "load_settings", lambda: Settings(agent_root=tmp_path, swil_url=url)
+    )
+    monkeypatch.setattr(compose, "embedder_for", lambda settings: _FakeEmbedderClient())
+    monkeypatch.setattr(doctor, "on_path", lambda name: True)
+    monkeypatch.setattr(doctor, "heartbeat_launchctl_status", lambda: "not loaded")
+    monkeypatch.setattr(doctor, "since_probe", lambda settings: (True, "ok"))
 
 
 def test_doctor_exits_75_when_url_is_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3159,7 +3108,7 @@ def test_doctor_exits_75_when_claude_is_missing_from_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _doctor_ready(monkeypatch, tmp_path)
-    monkeypatch.setattr(cli, "_on_path", lambda name: name != "claude")
+    monkeypatch.setattr(doctor, "on_path", lambda name: name != "claude")
     result = runner.invoke(cli.app, ["doctor"])
     assert result.exit_code == 75
     assert "claude" in result.stdout
@@ -3173,7 +3122,7 @@ def test_doctor_fails_when_era_start_is_unset(
     result = runner.invoke(cli.app, ["doctor"])
     assert result.exit_code == 75
     assert "ERA_START: FAIL (unset)" in result.stdout
-    assert cli.ERA_START_REMEDY in result.stdout
+    assert cli_errors.ERA_START_REMEDY in result.stdout
 
 
 def test_doctor_warns_when_era_start_is_in_the_future_and_stays_ready(
@@ -3212,7 +3161,7 @@ def test_doctor_checks_the_cli_of_every_roster_backend(
         checked.append(name)
         return name != "cursor-agent"
 
-    monkeypatch.setattr(cli, "_on_path", on_path)
+    monkeypatch.setattr(doctor, "on_path", on_path)
     result = runner.invoke(cli.app, ["doctor"])
     assert checked == ["claude", "uv", "codex", "grok", "cursor-agent"]
     assert "cursor-agent: not on PATH" in result.stdout
@@ -3225,7 +3174,7 @@ def test_doctor_missing_launchctl_is_not_a_fail(
     """Spec §11: `launchctl list` is best-effort; missing launchctl ≠ fail."""
     _doctor_ready(monkeypatch, tmp_path)
     monkeypatch.setattr(
-        cli, "_heartbeat_launchctl_status", lambda: "launchctl missing (not a fail)"
+        doctor, "heartbeat_launchctl_status", lambda: "launchctl missing (not a fail)"
     )
     result = runner.invoke(cli.app, ["doctor"])
     assert result.exit_code == 0
@@ -3241,7 +3190,7 @@ def test_measure_status_builds_a_summary_from_a_fake_runtime_payload(
     `missingPostVectors` (a server before S2) prints no such line."""
     _write_zenith(tmp_path)
     monkeypatch.setattr(
-        cli,
+        compose,
         "load_settings",
         lambda: Settings(agent_root=tmp_path, swil_url="https://example.test", era_start=None),
     )
@@ -3257,7 +3206,9 @@ def test_measure_status_builds_a_summary_from_a_fake_runtime_payload(
             {"date": "2026-08-01", "rounds": 4, "failOpen": 1, "missingSamples": 2, "landed": 9},
         ],
     }
-    monkeypatch.setattr(cli, "_fetch_runtime_health", lambda settings, *, since: payload)
+    monkeypatch.setattr(
+        measure_status, "fetch_runtime_health", lambda settings, *, since, today: payload
+    )
 
     result = runner.invoke(cli.app, ["measure-status"])
 
@@ -3278,7 +3229,7 @@ def test_measure_status_defaults_since_to_the_era_start_date(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        cli,
+        compose,
         "load_settings",
         lambda: Settings(
             agent_root=tmp_path,
@@ -3287,14 +3238,18 @@ def test_measure_status_defaults_since_to_the_era_start_date(
         ),
     )
     seen: list[object] = []
+    seen_today: list[object] = []
+    # `today` reaches the fetch from the `compose.today` seam, read once.
+    monkeypatch.setattr(compose, "today", lambda: _real_date(2026, 10, 20))
 
-    def _fetch(settings: Settings, *, since: object) -> dict[str, object]:
+    def _fetch(settings: Settings, *, since: object, today: object) -> dict[str, object]:
         seen.append(since)
+        seen_today.append(today)
         return {
             "points": [{"date": "2026-10-14", "rounds": 5}, {"date": "2026-10-15", "rounds": 2}]
         }
 
-    monkeypatch.setattr(cli, "_fetch_runtime_health", _fetch)
+    monkeypatch.setattr(measure_status, "fetch_runtime_health", _fetch)
 
     result = runner.invoke(cli.app, ["measure-status"])
 
@@ -3303,15 +3258,20 @@ def test_measure_status_defaults_since_to_the_era_start_date(
     assert "since=2026-10-15" in result.stdout
     assert "rounds: 2" in result.stdout
     assert [str(d) for d in seen] == ["2026-10-15"]
+    assert seen_today == [_real_date(2026, 10, 20)]
 
 
 def test_measure_status_an_explicit_since_wins_over_era_start(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        cli, "load_settings", lambda: Settings(agent_root=tmp_path, swil_url="https://example.test")
+        compose,
+        "load_settings",
+        lambda: Settings(agent_root=tmp_path, swil_url="https://example.test"),
     )
-    monkeypatch.setattr(cli, "_fetch_runtime_health", lambda settings, *, since: {"points": []})
+    monkeypatch.setattr(
+        measure_status, "fetch_runtime_health", lambda settings, *, since, today: {"points": []}
+    )
 
     result = runner.invoke(cli.app, ["measure-status", "--since", "2026-10-20"])
 
@@ -3322,7 +3282,7 @@ def test_measure_status_prints_post_vectors_missing_when_the_server_reports_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        cli,
+        compose,
         "load_settings",
         lambda: Settings(agent_root=tmp_path, swil_url="https://example.test", era_start=None),
     )
@@ -3334,7 +3294,9 @@ def test_measure_status_prints_post_vectors_missing_when_the_server_reports_it(
             {"date": "2026-08-02", "rounds": 1},
         ],
     }
-    monkeypatch.setattr(cli, "_fetch_runtime_health", lambda settings, *, since: payload)
+    monkeypatch.setattr(
+        measure_status, "fetch_runtime_health", lambda settings, *, since, today: payload
+    )
 
     result = runner.invoke(cli.app, ["measure-status"])
 
@@ -3346,10 +3308,14 @@ def test_measure_status_reads_the_total_when_there_are_no_points(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        cli, "load_settings", lambda: Settings(agent_root=tmp_path, swil_url="https://example.test")
+        compose,
+        "load_settings",
+        lambda: Settings(agent_root=tmp_path, swil_url="https://example.test"),
     )
     payload = {"rounds": 4, "missingPostVectors": 2}
-    monkeypatch.setattr(cli, "_fetch_runtime_health", lambda settings, *, since: payload)
+    monkeypatch.setattr(
+        measure_status, "fetch_runtime_health", lambda settings, *, since, today: payload
+    )
 
     result = runner.invoke(cli.app, ["measure-status"])
 
@@ -3361,13 +3327,15 @@ def test_measure_status_exits_75_on_api_fail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        cli, "load_settings", lambda: Settings(agent_root=tmp_path, swil_url="https://example.test")
+        compose,
+        "load_settings",
+        lambda: Settings(agent_root=tmp_path, swil_url="https://example.test"),
     )
 
-    def _boom(settings: Settings, *, since: object) -> dict[str, object]:
+    def _boom(settings: Settings, *, since: object, today: object) -> dict[str, object]:
         raise RuntimeError("connection refused")
 
-    monkeypatch.setattr(cli, "_fetch_runtime_health", _boom)
+    monkeypatch.setattr(measure_status, "fetch_runtime_health", _boom)
     result = runner.invoke(cli.app, ["measure-status"])
     assert result.exit_code == 75
     assert (
@@ -3392,7 +3360,7 @@ def test_require_non_prod_refuses_act_against_the_production_host_without_the_ov
     --i-mean-production."""
     monkeypatch.setenv("SWIL_REQUIRE_NON_PROD", "1")
     monkeypatch.setattr(
-        cli,
+        compose,
         "load_settings",
         lambda: Settings(agent_root=tmp_agent, swil_url=_PRODUCTION_URL),
     )
@@ -3409,7 +3377,7 @@ def test_require_non_prod_allows_act_with_the_override_flag(
 ) -> None:
     monkeypatch.setenv("SWIL_REQUIRE_NON_PROD", "1")
     monkeypatch.setattr(
-        cli,
+        compose,
         "load_settings",
         lambda: Settings(agent_root=tmp_agent, swil_url=_PRODUCTION_URL),
     )
@@ -3423,7 +3391,7 @@ def test_require_non_prod_refuses_cycle_against_the_production_host(
 ) -> None:
     monkeypatch.setenv("SWIL_REQUIRE_NON_PROD", "1")
     monkeypatch.setattr(
-        cli,
+        compose,
         "load_settings",
         lambda: Settings(agent_root=tmp_cycle, swil_url=_PRODUCTION_URL),
     )
@@ -3435,12 +3403,12 @@ def test_require_non_prod_refuses_cycle_against_the_production_host(
 def test_the_roster_count_reads_agents_only(tmp_path: Path) -> None:
     """Era 3 has one cohort; a missing `agents/` is an empty roster and a
     leftover `humans/` tree is not counted."""
-    assert cli._roster_count(tmp_path) == 0
+    assert doctor.roster_count(tmp_path) == 0
     _write_zenith(tmp_path)
     human = tmp_path / "humans" / "aardvark"
     human.mkdir(parents=True)
     (human / "personality.md").write_text(ZENITH_PERSONALITY, encoding="utf-8")
-    assert cli._roster_count(tmp_path) == 1
+    assert doctor.roster_count(tmp_path) == 1
 
 
 # ── Era 3: since probe, --smoke, register ───────────────────────────────────
@@ -3460,7 +3428,7 @@ def _since_transport(items: list[object], status: int = 200) -> httpx.MockTransp
 
 def test_since_probe_passes_when_server_returns_nothing(tmp_path: Path) -> None:
     transport = _since_transport([])
-    ok, _ = cli._since_probe(Settings(agent_root=tmp_path), transport=transport)
+    ok, _ = doctor.since_probe(Settings(agent_root=tmp_path), transport=transport)
     assert ok
     request = transport.seen[0]  # type: ignore[attr-defined]
     assert request.url.params["since"] == "2999-01-01T00:00:00Z"
@@ -3468,20 +3436,20 @@ def test_since_probe_passes_when_server_returns_nothing(tmp_path: Path) -> None:
 
 
 def test_since_probe_fails_when_server_ignores_since(tmp_path: Path) -> None:
-    ok, msg = cli._since_probe(
+    ok, msg = doctor.since_probe(
         Settings(agent_root=tmp_path), transport=_since_transport([{"id": "p1"}])
     )
     assert not ok and "deploy the backend first" in msg
 
 
 def test_since_probe_fails_on_http_error_and_bad_shape(tmp_path: Path) -> None:
-    ok, msg = cli._since_probe(Settings(agent_root=tmp_path), transport=_since_transport([], 500))
+    ok, msg = doctor.since_probe(Settings(agent_root=tmp_path), transport=_since_transport([], 500))
     assert not ok and "500" in msg
 
     def bad(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[1])
 
-    ok, msg = cli._since_probe(Settings(agent_root=tmp_path), transport=httpx.MockTransport(bad))
+    ok, msg = doctor.since_probe(Settings(agent_root=tmp_path), transport=httpx.MockTransport(bad))
     assert not ok and "shape" in msg
 
 
@@ -3489,7 +3457,7 @@ def test_since_probe_fails_when_unreachable(tmp_path: Path) -> None:
     def boom(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("refused")
 
-    ok, msg = cli._since_probe(Settings(agent_root=tmp_path), transport=httpx.MockTransport(boom))
+    ok, msg = doctor.since_probe(Settings(agent_root=tmp_path), transport=httpx.MockTransport(boom))
     assert not ok and "unreachable" in msg
 
 
@@ -3497,7 +3465,7 @@ def test_doctor_exits_75_when_since_probe_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _doctor_ready(monkeypatch, tmp_path)
-    monkeypatch.setattr(cli, "_since_probe", lambda settings: (False, "server ignores `since`"))
+    monkeypatch.setattr(doctor, "since_probe", lambda settings: (False, "server ignores `since`"))
     result = runner.invoke(cli.app, ["doctor"])
     assert result.exit_code == 75
     assert "since probe: FAIL" in result.stdout
@@ -3560,7 +3528,7 @@ def test_smoke_reports_each_distinct_arm(tmp_path: Path, monkeypatch: pytest.Mon
             raise RuntimeError("codex missing")
         return Backend("ok")
 
-    monkeypatch.setattr(cli, "_backend_for", fake_backend)
+    monkeypatch.setattr(compose, "backend_for", fake_backend)
     result = runner.invoke(cli.app, ["doctor", "--smoke"])
     assert "smoke claude:claude-haiku-5-5: OK" in result.stdout
     assert "smoke codex:gpt-5.6-luna: FAIL (codex missing)" in result.stdout
@@ -3576,7 +3544,7 @@ def test_smoke_empty_reply_is_a_failure(tmp_path: Path, monkeypatch: pytest.Monk
         def complete(self, req: object) -> str:
             return "  "
 
-    monkeypatch.setattr(cli, "_backend_for", lambda persona, settings: Silent())
+    monkeypatch.setattr(compose, "backend_for", lambda persona, settings: Silent())
     result = runner.invoke(cli.app, ["doctor", "--smoke"])
     assert "FAIL (empty reply)" in result.stdout
     assert result.exit_code == 75
@@ -3586,7 +3554,7 @@ def test_register_command_dry_run_wires_through(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_era3(tmp_path, "aa", "claude:claude-haiku-5-5")
-    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
+    monkeypatch.setattr(compose, "load_settings", lambda: Settings(agent_root=tmp_path))
     result = runner.invoke(cli.app, ["register", "aa", "--dry-run"])
     assert result.exit_code == 0
     assert "[dry-run] POST /auth/register" in result.stdout
@@ -3595,19 +3563,19 @@ def test_register_command_dry_run_wires_through(
 def test_register_command_unknown_account_exits_66(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
+    monkeypatch.setattr(compose, "load_settings", lambda: Settings(agent_root=tmp_path))
     result = runner.invoke(cli.app, ["register", "ghost", "--dry-run"])
     assert result.exit_code == 66
 
 
 def test_register_command_failures_exit_75(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
+    monkeypatch.setattr(compose, "load_settings", lambda: Settings(agent_root=tmp_path))
+    monkeypatch.setattr(compose, "embedder_for", lambda settings: _FakeEmbedderClient())
 
     def fail(*args: object, **kwargs: object) -> None:
-        raise cli.RegisterError("embedder down")
+        raise RegisterError("embedder down")
 
-    monkeypatch.setattr(cli, "register_account", fail)
+    monkeypatch.setattr(cli_ops, "register_account", fail)
     result = runner.invoke(cli.app, ["register", "aa"])
     assert result.exit_code == 75
     assert "embedder down" in result.stdout
@@ -3617,14 +3585,14 @@ def test_register_command_failures_exit_75(tmp_path: Path, monkeypatch: pytest.M
 def test_register_command_forwards_adopt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argv: list[str], expected: bool
 ) -> None:
-    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
+    monkeypatch.setattr(compose, "load_settings", lambda: Settings(agent_root=tmp_path))
+    monkeypatch.setattr(compose, "embedder_for", lambda settings: _FakeEmbedderClient())
     seen: dict[str, object] = {}
 
     def record(*args: object, **kwargs: object) -> None:
         seen.update(kwargs)
 
-    monkeypatch.setattr(cli, "register_account", record)
+    monkeypatch.setattr(cli_ops, "register_account", record)
     result = runner.invoke(cli.app, ["register", "aa", *argv])
     assert result.exit_code == 0
     assert seen["adopt"] is expected
@@ -3633,14 +3601,14 @@ def test_register_command_forwards_adopt(
 def test_register_command_refuses_an_existing_user_without_adopt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli, "load_settings", lambda: Settings(agent_root=tmp_path))
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient())
+    monkeypatch.setattr(compose, "load_settings", lambda: Settings(agent_root=tmp_path))
+    monkeypatch.setattr(compose, "embedder_for", lambda settings: _FakeEmbedderClient())
 
     def refuse(*args: object, adopt: bool, **kwargs: object) -> None:
         if not adopt:
-            raise cli.RegisterError("@aa already exists on the server. Pass --adopt")
+            raise RegisterError("@aa already exists on the server. Pass --adopt")
 
-    monkeypatch.setattr(cli, "register_account", refuse)
+    monkeypatch.setattr(cli_ops, "register_account", refuse)
     result = runner.invoke(cli.app, ["register", "aa"])
     assert result.exit_code == 75
     assert "--adopt" in result.stdout
@@ -3656,9 +3624,9 @@ def _set_round_env(monkeypatch: pytest.MonkeyPatch, value: str | None) -> None:
     """Re-patch `load_settings` with `swil_round_id` set, keeping whatever
     settings the fixture installed (`load_settings` is patched, so the env
     var itself is never read)."""
-    base = cli.load_settings()
+    base = compose.load_settings()
     patched = base.model_copy(update={"swil_round_id": value})
-    monkeypatch.setattr(cli, "load_settings", lambda: patched)
+    monkeypatch.setattr(compose, "load_settings", lambda: patched)
 
 
 def _checkpointed_rounds(agent_root: Path) -> list[str]:
@@ -3737,14 +3705,14 @@ def _interrupt_a_cycle(
 ) -> None:
     """Run `zenith` under `env` until the `write` node blows up, leaving a
     checkpointed thread to resume, then reinstall the fixture's seams."""
-    from swil_agent.graph import nodes as nodes_module
+    from swil_agent.graph import nodes_dream
 
     _set_round_env(monkeypatch, env)
 
     def _explode(**_kwargs: object) -> object:
         raise _InjectedBugError("interrupted mid-cycle")
 
-    monkeypatch.setattr(nodes_module, "write_step", _explode)
+    monkeypatch.setattr(nodes_dream, "write_step", _explode)
     assert runner.invoke(cli.app, ["cycle", "zenith"]).exit_code == 75
 
     monkeypatch.undo()
@@ -3782,7 +3750,7 @@ def test_a_late_resume_of_a_sweep_thread_is_refused_with_64(
         posts.append(resources)
         return resources
 
-    monkeypatch.setattr(cli, "_resources_for", _recording_resources)
+    monkeypatch.setattr(compose, "resources_for", _recording_resources)
 
     result = runner.invoke(cli.app, ["cycle", "zenith", "--resume"])
 
@@ -3904,7 +3872,7 @@ def test_act_files_the_post_vector_under_the_round_id_it_runs_under(
     # all-1.0 vectors cannot drop the candidate as a duplicate.
     resources = FakeResources()
     resources.user_post_items = [{"text": "第一条"}]
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: resources)
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: resources)
     _set_round_env(monkeypatch, _SWEEP_ID)
 
     result = runner.invoke(cli.app, ["act", "zenith"])
@@ -3920,7 +3888,7 @@ def test_a_cycle_card_reports_the_resolved_model_and_the_round_id(
 ) -> None:
     """The file says `claude:opus`; `--model haiku` is what the client ran."""
     resources = FakeResources()
-    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: resources)
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: resources)
     _set_round_env(monkeypatch, _SWEEP_ID)
 
     result = runner.invoke(cli.app, ["cycle", "zenith", "--model", "haiku"])
@@ -3975,7 +3943,7 @@ def tmp_backfill(tmp_agent: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, 
         "nova": _BackfillResources([_era_post(3)]),
     }
     monkeypatch.setattr(
-        cli, "_resources_for_key", lambda directory, settings: fakes[directory.name]
+        compose, "resources_for_key", lambda directory, settings: fakes[directory.name]
     )
     return fakes
 
@@ -4013,7 +3981,7 @@ def test_backfill_dry_run_counts_and_files_nothing(
     def _no_embedder(settings: Settings) -> object:
         raise AssertionError("a dry run needs no embedder")
 
-    monkeypatch.setattr(cli, "_embedder_for", _no_embedder)
+    monkeypatch.setattr(compose, "embedder_for", _no_embedder)
 
     result = runner.invoke(cli.app, ["backfill-post-vectors", "--dry-run"])
 
@@ -4031,7 +3999,7 @@ def test_backfill_without_era_start_exits_75(
     result = runner.invoke(cli.app, ["backfill-post-vectors"])
 
     assert result.exit_code == 75
-    assert cli.ERA_START_REMEDY in result.output
+    assert cli_errors.ERA_START_REMEDY in result.output
     assert tmp_backfill["zenith"].page_reads == []
 
 
@@ -4052,10 +4020,10 @@ def test_backfill_skips_an_account_without_a_key_and_exits_75(
 
     def _key_only(directory: Path, settings: Settings) -> _BackfillResources:
         if not (directory / "api_key.txt").is_file():
-            raise cli.AccountSetupError(f"{directory.name}: no usable api_key.txt")
+            raise cli_errors.AccountSetupError(f"{directory.name}: no usable api_key.txt")
         return tmp_backfill[directory.name]
 
-    monkeypatch.setattr(cli, "_resources_for_key", _key_only)
+    monkeypatch.setattr(compose, "resources_for_key", _key_only)
 
     result = runner.invoke(cli.app, ["backfill-post-vectors"])
 
@@ -4105,7 +4073,7 @@ def test_backfill_brackets_the_embedder_guard_on_a_real_run(
     tmp_backfill: dict[str, _BackfillResources], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     guard = _FakeGuard()
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: guard)
+    monkeypatch.setattr(compose, "guard_for", lambda settings: guard)
 
     result = runner.invoke(cli.app, ["backfill-post-vectors"])
 
@@ -4119,7 +4087,7 @@ def test_backfill_dry_run_takes_no_guard(
     def _no_guard(settings: Settings) -> object:
         raise AssertionError("a dry run must not start the embedder")
 
-    monkeypatch.setattr(cli, "_guard_for", _no_guard)
+    monkeypatch.setattr(compose, "guard_for", _no_guard)
 
     result = runner.invoke(cli.app, ["backfill-post-vectors", "--dry-run"])
 
@@ -4130,8 +4098,10 @@ def test_backfill_exits_75_with_a_remedy_when_the_embedder_stays_down(
     tmp_backfill: dict[str, _BackfillResources], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     guard = _FakeGuard()
-    monkeypatch.setattr(cli, "_guard_for", lambda settings: guard)
-    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient(healthy=False))
+    monkeypatch.setattr(compose, "guard_for", lambda settings: guard)
+    monkeypatch.setattr(
+        compose, "embedder_for", lambda settings: _FakeEmbedderClient(healthy=False)
+    )
 
     result = runner.invoke(cli.app, ["backfill-post-vectors"])
 

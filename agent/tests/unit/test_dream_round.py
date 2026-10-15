@@ -1,5 +1,6 @@
-"""Tests for `swil_agent.dream.round.run_dream` -- the `dream` command's
-composition: lock, cooldown, one LLM call, write, snapshot.
+"""Tests for the `dream` command's composition -- the `Phases.DREAM` graph
+over `swil_agent.dream.round`'s steps (`run_dream` until S3 Task 4): lease,
+cooldown, one LLM call, write, snapshot.
 
 Every test runs against a real `GitPersonaSource` on a `tmp_path` roster so
 the assertions are about bytes on disk.
@@ -13,12 +14,13 @@ from pathlib import Path
 import pytest
 
 from swil_agent.config import Settings
-from swil_agent.dream.round import run_dream
-from swil_agent.locks import LockBusy, dream_lock_path
+from swil_agent.locks.file import dream_lock_path
+from swil_agent.locks.lease import LeaseBusy
 from swil_agent.persona.format import parse_persona, render_persona
 from swil_agent.persona.loader import load_persona
 from swil_agent.persona.source import ARCHIVE_HEADER, GitPersonaSource
 
+from ._phases import run_dream_phase
 from ._runners import ExplodingBackend, FakeEmbedder, FakeResources, FakeState, StubBackend
 
 NOW = datetime(2026, 10, 14, 20, 0, 0)
@@ -74,7 +76,7 @@ def _run(
     backend: object | None = None,
 ):  # type: ignore[no-untyped-def]
     source = GitPersonaSource(root)
-    return run_dream(
+    return run_dream_phase(
         persona=source.load("xiaoman"),
         persona_source=source,
         resources=resources or FakeResources(),
@@ -216,7 +218,7 @@ def test_the_dream_lock_is_held_and_released(root: Path) -> None:
     lock = dream_lock_path(root, "xiaoman")
     lock.parent.mkdir(parents=True, exist_ok=True)
     lock.write_text("someone else", encoding="utf-8")
-    with pytest.raises(LockBusy):
+    with pytest.raises(LeaseBusy):
         _run(root, '{"recent": ["一"]}')
     assert _file(root) == PERSONALITY
 
