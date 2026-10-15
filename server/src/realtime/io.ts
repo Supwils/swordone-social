@@ -20,6 +20,7 @@ import { db } from '../db/client';
 import { conversations } from '../db/schema';
 import { attachRedisAdapter } from './adapter';
 import { env } from '../config/env';
+import { ID_RE } from '../contract/common';
 
 /** Match HTTP CORS: missing Origin (non-browser) is allowed; unknown Origin is not. */
 export function allowSocketOrigin(origin: string | undefined, host?: string): boolean {
@@ -35,7 +36,7 @@ export function allowSocketOrigin(origin: string | undefined, host?: string): bo
  * without noisy errors for clients that may reconnect with stale state.
  */
 const conversationIdSchema = z.object({
-  conversationId: z.string().regex(/^[a-f0-9]{24}$/, 'Invalid conversationId'),
+  conversationId: z.string().regex(ID_RE, 'Invalid conversationId'),
 });
 
 function parse<T>(schema: z.ZodType<T>, input: unknown): T | null {

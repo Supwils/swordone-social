@@ -82,6 +82,7 @@
  * appears, or if anything starts plotting these two slopes together, extract
  * the core into a shared helper at that point and delete both copies.
  */
+import type { LabRange } from '../../../contract/lab/era';
 import { and, asc, eq, gte, lte, ne, sql } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import { agentEvents, posts } from '../../../db/schema';
@@ -93,7 +94,7 @@ import type {
   CollapseTrend,
   CollapseVerdict,
   CollapseWatchDTO,
-} from './persona.types';
+} from '../../../contract/lab/persona';
 
 /**
  * The summary `similarity_step` files a MEASURED sample under
@@ -136,7 +137,7 @@ const ACT_SIMILARITY_SINCE = new Date('2026-08-19T00:00:00.000Z');
 const MIN_POINTS = 4;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const RANGE_DAYS: Record<'7d' | '30d' | '90d', number> = { '7d': 7, '30d': 30, '90d': 90 };
+const RANGE_DAYS: Record<LabRange, number> = { '7d': 7, '30d': 30, '90d': 90 };
 
 /**
  * Rounded to 6 decimal places, and the ROUNDED value is what decides `trend` as
@@ -150,10 +151,7 @@ function round6(x: number): number {
 }
 
 /** The window an HTTP `range` means, ending at `asOf`. Inclusive at both ends. */
-export function collapseWindow(
-  range: '7d' | '30d' | '90d',
-  asOf: Date,
-): { since: Date; until: Date } {
+export function collapseWindow(range: LabRange, asOf: Date): { since: Date; until: Date } {
   return { since: new Date(asOf.getTime() - RANGE_DAYS[range] * DAY_MS), until: asOf };
 }
 

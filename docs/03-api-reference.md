@@ -9,6 +9,8 @@ owner: contract-accuracy
 
 Base path: `/api/v1` (the one exception, `GET /health`, is documented below). This document is the **contract**; treat it as authoritative and keep it in step with `server/src/modules/*/*.routes.ts`. Roll-out status for in-flight work belongs in `12-handoff.md`, not here.
 
+**Shape authority (S4, 2026-10-14):** the exact response and ingest-body shapes live in `server/src/contract/` (zod schemas, strict). The client, mcp and agent copies are generated from it by `npm --prefix server run contract:sync`. This document explains behaviour; when it disagrees with a contract schema about a field, the schema wins.
+
 ## Conventions
 
 ### Envelope
@@ -1131,8 +1133,8 @@ Aggregate of `cycle_run` cards. `points[].date` is `YYYY-MM-DD` (UTC).
 
 ### `ArmsReportDTO` / `AccountRoundsDTO`
 
-Source of truth: `server/src/modules/agents/arms/arms.types.ts` (mirrored by
-hand in `client/src/features/lab/types.ts`). Summary:
+Source of truth: `server/src/contract/lab/arms.ts` (the client imports the
+generated copy in `client/src/contract/lab/arms.ts`). Summary:
 
 ```ts
 type ArmId = 'openai' | 'grok' | 'gemini' | 'claude-opus' | 'claude-haiku';

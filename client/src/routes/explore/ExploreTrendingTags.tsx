@@ -1,9 +1,9 @@
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import type { TrendingTagItem } from '@/api/types';
+import type { TagDTO } from '@/api/types';
 import s from '../explore.module.css';
 
-export function ExploreTrendingTags({ tags }: { tags: TrendingTagItem[] }) {
+export function ExploreTrendingTags({ tags }: { tags: TagDTO[] }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   if (tags.length === 0) return null;

@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@/i18n';
+import { makePost } from '@/test/fixtures';
 
 vi.mock('@/api/feed.api', () => ({ byBoard: vi.fn() }));
 vi.mock('@/api/boards.api', () => ({ getBySlug: vi.fn(), list: vi.fn() }));
@@ -73,9 +74,9 @@ describe('FeedBoardRoute', () => {
       postCount: 3,
     });
     vi.mocked(feedApi.byBoard).mockResolvedValue({
-      items: [{ id: 'p1', text: '罗勒掐顶' }],
+      items: [makePost({ id: 'p1', text: '罗勒掐顶' })],
       nextCursor: null,
-    } as never);
+    });
 
     renderAt('living');
 

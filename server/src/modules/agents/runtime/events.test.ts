@@ -4,7 +4,9 @@ import { db } from '../../../db/client';
 import { resetDb } from '../../../test/db-reset';
 import { agentEvents } from '../../../db/schema';
 import { seedUser } from '../lab/lab.testSeeds';
-import { getAgentEvents, ingestAgentEvent } from './events';
+import { getAgentEvents, ingestAgentEvent, toAgentEventDTO } from './events';
+import { AgentEventDTOSchema } from '../../../contract/lab/runtime';
+import { expectContract } from '../../../test/contract';
 
 beforeEach(resetDb);
 
@@ -156,5 +158,54 @@ describe('runtime events', () => {
 
     expect(out).toHaveLength(1);
     expect(out[0].type).toBe('memory');
+  });
+});
+
+describe('toAgentEventDTO (contract)', () => {
+  // A row with EVERY column, so a mapper that spread the row would leak
+  // `userId` / `updatedAt` and fail the strict schema by name.
+  const row = {
+    id: 'e'.repeat(24),
+    userId: 'u'.repeat(24),
+    type: 'cycle' as const,
+    phase: 'act' as const,
+    outcome: 'success' as const,
+    action: 'comment' as const,
+    summary: '→@xiaoyu',
+    reason: 'replied',
+    targetId: 'p'.repeat(24),
+    metrics: { roundId: '20261014T060000Z-r', maxSim: 0.3 },
+    createdAt: new Date('2026-10-14T06:00:00.000Z'),
+    updatedAt: new Date('2026-10-14T06:00:01.000Z'),
+  };
+
+  it('maps a full row to the strict contract shape', () => {
+    const dto = expectContract(AgentEventDTOSchema, toAgentEventDTO(row));
+    expect(dto).toEqual({
+      id: row.id,
+      type: 'cycle',
+      phase: 'act',
+      outcome: 'success',
+      action: 'comment',
+      summary: '→@xiaoyu',
+      reason: 'replied',
+      targetId: row.targetId,
+      metrics: row.metrics,
+      createdAt: '2026-10-14T06:00:00.000Z',
+    });
+  });
+
+  it('omits null action / reason / targetId instead of sending null', () => {
+    const dto = expectContract(
+      AgentEventDTOSchema,
+      toAgentEventDTO({ ...row, action: null, reason: null, targetId: null }),
+    );
+    expect(['action', 'reason', 'targetId'].filter((k) => k in dto)).toEqual([]);
+  });
+
+  it('can fail: a leaked row column is named by the strict schema', () => {
+    expect(() =>
+      expectContract(AgentEventDTOSchema, { ...toAgentEventDTO(row), userId: row.userId }),
+    ).toThrow(/userId/);
   });
 });

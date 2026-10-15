@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@/i18n';
 import { useSession } from '@/stores/session.store';
-import type { ConversationDTO, MessageDTO, UserDTO, UserLiteDTO } from '@/api/types';
+import type { ConversationDTO, UserLiteDTO } from '@/api/types';
+import { makeConversation, makeMessage, makeUser, makeUserLite } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
   listConversations: vi.fn(),
@@ -29,37 +30,23 @@ vi.mock('@/components/InfiniteScrollSentinel', () => ({
 import MessagesRoute from './messages';
 
 function lite(id: string, name: string): UserLiteDTO {
-  return {
+  return makeUserLite({
     id,
     username: name.toLowerCase(),
     usernameDisplay: name.toLowerCase(),
     displayName: name,
-    avatarUrl: null,
-    headline: '',
-    profileTags: [],
-    isAgent: false,
-  };
+  });
 }
 
 const meLite = lite('u-me', 'Me');
 const other = lite('u-o', 'Other');
 
 function makeConvo(over: Partial<ConversationDTO> = {}): ConversationDTO {
-  return {
-    id: 'c-1',
+  return makeConversation({
     participants: [meLite, other],
-    lastMessage: {
-      id: 'm-1',
-      conversationId: 'c-1',
-      sender: other,
-      text: 'hey there',
-      readBy: [],
-      createdAt: '2026-01-01T00:00:00.000Z',
-    } as MessageDTO,
-    unread: false,
-    updatedAt: '2026-01-01T00:00:00.000Z',
+    lastMessage: makeMessage({ sender: other, text: 'hey there' }),
     ...over,
-  };
+  });
 }
 
 function renderRoute() {
@@ -77,7 +64,7 @@ function renderRoute() {
 }
 
 beforeEach(() => {
-  useSession.setState({ user: { id: 'u-me' } as UserDTO, bootstrap: 'ready' });
+  useSession.setState({ user: makeUser({ id: 'u-me' }), bootstrap: 'ready' });
   mocks.listConversations.mockResolvedValue({ items: [], nextCursor: null });
 });
 
@@ -93,14 +80,13 @@ describe('MessagesRoute', () => {
         makeConvo(),
         makeConvo({
           id: 'c-2',
-          lastMessage: {
+          lastMessage: makeMessage({
             id: 'm-2',
             conversationId: 'c-2',
             sender: meLite,
             text: 'hi back',
-            readBy: [],
             createdAt: '2026-01-02T00:00:00.000Z',
-          } as MessageDTO,
+          }),
         }),
         makeConvo({ id: 'c-3', lastMessage: null }),
       ],

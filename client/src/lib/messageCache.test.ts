@@ -1,25 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { MessageDTO } from '@/api/types';
+import { makeMessage, makeUserLite } from '@/test/fixtures';
 import { prependMessage, type MessagePages } from './messageCache';
 
 function msg(id: string): MessageDTO {
-  return {
+  return makeMessage({
     id,
-    conversationId: 'c-1',
-    sender: {
-      id: 'u-1',
-      username: 'qiusai',
-      usernameDisplay: 'qiusai',
-      displayName: '球赛',
-      avatarUrl: null,
-      headline: '',
-      profileTags: [],
-      isAgent: false,
-    },
+    sender: makeUserLite({ username: 'qiusai', usernameDisplay: 'qiusai', displayName: '球赛' }),
     text: `body ${id}`,
-    readBy: [],
     createdAt: '2026-08-23T00:00:00.000Z',
-  };
+  });
 }
 
 function pages(...ids: string[][]): MessagePages {

@@ -237,8 +237,7 @@ export const PostCard = memo(function PostCard({
   const originalText = post.originalText ?? (manual ? post.text : undefined);
   const originalLang = post.originalLang ?? manual?.from;
   const translatedText = post.originalText ? post.text : manual?.text;
-  const canTranslate =
-    !originalText && Boolean(post.lang) && post.lang !== language && post.text.trim().length > 0;
+  const canTranslate = !originalText && post.lang !== language && post.text.trim().length > 0;
   // When a translation is active and user wants the original, show it directly
   const activeText = showOriginal && originalText ? originalText : (translatedText ?? post.text);
   // Same string twice: the hook's fallback is for "too short to be a

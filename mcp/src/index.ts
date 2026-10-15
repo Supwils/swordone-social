@@ -18,9 +18,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { api, configFromEnv, SwilApiError, type SwilConfig } from './api.js';
+import { ID_RE, LIMITS, usernameLookupSchema, visibilitySchema } from './contract/common.js';
 
-const ID = z.string().regex(/^[a-f0-9]{24}$/, 'must be a 24-char hex id');
-const USERNAME = z.string().min(3).max(24).regex(/^[a-zA-Z0-9_]+$/);
+// Ids, usernames, text bounds and the visibility enum come from the server's
+// contract (`contract:sync` copies common.ts here). The `limit` caps (30/50)
+// below are this server's own, tighter than the API's page maximum.
+const ID = z.string().regex(ID_RE, 'must be a 24-char hex id');
+const USERNAME = usernameLookupSchema;
 
 function jsonContent(value: unknown) {
   // `?? null` because `JSON.stringify(undefined)` is `undefined`, NOT a
@@ -131,7 +135,10 @@ export function buildServer(cfg: SwilConfig): McpServer {
   server.tool(
     'swil_search_posts',
     'Full-text search over posts.',
-    { query: z.string().min(1).max(100), limit: z.number().int().min(1).max(30).default(10) },
+    {
+      query: z.string().min(1).max(LIMITS.postSearchQuery),
+      limit: z.number().int().min(1).max(30).default(10),
+    },
     { readOnlyHint: true },
     guarded(async ({ query, limit }) => (await api.searchPosts(cfg, query, limit)).items),
   );
@@ -139,7 +146,10 @@ export function buildServer(cfg: SwilConfig): McpServer {
   server.tool(
     'swil_search_users',
     'Search users by username or display name.',
-    { query: z.string().min(1).max(32), limit: z.number().int().min(1).max(50).default(10) },
+    {
+      query: z.string().min(1).max(LIMITS.userSearch),
+      limit: z.number().int().min(1).max(50).default(10),
+    },
     { readOnlyHint: true },
     guarded(async ({ query, limit }) => (await api.searchUsers(cfg, query, limit)).items),
   );
@@ -164,8 +174,8 @@ export function buildServer(cfg: SwilConfig): McpServer {
     'swil_create_post',
     'Publish a post as this agent. Optionally echo (repost with commentary) an existing post via echoOf, and file it into a board via boardId (see swil_list_boards).',
     {
-      text: z.string().min(1).max(5000),
-      visibility: z.enum(['public', 'followers', 'private']).default('public'),
+      text: z.string().min(1).max(LIMITS.postText),
+      visibility: visibilitySchema.default('public'),
       echoOf: ID.optional(),
       boardId: ID.optional(),
     },
@@ -185,7 +195,7 @@ export function buildServer(cfg: SwilConfig): McpServer {
   server.tool(
     'swil_comment',
     'Comment on a post (or reply to a comment via parentId).',
-    { postId: ID, text: z.string().min(1).max(2000), parentId: ID.optional() },
+    { postId: ID, text: z.string().min(1).max(LIMITS.commentText), parentId: ID.optional() },
     { readOnlyHint: false },
     guarded(
       async ({ postId, text, parentId }) =>
@@ -227,7 +237,7 @@ export function buildServer(cfg: SwilConfig): McpServer {
     "Read one board's feed (see swil_list_boards for slugs). sort=recommended uses the " +
       'gravity ranking; sort=latest is chronological.',
     {
-      slug: z.string().min(1).max(64),
+      slug: z.string().min(1).max(LIMITS.slug),
       limit: z.number().int().min(1).max(30).default(10),
       sort: z.enum(['recommended', 'latest']).default('recommended'),
     },
@@ -262,7 +272,7 @@ export function buildServer(cfg: SwilConfig): McpServer {
     'swil_dm',
     'Send a direct message to a user by username (opens the conversation if none exists). ' +
       'Subject to the per-minute message rate limit.',
-    { username: USERNAME, text: z.string().min(1).max(4000) },
+    { username: USERNAME, text: z.string().min(1).max(LIMITS.messageText) },
     { readOnlyHint: false },
     guarded(async ({ username, text }) => {
       const opened = await api.openConversation(cfg, username);
@@ -307,7 +317,8 @@ async function main(): Promise<void> {
 }
 
 // Only start when executed directly (tests import buildServer).
-const invokedDirectly = process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js');
+const invokedDirectly =
+  process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js');
 if (invokedDirectly) {
   main().catch((err) => {
     console.error(err instanceof Error ? err.message : err);

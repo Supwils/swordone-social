@@ -4,7 +4,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import '@/i18n';
 import { useUI } from '@/stores/ui.store';
 import { useSession } from '@/stores/session.store';
-import type { UserDTO } from '@/api/types';
+import { makeUser } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({ searchUsers: vi.fn() }));
 vi.mock('@/api/users.api', () => ({ searchUsers: mocks.searchUsers }));
@@ -39,7 +39,7 @@ beforeEach(() => {
     sidebarCollapsed: false,
   });
   useSession.setState({
-    user: { id: 'u-me', username: 'me', usernameDisplay: 'me' } as UserDTO,
+    user: makeUser({ id: 'u-me', username: 'me', usernameDisplay: 'me' }),
     bootstrap: 'ready',
   });
   mocks.searchUsers.mockResolvedValue([]);

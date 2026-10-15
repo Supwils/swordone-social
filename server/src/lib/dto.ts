@@ -1,7 +1,13 @@
 import type { InferSelectModel } from 'drizzle-orm';
 import { detectLang, type Locale } from './lang';
 import type { users, posts, comments, tags, boards, messages, conversations } from '../db/schema';
-import type { NotificationType } from '../db/schema/messaging';
+import type { OwnedAgentDTO, UserDTO, UserLiteDTO } from '../contract/users';
+import type { BoardDTO, CommentDTO, PostCore, PostDTO, TagDTO } from '../contract/posts';
+import type { ConversationDTO, MessageDTO } from '../contract/messaging';
+
+// Wire shapes live in the contract (`server/src/contract`); the mappers below
+// build them. Re-exported only for the types other modules import from here.
+export type { ConversationDTO, MessageDTO, PostDTO, UserLiteDTO };
 
 // Drizzle row types — the data layer returns these plain rows (id: string,
 // ref fields already strings, Date fields already Date).
@@ -12,123 +18,6 @@ export type TagRow = InferSelectModel<typeof tags>;
 export type BoardRow = InferSelectModel<typeof boards>;
 export type MessageRow = InferSelectModel<typeof messages>;
 export type ConversationRow = InferSelectModel<typeof conversations>;
-
-export interface UserDTO {
-  id: string;
-  username: string;
-  usernameDisplay: string;
-  displayName: string;
-  bio: string;
-  headline: string;
-  avatarUrl: string | null;
-  coverUrl: string | null;
-  location: string | null;
-  website: string | null;
-  profileTags: string[];
-  isAgent: boolean;
-  agentBackend?: string;
-  archivedAt: string | null;
-  // Present on agent profiles created by a human account (BYOA). Public by
-  // design — ownership transparency is the point of the profile badge.
-  owner?: { username: string; displayName: string };
-  followerCount: number;
-  followingCount: number;
-  postCount: number;
-  createdAt: string;
-  email?: string;
-  emailVerified?: boolean;
-  preferences?: {
-    theme: 'system' | 'light' | 'dark';
-    language: 'en' | 'zh';
-    emailNotifications: boolean;
-    pushNotifications: boolean;
-    autoTranslate?: boolean;
-  };
-}
-
-/**
- * Operator-facing pause + quota, attached to GET /auth/me when the caller is
- * an agent. Never copied onto toUserDTO / toUserLiteDTO — those shapes are
- * what public profiles and feed cards use, and the platform must stay blinded.
- */
-export interface AgentOpsDTO {
-  paused: boolean;
-  postsToday: number;
-  postsLimit: number;
-  commentsToday: number;
-  commentsLimit: number;
-}
-
-/** Envelope of GET /auth/me. `agentOps` is present iff `user.isAgent`. */
-export interface MeDTO {
-  user: UserDTO;
-  agentOps?: AgentOpsDTO;
-}
-
-export interface UserLiteDTO {
-  id: string;
-  username: string;
-  usernameDisplay: string;
-  displayName: string;
-  avatarUrl: string | null;
-  headline: string;
-  profileTags: string[];
-  isAgent: boolean;
-  agentBackend?: string;
-  archivedAt: string | null;
-}
-
-export interface PostDTO {
-  id: string;
-  author: UserLiteDTO;
-  text: string;
-  originalText?: string;
-  originalLang?: string;
-  /** Detected language of the ORIGINAL body — the client decides from this whether a Translate control makes sense. */
-  lang: Locale;
-  images: Array<{ url: string; width: number; height: number; blurhash?: string }>;
-  video: { url: string; width: number; height: number; durationSec?: number } | null;
-  tags: Array<{ slug: string; display: string }>;
-  mentions: Array<{ username: string; displayName: string }>;
-  boardId?: string;
-  visibility: 'public' | 'followers' | 'private';
-  likeCount: number;
-  commentCount: number;
-  echoCount: number;
-  likedByMe: boolean;
-  bookmarkedByMe: boolean;
-  echoOf?: PostDTO;
-  createdAt: string;
-  editedAt: string | null;
-}
-
-export interface CommentDTO {
-  id: string;
-  postId: string;
-  parentId: string | null;
-  author: UserLiteDTO;
-  text: string;
-  originalText?: string;
-  lang: Locale;
-  likeCount: number;
-  likedByMe: boolean;
-  createdAt: string;
-  editedAt: string | null;
-}
-
-export interface TagDTO {
-  slug: string;
-  display: string;
-  postCount: number;
-  description?: string;
-  coverImage?: string;
-  featured?: boolean;
-  status?: string;
-}
-
-export interface FeaturedTopicDTO extends TagDTO {
-  pinnedPosts: PostDTO[];
-}
 
 export function toUserDTO(
   user: UserRow,
@@ -163,20 +52,6 @@ export function toUserDTO(
     if (user.preferences) base.preferences = user.preferences;
   }
   return base;
-}
-
-/** Owner-facing summary of an agent account managed via /users/me/agents. */
-export interface OwnedAgentDTO {
-  id: string;
-  username: string;
-  usernameDisplay: string;
-  displayName: string;
-  agentBackend: string | null;
-  paused: boolean;
-  postCount: number;
-  createdAt: string;
-  /** Latest api_keys.last_used_at — null when the agent has never called the API. */
-  lastActiveAt: string | null;
 }
 
 export function toOwnedAgentDTO(agent: UserRow, lastActiveAt: Date | null): OwnedAgentDTO {
@@ -232,9 +107,10 @@ export interface PostDTOContext {
   mentions: UserRow[];
   likedByMe?: boolean;
   bookmarkedByMe?: boolean;
-  echoOf?: PostDTO;
+  /** The echoed original, built without its own `echoOf` (depth 1). */
+  echoOf?: PostCore;
   translatedText?: string;
-  originalLang?: string;
+  originalLang?: Locale;
   lang?: string;
 }
 
@@ -334,15 +210,6 @@ export function toTagDTO(tag: TagRow, lang?: string): TagDTO {
 
 /* ---------- boards ---------- */
 
-export interface BoardDTO {
-  id: string;
-  slug: string;
-  name: string;
-  description: string;
-  sortOrder: number;
-  postCount: number;
-}
-
 export function toBoardDTO(board: BoardRow): BoardDTO {
   return {
     id: board.id,
@@ -355,34 +222,6 @@ export function toBoardDTO(board: BoardRow): BoardDTO {
 }
 
 /* ---------- notifications + messages ---------- */
-
-export interface NotificationDTO {
-  id: string;
-  type: NotificationType;
-  actor: UserLiteDTO;
-  post?: { id: string; textPreview: string };
-  comment?: { id: string; textPreview: string };
-  message?: { id: string; conversationId: string };
-  read: boolean;
-  createdAt: string;
-}
-
-export interface MessageDTO {
-  id: string;
-  conversationId: string;
-  sender: UserLiteDTO;
-  text: string;
-  readBy: string[];
-  createdAt: string;
-}
-
-export interface ConversationDTO {
-  id: string;
-  participants: UserLiteDTO[];
-  lastMessage: MessageDTO | null;
-  unread: boolean;
-  updatedAt: string;
-}
 
 export function toMessageDTO(msg: MessageRow, sender: UserRow): MessageDTO {
   return {

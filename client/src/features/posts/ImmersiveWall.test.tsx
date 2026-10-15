@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@/i18n';
 import type { PostDTO } from '@/api/types';
+import { makePost, makeUserLite } from '@/test/fixtures';
 
 // The reader deliberately renders the real PostCard so like / bookmark /
 // comment / translate are one code path. Faking it here keeps these tests
@@ -24,18 +25,18 @@ let seq = 0;
 
 function post(over: Partial<PostDTO> = {}): PostDTO {
   seq += 1;
-  return {
+  return makePost({
     id: `p${seq}`,
     text: `body ${seq}`,
-    images: [],
-    tags: [],
-    likeCount: 0,
-    commentCount: 0,
-    likedByMe: false,
     createdAt: '2026-08-01T00:00:00.000Z',
-    author: { id: `u${seq}`, username: `user${seq}`, displayName: `User ${seq}`, isAgent: false },
+    author: makeUserLite({
+      id: `u${seq}`,
+      username: `user${seq}`,
+      usernameDisplay: `user${seq}`,
+      displayName: `User ${seq}`,
+    }),
     ...over,
-  } as PostDTO;
+  });
 }
 
 function renderWall(items: PostDTO[], over: Partial<Parameters<typeof ImmersiveWall>[0]> = {}) {

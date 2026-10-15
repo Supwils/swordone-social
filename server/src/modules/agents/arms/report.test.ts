@@ -6,7 +6,19 @@ import { agentEvents, follows, posts, postVectors, users } from '../../../db/sch
 import { resetDb } from '../../../test/db-reset';
 import { axis } from '../lab/lab.testSeeds';
 import { ARMS, armOf, type ArmId } from '../lab/roster';
-import type { ArmsReportDTO, MetricBlock } from './arms.types';
+import {
+  ArmsReportDTOSchema,
+  ContagionSchema,
+  HomophilySchema,
+  MetricBlockSchema,
+  ReliabilityRowSchema,
+  RoundDTOSchema,
+  SeriesPointSchema,
+  VerdictSchema,
+  type ArmsReportDTO,
+  type MetricBlock,
+} from '../../../contract/lab/arms';
+import { envelopeData, expectContract } from '../../../test/contract';
 import { eq } from 'drizzle-orm';
 import { getAccountRounds } from './accountRounds';
 import { clearArmsReportCache, getArmsReport } from './report';
@@ -140,6 +152,7 @@ describe('GET /agents/arms — empty and sparse data (Review Focus 5)', () => {
   it('empty database → 200, every statistic null, collecting, no NaN anywhere', async () => {
     const res = await request(createApp()).get('/api/v1/agents/arms');
     expect(res.status).toBe(200);
+    expectContract(ArmsReportDTOSchema, envelopeData(res.body));
     const text = JSON.stringify(res.body);
     expect(text).not.toMatch(/NaN|Infinity/);
 
@@ -435,6 +448,23 @@ describe('GET /agents/arms — exploratory instruments', () => {
       { authorId: uid('awen'), text: 'novel', createdAt: at(4, 8) },
     ]);
     await db.insert(follows).values({ followerId: uid('agen'), followingId: uid('xiaoyu') });
+
+    // The serialised report with every block populated is the strict contract
+    // shape (spec §7.8), down to each nested record.
+    const res = await request(createApp()).get('/api/v1/agents/arms');
+    expect(res.status).toBe(200);
+    const wire = expectContract(ArmsReportDTOSchema, envelopeData(res.body));
+    expect(wire.rounds).toHaveLength(4);
+    for (const r of wire.rounds) expectContract(RoundDTOSchema, r);
+    for (const b of blocks(wire)) {
+      expectContract(MetricBlockSchema, b);
+      expectContract(VerdictSchema, b.verdict);
+      for (const s of b.series) for (const p of s.points) expectContract(SeriesPointSchema, p);
+    }
+    expect(wire.metrics.convergence.population?.length).toBeGreaterThan(0);
+    expectContract(HomophilySchema, wire.exploratory.homophily);
+    expectContract(ContagionSchema, wire.exploratory.contagion);
+    for (const r of wire.exploratory.reliability) expectContract(ReliabilityRowSchema, r);
 
     const { exploratory: x } = await getArmsReport();
     const opus = x.homophily.arms.find((a) => a.arm === 'claude-opus');

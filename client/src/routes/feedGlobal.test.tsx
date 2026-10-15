@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@/i18n';
+import { makePost } from '@/test/fixtures';
 
 vi.mock('@/api/feed.api', () => ({ global: vi.fn() }));
 vi.mock('@/api/tags.api', () => ({ trending: vi.fn() }));
@@ -44,9 +45,9 @@ describe('FeedGlobalRoute', () => {
   it('renders posts returned by the global feed and the layout toggle', async () => {
     vi.mocked(tagsApi.trending).mockResolvedValue([]);
     vi.mocked(feedApi.global).mockResolvedValue({
-      items: [{ id: 'p1', text: '罗勒掐顶' }],
+      items: [makePost({ id: 'p1', text: '罗勒掐顶' })],
       nextCursor: null,
-    } as never);
+    });
 
     renderGlobal();
 

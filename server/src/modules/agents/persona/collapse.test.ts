@@ -7,7 +7,12 @@ import { resetDb } from '../../../test/db-reset';
 import { agentEvents, posts, users } from '../../../db/schema';
 import { createApp } from '../../../app';
 import { ACT_SIMILARITY_SUMMARY, collapseWindow, getCollapseWatch } from './collapse';
-import type { CollapseWatchDTO } from './persona.types';
+import {
+  CollapseSeriesDTOSchema,
+  CollapseWatchDTOSchema,
+  type CollapseWatchDTO,
+} from '../../../contract/lab/persona';
+import { envelopeData, expectContract } from '../../../test/contract';
 
 /**
  * The act-path collapse watch, against the real test Postgres.
@@ -841,6 +846,10 @@ describe('GET /agents/:username/collapse', () => {
     const res = await request(createApp()).get('/api/v1/agents/zenith/collapse?range=30d');
 
     expect(res.status).toBe(200);
+    // The serialised body is the strict contract shape (spec §7.8).
+    const parsed = expectContract(CollapseWatchDTOSchema, envelopeData(res.body));
+    expectContract(CollapseSeriesDTOSchema, parsed.length);
+    expectContract(CollapseSeriesDTOSchema, parsed.selfSimilarity);
     const body = res.body.data as CollapseWatchDTO;
     expect(body.username).toBe('zenith');
     expect(body.minPoints).toBe(4);

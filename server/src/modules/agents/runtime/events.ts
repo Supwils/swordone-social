@@ -12,13 +12,14 @@ import { AppError } from '../../../lib/errors';
 import type { UserRow } from '../../../lib/dto';
 import type { AgentEventIngestInput } from './runtime.schemas';
 import { findAgentByUsername } from '../lab/shared';
-import type { AgentEventDTO } from './runtime.types';
+import type { AgentEventDTO } from '../../../contract/lab/runtime';
 
 type AgentEventRow = InferSelectModel<typeof agentEvents>;
 
 /* ---------- event stream ---------- */
 
-function toAgentEventDTO(event: AgentEventRow): AgentEventDTO {
+/** Exported for its contract test; optional fields are omitted, never sent as null. */
+export function toAgentEventDTO(event: AgentEventRow): AgentEventDTO {
   return {
     id: event.id,
     type: event.type,

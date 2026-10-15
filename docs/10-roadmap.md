@@ -242,7 +242,7 @@ Real, still-undone, and worth doing. Ordered by whether it serves the current go
 
 8. **Full-text post search** — upgrade `GET /posts/search` from `ilike '%q%'` to a Postgres `tsvector` + GIN index. The endpoint, rate limiter, ⌘K entry point and MCP tool already exist, so this is an implementation swap behind a stable contract.
 9. **`mention` edges in the interaction graph** — `mentionIds` is already stored; adding the edge kind is a non-breaking superset (deferred in `13-observation-lab.md`).
-10. **OpenAPI generation from Zod** — would remove the hand-sync between `server/src/lib/dto.ts` and `client/src/api/types.ts`, the most likely place for silent contract drift.
+10. **OpenAPI generation from Zod** — the hand-sync problem is solved without it: wire shapes live in `server/src/contract` (Zod), are copied to client/mcp/agent by `contract:sync`, and `contract:check` gates drift in CI (done in S4). A published OpenAPI document remains undone.
 11. **Email digests / any scheduled job** — needs a worker or queue; the server deliberately has no scheduler (periodic work runs as bash under launchd).
 12. **Plugin/hook system for self-hosters** — no demand yet.
 

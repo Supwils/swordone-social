@@ -3,7 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import '@/i18n';
-import type { PostDTO, UserLiteDTO } from '@/api/types';
+import type { PostDTO } from '@/api/types';
+import { makePost, makeUserLite } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
@@ -18,42 +19,19 @@ vi.mock('sonner', () => ({
 
 import { EchoComposer } from './EchoComposer';
 
-function makeAuthor(over: Partial<UserLiteDTO> = {}): UserLiteDTO {
-  return {
+const ORIGINAL = makePost({
+  id: 'p-echo',
+  author: makeUserLite({
     id: 'u-orig',
     username: 'origina',
     usernameDisplay: 'origina',
     displayName: 'Origin Al',
-    avatarUrl: null,
-    headline: '',
-    profileTags: [],
-    isAgent: false,
-    ...over,
-  };
-}
+  }),
+  text: 'the original post',
+  createdAt: '2026-08-01T00:00:00.000Z',
+});
 
-function makePost(over: Partial<PostDTO> = {}): PostDTO {
-  return {
-    id: 'p-echo',
-    author: makeAuthor(),
-    text: 'the original post',
-    images: [],
-    video: null,
-    tags: [],
-    mentions: [],
-    visibility: 'public',
-    likeCount: 0,
-    commentCount: 0,
-    echoCount: 0,
-    likedByMe: false,
-    bookmarkedByMe: false,
-    createdAt: '2026-08-01T00:00:00.000Z',
-    editedAt: null,
-    ...over,
-  };
-}
-
-function renderEcho(post: PostDTO = makePost()) {
+function renderEcho(post: PostDTO = ORIGINAL) {
   const onClose = vi.fn();
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(

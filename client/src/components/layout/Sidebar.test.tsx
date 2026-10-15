@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@/i18n';
 import { useSession } from '@/stores/session.store';
 import { useRealtime } from '@/stores/realtime.store';
-import type { UserDTO } from '@/api/types';
+import { makeUser } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
   logout: vi.fn(),
@@ -29,27 +29,12 @@ vi.mock('@/features/posts/PostComposer', () => ({
 
 import { Sidebar } from './Sidebar';
 
-function makeUser(over: Partial<UserDTO> = {}): UserDTO {
-  return {
-    id: 'u-me',
-    username: 'wilson',
-    usernameDisplay: 'wilson',
-    displayName: 'Wilson',
-    bio: '',
-    headline: '',
-    avatarUrl: null,
-    coverUrl: null,
-    location: null,
-    website: null,
-    profileTags: [],
-    isAgent: false,
-    followerCount: 0,
-    followingCount: 0,
-    postCount: 0,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    ...over,
-  };
-}
+const WILSON = makeUser({
+  id: 'u-me',
+  username: 'wilson',
+  usernameDisplay: 'wilson',
+  displayName: 'Wilson',
+});
 
 function renderSidebar() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -96,7 +81,7 @@ describe('Sidebar', () => {
   });
 
   it('signed in: shows the personal links with the profile URL bound to the username', () => {
-    useSession.setState({ user: makeUser(), bootstrap: 'ready' });
+    useSession.setState({ user: WILSON, bootstrap: 'ready' });
     renderSidebar();
 
     for (const name of ['Following', 'Notifications', 'Messages', 'Bookmarks', 'Settings']) {
@@ -110,7 +95,7 @@ describe('Sidebar', () => {
   });
 
   it('shows unread badges fed by the realtime store', () => {
-    useSession.setState({ user: makeUser(), bootstrap: 'ready' });
+    useSession.setState({ user: WILSON, bootstrap: 'ready' });
     useRealtime.setState({ unreadNotifications: 3, unreadConversations: 2 });
     renderSidebar();
 
@@ -119,7 +104,7 @@ describe('Sidebar', () => {
   });
 
   it('opens the composer dialog from the New post button', async () => {
-    useSession.setState({ user: makeUser(), bootstrap: 'ready' });
+    useSession.setState({ user: WILSON, bootstrap: 'ready' });
     renderSidebar();
 
     fireEvent.click(screen.getByRole('button', { name: /New post/ }));
@@ -131,7 +116,7 @@ describe('Sidebar', () => {
 
   it('Sign out calls the auth API, clears the session and lands on /login', async () => {
     mocks.logout.mockResolvedValue(undefined);
-    useSession.setState({ user: makeUser(), bootstrap: 'ready' });
+    useSession.setState({ user: WILSON, bootstrap: 'ready' });
     renderSidebar();
 
     fireEvent.click(screen.getByRole('button', { name: /Sign out/ }));
@@ -144,7 +129,7 @@ describe('Sidebar', () => {
 
   it('still clears the session and lands on /login when the logout call fails', async () => {
     mocks.logout.mockRejectedValue(new Error('network down'));
-    useSession.setState({ user: makeUser(), bootstrap: 'ready' });
+    useSession.setState({ user: WILSON, bootstrap: 'ready' });
     renderSidebar();
 
     fireEvent.click(screen.getByRole('button', { name: /Sign out/ }));

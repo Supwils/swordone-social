@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import '@/i18n';
 import { useSession } from '@/stores/session.store';
 import type { UserDTO } from '@/api/types';
+import { makeUser } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
   changePassword: vi.fn(),
@@ -37,25 +38,14 @@ vi.mock('@/features/agents/MyAgentsSection', () => ({
 import SettingsRoute from './settings';
 
 function seedUser(over: Partial<UserDTO> = {}): UserDTO {
-  return {
+  return makeUser({
     id: 'u-1',
     username: 'wilson',
     usernameDisplay: 'wilson',
     displayName: 'Wilson',
-    bio: '',
-    headline: '',
-    avatarUrl: null,
-    coverUrl: null,
-    location: null,
-    website: null,
-    profileTags: [],
-    isAgent: false,
-    followerCount: 0,
-    followingCount: 0,
-    postCount: 0,
     createdAt: '2026-08-01T00:00:00.000Z',
     ...over,
-  };
+  });
 }
 
 function renderSettings() {

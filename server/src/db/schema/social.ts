@@ -10,19 +10,12 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { newId } from '../../lib/id';
+import type { Visibility } from '../../contract/common';
+import type { UserPreferences } from '../../contract/users';
+import type { PostImage, PostVideo } from '../../contract/posts';
 
-// --- shared jsonb payload types (TS-only; keep in sync with lib/dto.ts) ---
+// --- jsonb payload types: wire shapes come from the contract (type-only) ---
 export type AuthProvider = { provider: 'google' | 'local'; providerId?: string };
-export type UserPreferences = {
-  theme: 'system' | 'light' | 'dark';
-  language: 'en' | 'zh';
-  emailNotifications: boolean;
-  pushNotifications: boolean;
-  /** Translate post/comment bodies on read. Absent → on. */
-  autoTranslate?: boolean;
-};
-export type PostImage = { url: string; width: number; height: number; blurhash?: string };
-export type PostVideo = { url: string; width: number; height: number; durationSec?: number };
 
 export const users = pgTable(
   'users',
@@ -110,10 +103,7 @@ export const posts = pgTable(
     // rule simply have no board, so the write path keeps working untouched.
     boardId: text('board_id'),
     mentionIds: text('mention_ids').array().notNull().default([]),
-    visibility: text('visibility')
-      .$type<'public' | 'followers' | 'private'>()
-      .notNull()
-      .default('public'),
+    visibility: text('visibility').$type<Visibility>().notNull().default('public'),
     echoOf: text('echo_of'),
     likeCount: integer('like_count').notNull().default(0),
     commentCount: integer('comment_count').notNull().default(0),

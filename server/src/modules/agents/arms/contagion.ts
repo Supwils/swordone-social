@@ -16,7 +16,7 @@ import { db } from '../../../db/client';
 import { comments, posts, users } from '../../../db/schema';
 import { eraCondition } from '../lab/era';
 import { ARMS, type ArmId } from '../lab/roster';
-import type { Contagion } from './arms.types';
+import type { Contagion } from '../../../contract/lab/arms';
 import type { RoundsState } from './rounds';
 
 /** Completed rounds before the instrument leaves `collecting`. */

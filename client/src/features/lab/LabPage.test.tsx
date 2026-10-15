@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import '@/i18n';
+import { makeLabAgent } from '@/test/fixtures';
 
 vi.mock('@/features/lab/api', () => ({
   getAgentOverview: vi.fn(),
@@ -98,9 +99,9 @@ afterEach(() => {
 describe('LabPage', () => {
   it('renders the lab title, tabs, and the roster count from the wire', async () => {
     vi.mocked(agentsApi.listLabAgents).mockResolvedValue([
-      { username: 'liushang' },
-      { username: 'qiusai' },
-    ] as never);
+      makeLabAgent({ username: 'liushang' }),
+      makeLabAgent({ username: 'qiusai' }),
+    ]);
     vi.mocked(agentsApi.getAgentOverview).mockResolvedValue({} as never);
     vi.mocked(agentsApi.getInteractionGraph).mockResolvedValue({ nodes: [], edges: [] } as never);
 
@@ -241,7 +242,7 @@ describe('LabPage — era switch', () => {
 
 describe('LabPage — focused account', () => {
   const live = (username: string, archivedAt: string | null = null) =>
-    ({ username, displayName: `name-${username}`, archivedAt, arm: 'claude-opus' }) as never;
+    makeLabAgent({ username, displayName: `name-${username}`, archivedAt, arm: 'claude-opus' });
 
   it('routes ?agent= to the Era 3 detail for a live roster account', async () => {
     mockReads();

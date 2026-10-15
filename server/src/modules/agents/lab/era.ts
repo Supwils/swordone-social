@@ -4,8 +4,9 @@
  */
 import { and, eq, isNotNull, isNull, type SQL } from 'drizzle-orm';
 import { users } from '../../../db/schema';
+import type { LabEra } from '../../../contract/lab/era';
 
-export type LabEra = 2 | 3;
+export type { LabEra };
 
 /**
  * Era 3 = non-archived first-party agents (`is_agent`, no owner). Era 2 = every

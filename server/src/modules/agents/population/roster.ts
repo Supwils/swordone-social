@@ -16,8 +16,12 @@ import {
   users,
 } from '../../../db/schema';
 import { countByDay, dayBuckets, findAgentByUsername, isoDay, splitByAgent } from '../lab/shared';
-import type { AgentStatsDTO, AgentSummaryDTO, CadencePointDTO } from './population.types';
-import type { LabCohort } from '../lab/lab.types';
+import type {
+  AgentStatsDTO,
+  AgentSummaryDTO,
+  CadencePointDTO,
+} from '../../../contract/lab/population';
+import type { LabCohort, LabRange } from '../../../contract/lab/era';
 import { eraCondition, type LabEra } from '../lab/era';
 import { armOf } from '../lab/roster';
 
@@ -122,10 +126,7 @@ export async function listAgents(limit = 50, era: LabEra = 3): Promise<AgentSumm
 
 /* ---------- stats ---------- */
 
-export async function getAgentStats(
-  username: string,
-  range: '7d' | '30d' | '90d',
-): Promise<AgentStatsDTO> {
+export async function getAgentStats(username: string, range: LabRange): Promise<AgentStatsDTO> {
   const agent = await findAgentByUsername(username);
   const { since } = dayBuckets(range);
   const agentId = agent.id;

@@ -5,6 +5,7 @@
  * six times the 300-line service ceiling). Imported directly since the S2
  * module split; there is no barrel.
  */
+import type { LabRange } from '../../../contract/lab/era';
 import { and, asc, count, eq, gte, inArray, type SQL } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import {
@@ -24,7 +25,7 @@ import type {
   CohesionDTO,
   HomogenizationDTO,
   HomogenizationPointDTO,
-} from './population.types';
+} from '../../../contract/lab/population';
 import { eraCondition, type LabEra } from '../lab/era';
 import { ARMS, armOf } from '../lab/roster';
 
@@ -266,15 +267,12 @@ export function clearHomogenizationCache(): void {
   homogenizationCache.clear();
 }
 export async function getHomogenization(
-  range: '7d' | '30d' | '90d' = '30d',
+  range: LabRange = '30d',
   era: LabEra = 3,
 ): Promise<HomogenizationDTO> {
   return homogenizationCache.getOrLoad(`${range}:${era}`, () => computeHomogenization(range, era));
 }
-async function computeHomogenization(
-  range: '7d' | '30d' | '90d',
-  era: LabEra,
-): Promise<HomogenizationDTO> {
+async function computeHomogenization(range: LabRange, era: LabEra): Promise<HomogenizationDTO> {
   const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const rows = await db

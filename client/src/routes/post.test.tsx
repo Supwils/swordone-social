@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@/i18n';
 import { useSession } from '@/stores/session.store';
 import { useUI } from '@/stores/ui.store';
-import type { CommentDTO, PostDTO, UserDTO } from '@/api/types';
+import { makeComment, makePost, makeUser, makeUserLite } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -39,63 +39,13 @@ vi.mock('@/components/InfiniteScrollSentinel', () => ({
 
 import PostRoute from './post';
 
-function makeUser(id = 'me'): UserDTO {
-  return {
-    id,
-    username: 'me',
-    usernameDisplay: 'me',
-    displayName: 'Me',
-    bio: '',
-    headline: '',
-    avatarUrl: null,
-    coverUrl: null,
-    location: null,
-    website: null,
-    profileTags: [],
-    isAgent: false,
-    followerCount: 0,
-    followingCount: 0,
-    postCount: 0,
-    createdAt: '2026-01-01T00:00:00.000Z',
-  };
-}
+const ME = makeUser({ id: 'me', username: 'me', usernameDisplay: 'me', displayName: 'Me' });
 
-function makePost(over: Partial<PostDTO> = {}): PostDTO {
-  return {
-    id: 'p-1',
-    text: 'The post body',
-    commentCount: 0,
-    author: {
-      id: 'u-z',
-      username: 'zed',
-      usernameDisplay: 'zed',
-      displayName: 'Zed',
-      avatarUrl: null,
-      headline: '',
-      profileTags: [],
-      isAgent: false,
-    },
-    ...over,
-  } as unknown as PostDTO;
-}
-
-function makeComment(id: string, text: string): CommentDTO {
-  return {
-    id,
-    text,
-    author: {
-      id: 'u-a',
-      username: 'alice',
-      usernameDisplay: 'alice',
-      displayName: 'Alice',
-      avatarUrl: null,
-      headline: '',
-      profileTags: [],
-      isAgent: false,
-    },
-    createdAt: '2026-01-01T00:00:00.000Z',
-  } as unknown as CommentDTO;
-}
+const POST = makePost({
+  id: 'p-1',
+  text: 'The post body',
+  author: makeUserLite({ id: 'u-z', username: 'zed', usernameDisplay: 'zed', displayName: 'Zed' }),
+});
 
 function renderAt(id = 'p-1') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -129,9 +79,12 @@ afterEach(() => {
 
 describe('PostRoute', () => {
   it('renders the post, its comments, and tracks the view', async () => {
-    mocks.getById.mockResolvedValue(makePost({ commentCount: 2 }));
+    mocks.getById.mockResolvedValue({ ...POST, commentCount: 2 });
     mocks.listForPost.mockResolvedValue({
-      items: [makeComment('c-1', 'first comment'), makeComment('c-2', 'second comment')],
+      items: [
+        makeComment({ id: 'c-1', text: 'first comment' }),
+        makeComment({ id: 'c-2', text: 'second comment' }),
+      ],
       nextCursor: null,
     });
 
@@ -153,13 +106,13 @@ describe('PostRoute', () => {
     // The permalink used to send no lang at all, so an anonymous reader with a
     // 中文 UI got the English body: resolveLang has no stored preference to fall
     // back to and defaults to en.
-    mocks.getById.mockResolvedValue(makePost());
+    mocks.getById.mockResolvedValue(POST);
     renderAt();
 
     await screen.findByTestId('post-card');
     expect(mocks.getById).toHaveBeenCalledWith('p-1', 'en');
 
-    mocks.getById.mockResolvedValue(makePost({ text: '中文正文' }));
+    mocks.getById.mockResolvedValue({ ...POST, text: '中文正文' });
     useUI.getState().setLanguage('zh');
 
     await waitFor(() => expect(mocks.getById).toHaveBeenCalledWith('p-1', 'zh'));
@@ -167,7 +120,7 @@ describe('PostRoute', () => {
   });
 
   it('offers a sign-in link instead of the composer when signed out', async () => {
-    mocks.getById.mockResolvedValue(makePost());
+    mocks.getById.mockResolvedValue(POST);
 
     const { container } = renderAt();
 
@@ -177,9 +130,9 @@ describe('PostRoute', () => {
   });
 
   it('submits a comment, clears the box, and toasts', async () => {
-    useSession.setState({ user: makeUser(), bootstrap: 'ready' });
-    mocks.getById.mockResolvedValue(makePost());
-    mocks.createComment.mockResolvedValue(makeComment('c-9', 'Nice thread'));
+    useSession.setState({ user: ME, bootstrap: 'ready' });
+    mocks.getById.mockResolvedValue(POST);
+    mocks.createComment.mockResolvedValue(makeComment({ id: 'c-9', text: 'Nice thread' }));
 
     renderAt();
 
@@ -196,8 +149,8 @@ describe('PostRoute', () => {
   });
 
   it('does not submit a whitespace-only comment', async () => {
-    useSession.setState({ user: makeUser(), bootstrap: 'ready' });
-    mocks.getById.mockResolvedValue(makePost());
+    useSession.setState({ user: ME, bootstrap: 'ready' });
+    mocks.getById.mockResolvedValue(POST);
 
     renderAt();
 
@@ -222,7 +175,7 @@ describe('PostRoute', () => {
   });
 
   it('routes back to /feed on 404 when signed in', async () => {
-    useSession.setState({ user: makeUser(), bootstrap: 'ready' });
+    useSession.setState({ user: ME, bootstrap: 'ready' });
     mocks.getById.mockRejectedValue({ status: 404, message: 'Post not found' });
 
     renderAt('missing');

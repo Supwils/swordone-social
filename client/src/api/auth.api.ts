@@ -1,5 +1,5 @@
 import { http, unwrap } from './client';
-import type { UserDTO } from './types';
+import type { MeDTO, UserDTO } from './types';
 
 export async function register(input: {
   username: string;
@@ -25,7 +25,7 @@ export async function logout(): Promise<void> {
 
 export async function me(): Promise<UserDTO | null> {
   try {
-    const out = await unwrap<{ user: UserDTO }>(http.get('/auth/me'));
+    const out = await unwrap<MeDTO>(http.get('/auth/me'));
     return out.user;
   } catch (err) {
     const e = err as { status?: number };

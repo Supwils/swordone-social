@@ -54,6 +54,7 @@
  * enough time to extend the line, so a tight burst is exactly where a perfect
  * fit is least informative and looks most trustworthy.
  */
+import type { LabRange } from '../../../contract/lab/era';
 import { and, asc, eq, gte } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import { agentEvents } from '../../../db/schema';
@@ -63,7 +64,7 @@ import type {
   DriftCountdownKey,
   DriftCountdownSeriesDTO,
   DriftMode,
-} from './persona.types';
+} from '../../../contract/lab/persona';
 
 /**
  * The summary string the Era 1/2 `gate_step` filed its calibration event under.
@@ -184,7 +185,7 @@ const ROUND_INTERVAL_HOURS = 48;
 const MAX_EXTRAPOLATION = 3;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const RANGE_DAYS: Record<'7d' | '30d' | '90d', number> = { '7d': 7, '30d': 30, '90d': 90 };
+const RANGE_DAYS: Record<LabRange, number> = { '7d': 7, '30d': 30, '90d': 90 };
 
 /**
  * Which series the gate actually DECIDES with, per `DRIFT_MODE`. In `aspect`
@@ -406,7 +407,7 @@ function fitSeries(points: SeriesPoint[], threshold: number | null, asOfMs: numb
  */
 export async function getDriftCountdown(
   username: string,
-  range: '7d' | '30d' | '90d' = '30d',
+  range: LabRange = '30d',
   asOf: Date = new Date(),
 ): Promise<DriftCountdownDTO> {
   const agent = await findAgentByUsername(username);

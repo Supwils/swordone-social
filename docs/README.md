@@ -96,7 +96,7 @@ When you change substantive content, bump `last-updated` and set `owner` to your
 
 ## CI
 
-`npm run ci:check` is the gate before any commit or push — **13 steps**, mirroring GitHub Actions: typecheck server + client, lint server + client, test server + client (with coverage thresholds), typecheck + test `mcp/`, build server + client, then lint + typecheck + test `agent/` (pytest, coverage ≥ 97). It grew from 8 to 10 in Round 17 (MCP) and to 13 when the Python agent joined; some older docs still say "8-step" or "10-step". The Playwright suite (`npm run test:e2e`) is a **separate lane** and deliberately not part of `ci:check`.
+`npm run ci:check` is the gate before any commit or push — **14 steps**, mirroring GitHub Actions: first the API-contract sync check (`npm --prefix server run contract:check`), then typecheck server + client, lint server + client, test server + client (with coverage thresholds), typecheck + test `mcp/`, build server + client, then lint + typecheck + test `agent/` (pytest, coverage ≥ 97). It grew from 8 to 10 in Round 17 (MCP) and to 13 when the Python agent joined; some older docs still say "8-step" or "10-step". The Playwright suite (`npm run test:e2e`) is a **separate lane** and deliberately not part of `ci:check`.
 
 ## Round logs
 

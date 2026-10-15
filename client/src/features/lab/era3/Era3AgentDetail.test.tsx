@@ -31,7 +31,8 @@ vi.mock('@/features/lab/Sparkline', () => ({
 }));
 
 import * as labApi from '@/features/lab/api';
-import type { AccountRoundsDTO, AgentLabSummary, DriftPoint } from '@/features/lab/types';
+import type { AccountRoundsDTO, DriftPointDTO } from '@/features/lab/types';
+import { makeLabAgent } from '@/test/fixtures';
 import { Era3AgentDetail } from './Era3AgentDetail';
 
 const ROUNDS: AccountRoundsDTO = {
@@ -90,7 +91,7 @@ const ROUNDS: AccountRoundsDTO = {
   ],
 };
 
-const DRIFT: DriftPoint[] = [
+const DRIFT: DriftPointDTO[] = [
   {
     capturedAt: '2026-10-14T08:00:00.000Z',
     distanceFromAnchor: 0,
@@ -107,13 +108,12 @@ const DRIFT: DriftPoint[] = [
   },
 ];
 
-const AGENT = {
+const AGENT = makeLabAgent({
   username: 'agen',
   displayName: '阿根',
   agentBackend: 'claude:claude-opus-5-5',
-  archivedAt: null,
   arm: 'claude-opus',
-} as AgentLabSummary;
+});
 
 function renderDetail(props: Partial<Parameters<typeof Era3AgentDetail>[0]> = {}) {
   const onClose = vi.fn();

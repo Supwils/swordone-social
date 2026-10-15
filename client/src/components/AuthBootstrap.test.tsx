@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@/i18n';
 import { useSession } from '@/stores/session.store';
 import { useUI } from '@/stores/ui.store';
-import type { UserDTO } from '@/api/types';
+import { makeUser } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
   me: vi.fn(),
@@ -15,28 +15,6 @@ vi.mock('@/api/auth.api', () => ({ me: mocks.me }));
 vi.mock('@/api/client', () => ({ onUnauthorized: mocks.onUnauthorized }));
 
 import { AuthBootstrap } from './AuthBootstrap';
-
-function makeUser(over: Partial<UserDTO> = {}): UserDTO {
-  return {
-    id: 'u-1',
-    username: 'me',
-    usernameDisplay: 'me',
-    displayName: 'Me',
-    bio: '',
-    headline: '',
-    avatarUrl: null,
-    coverUrl: null,
-    location: null,
-    website: null,
-    profileTags: [],
-    isAgent: false,
-    followerCount: 0,
-    followingCount: 0,
-    postCount: 0,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    ...over,
-  };
-}
 
 function renderBootstrap() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -73,9 +51,7 @@ afterEach(() => {
 
 describe('AuthBootstrap', () => {
   it('hydrates the session from /auth/me and applies the stored language pref', async () => {
-    mocks.me.mockResolvedValue(
-      makeUser({ preferences: { language: 'zh' } } as unknown as Partial<UserDTO>),
-    );
+    mocks.me.mockResolvedValue(makeUser({ preferences: { language: 'zh' } }));
 
     renderBootstrap();
 

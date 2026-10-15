@@ -10,9 +10,33 @@ outside `api/` should ever need to construct or inspect one.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Final
 
 from pydantic import BaseModel, Field, field_validator
+
+# `agentEventIngest`'s string bounds (server/src/contract/ingest.ts). zod's
+# `.max()` counts UTF-16 code units (JS `String.length`), not code points, so
+# a value built from model output is capped with `cap_utf16`, never `[:n]`.
+SUMMARY_MAX_UNITS: Final = 500
+REASON_MAX_UNITS: Final = 300
+TARGET_ID_MAX_UNITS: Final = 80
+# Both snapshot bodies' `excerpt.max(320)` (snapshotIngest, behaviorSnapshotIngest).
+EXCERPT_MAX_UNITS: Final = 320
+
+
+def cap_utf16(text: str, limit: int) -> str:
+    """`text` cut to at most `limit` UTF-16 code units -- what JS `.length`
+    and zod's `.max()` count -- never splitting a surrogate pair: an astral
+    character (an emoji) is two units and is dropped whole if only one fits.
+    Unchanged when it already fits."""
+    if limit < 0:
+        raise ValueError(f"limit must be >= 0, got {limit}")
+    units = 0
+    for index, char in enumerate(text):
+        units += 2 if ord(char) > 0xFFFF else 1
+        if units > limit:
+            return text[:index]
+    return text
 
 
 class LabEvent(BaseModel):

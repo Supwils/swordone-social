@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import type { UserDTO } from '@/api/types';
+import { makeUser } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({ updateMe: vi.fn() }));
 vi.mock('@/api/users.api', () => ({ updateMe: mocks.updateMe }));
@@ -20,8 +20,8 @@ describe('useSetLanguage', () => {
   it('stores the choice for a signed-in reader, because the server reads it first', () => {
     // resolveLang prefers preferences.language over ?lang=, so a local-only
     // switch would leave every post body in the old language.
-    mocks.updateMe.mockResolvedValue({} as UserDTO);
-    useSession.setState({ user: { id: 'u1' } as UserDTO });
+    mocks.updateMe.mockResolvedValue(makeUser({ id: 'u1' }));
+    useSession.setState({ user: makeUser({ id: 'u1' }) });
 
     const { result } = renderHook(() => useSetLanguage());
     act(() => result.current('zh'));
@@ -40,7 +40,7 @@ describe('useSetLanguage', () => {
 
   it('still switches when the write fails', async () => {
     mocks.updateMe.mockRejectedValue(new Error('offline'));
-    useSession.setState({ user: { id: 'u1' } as UserDTO });
+    useSession.setState({ user: makeUser({ id: 'u1' }) });
 
     const { result } = renderHook(() => useSetLanguage());
     act(() => result.current('zh'));

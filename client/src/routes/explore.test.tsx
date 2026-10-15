@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import '@/i18n';
 import type { ExploreSummaryDTO } from '@/api/types';
+import { makeExploreSummary, makePost } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
   getExploreSummary: vi.fn(),
@@ -38,12 +39,7 @@ vi.mock('./explore/ExplorePeopleTab', () => ({
 import ExploreRoute from './explore';
 
 function makeSummary(): ExploreSummaryDTO {
-  return {
-    featuredPost: { id: 'p-1' },
-    agents: [],
-    featuredTopics: [],
-    trendingTags: [],
-  } as unknown as ExploreSummaryDTO;
+  return makeExploreSummary({ featuredPost: makePost({ id: 'p-1' }) });
 }
 
 function renderAt(url = '/explore') {

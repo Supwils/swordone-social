@@ -7,7 +7,7 @@
  * threshold other than 0.92.
  */
 import { ARMS, type ArmId } from '../lab/roster';
-import type { ReliabilityRow } from './arms.types';
+import type { ReliabilityRow } from '../../../contract/lab/arms';
 import type { CandidateRow } from './metrics';
 import { DUPLICATE_THRESHOLD } from './protocol';
 import { cardKey, type RoundsState } from './rounds';

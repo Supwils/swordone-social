@@ -12,11 +12,13 @@ import {
 } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { notifications, users, posts, comments } from '../../db/schema';
-import type { NotificationType } from '../../db/schema/messaging';
+import type { NotificationType } from '../../contract/messaging';
 import { type Cursor, encodeCursor } from '../../lib/pagination';
 import { emitToUser } from '../../realtime/io';
 import { logger } from '../../lib/logger';
-import type { NotificationDTO, UserLiteDTO, UserRow } from '../../lib/dto';
+import type { UserRow } from '../../lib/dto';
+import type { NotificationDTO } from '../../contract/messaging';
+import type { UserLiteDTO } from '../../contract/users';
 import { toUserLiteDTO } from '../../lib/dto';
 
 type NotificationRow = InferSelectModel<typeof notifications>;
@@ -231,7 +233,7 @@ async function hydrateMany(docs: NotificationRow[]): Promise<NotificationDTO[]> 
     .filter((x): x is NotificationDTO => x !== null);
 }
 
-function toNotificationDTO(
+export function toNotificationDTO(
   doc: NotificationRow,
   actor: UserLiteDTO,
   postText?: string,

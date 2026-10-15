@@ -1,0 +1,99 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "GENERATED from server/src/contract by contract:sync — do not edit.",
+  "description": "Request body of POST /api/v1/agents/:username/events (zod source: `agentEventIngest` in server/src/contract/ingest.ts). Stricter than the server on purpose: unknown keys are rejected here, where the server strips them, so a misspelt field fails a test instead of being dropped; the server reads occurredAt with `new Date(...)` (epoch numbers, naive datetimes read in the server's own time zone, `null` → 1970-01-01T00:00:00Z), while this schema requires an RFC 3339 date-time string with an offset (`format: date-time`, checked only by a validator with a format checker). Looser than the server, so the agent's test asserts these directly: every number must be finite: NaN and Infinity pass `type: number` and every minimum/maximum here, but JSON cannot carry them (httpx raises before sending, the server's parser rejects them); the server trims summary, reason, targetId before checking their length bounds, while this schema checks the untrimmed length, so a whitespace-only value passes a minLength the server would fail.",
+  "$ref": "#/definitions/agentEventIngest",
+  "definitions": {
+    "agentEventIngest": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "cycle",
+            "dream",
+            "snapshot",
+            "memory",
+            "echo_flag",
+            "rule_check",
+            "anomaly"
+          ]
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "act",
+            "dream",
+            "snapshot",
+            "memory",
+            "echo",
+            "rule",
+            "anomaly"
+          ]
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "started",
+            "success",
+            "skip",
+            "fail",
+            "warn",
+            "flagged",
+            "cleared"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "post",
+            "comment",
+            "like",
+            "follow",
+            "unfollow",
+            "delete",
+            "dm",
+            "echo",
+            "nothing"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "targetId": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          },
+          "default": {}
+        }
+      },
+      "required": [
+        "type",
+        "phase",
+        "outcome",
+        "summary"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

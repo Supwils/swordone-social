@@ -36,6 +36,7 @@ from typing import Any, Final, Protocol
 from pydantic import BaseModel, ConfigDict
 
 from swil_agent.api.client import ApiError
+from swil_agent.api.dto import EXCERPT_MAX_UNITS, cap_utf16
 from swil_agent.api.resources import Resources, WriteNotVerifiedError
 from swil_agent.embedder.client import EmbedderUnavailable
 
@@ -169,13 +170,15 @@ def build_behavior_payload(
     `excerpt` replaces `\\n` with a space and slices CODEPOINTS, matching
     the script's own `python3` one-liner (:91) -- which exists because the
     obvious `head -c 280` splits a multibyte CJK character mid-sequence.
+    Then capped to the server's `excerpt.max(320)`, which counts UTF-16
+    units: 280 code points with over 40 emoji would otherwise 400.
     """
     return {
         "contentHash": hashlib.sha256(text.encode()).hexdigest(),
         "capturedAt": captured_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "postCount": post_count,
         "commentCount": 0,
-        "excerpt": text.replace("\n", " ")[:EXCERPT_MAX_CHARS],
+        "excerpt": cap_utf16(text.replace("\n", " ")[:EXCERPT_MAX_CHARS], EXCERPT_MAX_UNITS),
         "embedding": list(embedding),
     }
 

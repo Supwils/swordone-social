@@ -4,12 +4,13 @@
  * Lives in its own file because population/pulse.ts is already well over the
  * 300-line service-file ceiling.
  */
+import type { LabRange } from '../../../contract/lab/era';
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import { agentEvents, users } from '../../../db/schema';
 import { TTLCache } from '../../../lib/ttlCache';
 import { dayBuckets, isoDay } from '../lab/shared';
-import type { RuntimeHealthDTO, RuntimeHealthPointDTO } from './runtime.types';
+import type { RuntimeHealthDTO, RuntimeHealthPointDTO } from '../../../contract/lab/runtime';
 import { eraCondition, type LabEra } from '../lab/era';
 
 const runtimeCache = new TTLCache<string, RuntimeHealthDTO>(60_000);
@@ -20,7 +21,7 @@ export function clearRuntimeHealthCache(): void {
 }
 
 export async function getRuntimeHealth(
-  range: '7d' | '30d' | '90d' = '30d',
+  range: LabRange = '30d',
   era: LabEra = 3,
 ): Promise<RuntimeHealthDTO> {
   return runtimeCache.getOrLoad(`${range}:${era}`, () => computeRuntimeHealth(range, era));
@@ -34,10 +35,7 @@ function asFiniteNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
-async function computeRuntimeHealth(
-  range: '7d' | '30d' | '90d',
-  era: LabEra,
-): Promise<RuntimeHealthDTO> {
+async function computeRuntimeHealth(range: LabRange, era: LabEra): Promise<RuntimeHealthDTO> {
   const { since } = dayBuckets(range);
 
   const byDay = new Map<string, RuntimeHealthPointDTO>();

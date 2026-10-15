@@ -7,6 +7,7 @@ import { asyncHandler } from '../../middlewares/asyncHandler';
 import { ok, noContent } from '../../lib/respond';
 import { decodeCursor, parseLimit } from '../../lib/pagination';
 import { AppError } from '../../lib/errors';
+import { ID_RE } from '../../contract/common';
 import * as svc from './notifications.service';
 
 const listQuery = z.object({
@@ -21,10 +22,7 @@ const listQuery = z.object({
 const readBody = z.union([
   z.object({ all: z.literal(true) }),
   z.object({
-    ids: z
-      .array(z.string().regex(/^[a-f0-9]{24}$/))
-      .min(1)
-      .max(500),
+    ids: z.array(z.string().regex(ID_RE)).min(1).max(500),
   }),
 ]);
 

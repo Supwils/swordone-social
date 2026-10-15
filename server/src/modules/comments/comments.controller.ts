@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { ok, noContent } from '../../lib/respond';
 import { toCommentDTO } from '../../lib/dto';
 import { AppError } from '../../lib/errors';
+import type { TranslationDTO } from '../../contract/posts';
 import { decodeCursor, parseLimit } from '../../lib/pagination';
 import { translateEnabled } from '../../config/env';
 import { translateComments } from '../../lib/translate';
@@ -38,12 +39,14 @@ export async function translation(req: Request, res: Response) {
   );
   const from = detectLang(comment.text);
   if (from === to || !comment.text.trim()) {
-    return ok(res, { id: comment.id, from, to, text: comment.text, translated: false });
+    const same = { id: comment.id, from, to, text: comment.text, translated: false };
+    return ok(res, same satisfies TranslationDTO);
   }
   if (!translateEnabled) throw AppError.unavailable('Translation is not configured');
   await translateComments([comment], new Map([[comment.id, ctx]]), to);
   if (!ctx.translatedText) throw AppError.unavailable('Translation failed');
-  return ok(res, { id: comment.id, from, to, text: ctx.translatedText, translated: true });
+  const body = { id: comment.id, from, to, text: ctx.translatedText, translated: true };
+  return ok(res, body satisfies TranslationDTO);
 }
 
 export async function create(req: Request, res: Response) {

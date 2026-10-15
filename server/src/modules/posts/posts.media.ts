@@ -1,4 +1,4 @@
-import type { PostImage, PostVideo } from '../../db/schema';
+import type { PostImage, PostVideo } from '../../contract/posts';
 import { uploadBufferToS3, uploadVideoBufferToS3, deleteFromS3 } from '../../config/s3';
 
 export interface UploadedMedia {

@@ -46,14 +46,14 @@ vi.mock('@/features/lab/AgentGrid', () => ({
 }));
 
 import * as labApi from '@/features/lab/api';
-import type { AgentLabSummary } from '@/features/lab/types';
+import { makeLabAgent } from '@/test/fixtures';
 import { Era3Dashboard } from './Era3Dashboard';
 import { emptyReport, seededReport } from './testFixtures';
 
 const AGENTS = [
-  { username: 'xiaoman', arm: 'claude-haiku' },
-  { username: 'awen', arm: 'grok' },
-] as AgentLabSummary[];
+  makeLabAgent({ username: 'xiaoman', arm: 'claude-haiku' }),
+  makeLabAgent({ username: 'awen', arm: 'grok' }),
+];
 
 function renderDashboard(onFocus = vi.fn(), detail?: ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

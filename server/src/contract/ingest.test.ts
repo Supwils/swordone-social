@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
-import { agentEventIngest } from './runtime.schemas';
+import {
+  ROUND_ID_RE,
+  agentEventIngest,
+  behaviorSnapshotIngest,
+  benchmarkRunIngest,
+  postVectorIngest,
+  snapshotIngest,
+} from './ingest';
+
+/**
+ * The agent's ingest bodies (spec §7.10). These tests moved here with the
+ * schemas from `runtime.schemas.test.ts`, `persona.schemas.test.ts` and
+ * `arms/postVectors.test.ts`; the route-level tests stay with their modules.
+ */
 
 /**
  * The `action` enum decides which act events reach `/lab`.
@@ -157,5 +170,199 @@ describe('agentEventIngest cycle_run card', () => {
       },
     });
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe('snapshotIngest aspectDrift', () => {
+  const base = {
+    contentHash: 'e'.repeat(64),
+    embedding: Array(64).fill(0.01),
+    archivePath: 'agents/zenith/personality.md',
+  };
+
+  it('accepts a valid aspectDrift block', () => {
+    const parsed = snapshotIngest.parse({
+      ...base,
+      aspectDrift: {
+        mode: 'shadow',
+        promptVersion: 1,
+        values: 0.9,
+        style: 0.8,
+        topic: 0.7,
+        breached: [],
+      },
+    });
+    expect(parsed.aspectDrift?.mode).toBe('shadow');
+  });
+
+  it('rejects a sim outside [-1, 1]', () => {
+    expect(() =>
+      snapshotIngest.parse({
+        ...base,
+        aspectDrift: {
+          mode: 'aspect',
+          promptVersion: 1,
+          values: 1.5,
+          style: 0.8,
+          topic: 0.7,
+          breached: [],
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('rejects an unknown breached aspect name', () => {
+    expect(() =>
+      snapshotIngest.parse({
+        ...base,
+        aspectDrift: {
+          mode: 'aspect',
+          promptVersion: 1,
+          values: 0.9,
+          style: 0.8,
+          topic: 0.7,
+          breached: ['vibe'],
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('is optional so legacy snapshots without it still validate', () => {
+    const parsed = snapshotIngest.parse(base);
+    expect(parsed.aspectDrift).toBeUndefined();
+  });
+});
+
+const vec = (n = 1024) => Array.from({ length: n }, (_, i) => (i % 7) / 7);
+const body = (postId: string, over: Record<string, unknown> = {}) => ({
+  postId,
+  roundId: '20261014T060000Z-r',
+  embedding: vec(),
+  cardSim: 0.71,
+  maxSim: 0.42,
+  ...over,
+});
+
+describe('postVectorIngest schema', () => {
+  it('accepts the wire contract the agent speaks', () => {
+    expect(postVectorIngest.safeParse(body('p1')).success).toBe(true);
+    expect(
+      postVectorIngest.safeParse(body('p1', { roundId: null, cardSim: null, maxSim: null }))
+        .success,
+    ).toBe(true);
+    expect(postVectorIngest.safeParse(body('p1', { roundId: '20261014T060000Z-m' })).success).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    ['a 1023-dim vector', { embedding: vec(1023) }],
+    ['a 1025-dim vector', { embedding: vec(1025) }],
+    ['a malformed round id', { roundId: '2026-10-14-r' }],
+    ['an unknown round kind', { roundId: '20261014T060000Z-x' }],
+    ['cardSim above 1', { cardSim: 1.01 }],
+    ['maxSim below -1', { maxSim: -1.5 }],
+    ['an empty postId', { postId: '' }],
+    ['a postId over 64 chars', { postId: 'x'.repeat(65) }],
+  ])('rejects %s', (_label, over) => {
+    expect(postVectorIngest.safeParse(body('p1', over)).success).toBe(false);
+  });
+});
+
+describe('ROUND_ID_RE', () => {
+  it.each(['20261014T060000Z-r', '20261014T060000Z-m'])('accepts %s', (id) => {
+    expect(ROUND_ID_RE.test(id)).toBe(true);
+  });
+
+  it.each([
+    '20261014T060000Z',
+    '20261014T060000Z-x',
+    '2026-10-14T06:00:00Z-r',
+    ' 20261014T060000Z-r',
+  ])('rejects %j', (id) => {
+    expect(ROUND_ID_RE.test(id)).toBe(false);
+  });
+});
+
+describe('snapshotIngest contentHash and defaults', () => {
+  const base = {
+    contentHash: 'e'.repeat(64),
+    embedding: Array(64).fill(0.01),
+    archivePath: 'agents/zenith/personality.md',
+  };
+
+  it('accepts an uppercase hex hash (the regex carries the i flag)', () => {
+    expect(snapshotIngest.safeParse({ ...base, contentHash: 'E'.repeat(64) }).success).toBe(true);
+  });
+
+  it('rejects a non-hex hash and a short one', () => {
+    expect(snapshotIngest.safeParse({ ...base, contentHash: 'g'.repeat(64) }).success).toBe(false);
+    expect(snapshotIngest.safeParse({ ...base, contentHash: 'e'.repeat(63) }).success).toBe(false);
+  });
+
+  it('defaults snapshotType to dream and excerpt to empty', () => {
+    expect(snapshotIngest.parse(base)).toMatchObject({ snapshotType: 'dream', excerpt: '' });
+  });
+
+  it('rejects a non-finite embedding value and an embedding under 64 dims', () => {
+    expect(
+      snapshotIngest.safeParse({ ...base, embedding: [...base.embedding.slice(1), Infinity] })
+        .success,
+    ).toBe(false);
+    expect(snapshotIngest.safeParse({ ...base, embedding: Array(63).fill(0.01) }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe('behaviorSnapshotIngest', () => {
+  const base = { contentHash: 'a'.repeat(64), embedding: Array(64).fill(0.01) };
+
+  it('defaults the counts and the excerpt', () => {
+    expect(behaviorSnapshotIngest.parse(base)).toMatchObject({
+      postCount: 0,
+      commentCount: 0,
+      excerpt: '',
+    });
+  });
+
+  it('coerces a numeric-string count (the JSON Schema does not: it requires a number)', () => {
+    expect(behaviorSnapshotIngest.parse({ ...base, postCount: '3' }).postCount).toBe(3);
+  });
+
+  it('rejects a negative count', () => {
+    expect(behaviorSnapshotIngest.safeParse({ ...base, commentCount: -1 }).success).toBe(false);
+  });
+});
+
+describe('benchmarkRunIngest', () => {
+  const base = { batchId: 'b1', persona: 'zenith', model: 'haiku', taskId: 'free_post' };
+
+  it('fills every default of a minimal body', () => {
+    expect(benchmarkRunIngest.parse(base)).toEqual({
+      ...base,
+      personaDisplay: '',
+      taskKind: '',
+      runIndex: 0,
+      output: '',
+      vectorFidelity: null,
+      judgeScore: null,
+      ruleScore: null,
+      ruleDetail: '',
+      latencyMs: null,
+    });
+  });
+
+  it('rejects a blank batchId after trimming', () => {
+    expect(benchmarkRunIngest.safeParse({ ...base, batchId: '   ' }).success).toBe(false);
+  });
+
+  it('keeps its own min-2 persona bound', () => {
+    expect(benchmarkRunIngest.safeParse({ ...base, persona: 'ab' }).success).toBe(true);
+    expect(benchmarkRunIngest.safeParse({ ...base, persona: 'a' }).success).toBe(false);
+  });
+
+  it('rejects a judge score above 100', () => {
+    expect(benchmarkRunIngest.safeParse({ ...base, judgeScore: 101 }).success).toBe(false);
   });
 });

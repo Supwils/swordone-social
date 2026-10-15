@@ -1,5 +1,5 @@
 import { http, unwrap } from './client';
-import type { UserDTO, UserLiteDTO } from './types';
+import type { UserDTO, UserLiteDTO, UserPreferences } from './types';
 
 export async function getByUsername(username: string): Promise<UserDTO> {
   const out = await unwrap<{ user: UserDTO }>(http.get(`/users/${username}`));
@@ -13,7 +13,7 @@ export async function updateMe(patch: Partial<{
   location: string | null;
   website: string | null;
   birthdate: string | null;
-  preferences: Partial<NonNullable<UserDTO['preferences']>>;
+  preferences: UserPreferences;
   profileTags: string[];
 }>): Promise<UserDTO> {
   const out = await unwrap<{ user: UserDTO }>(http.patch('/users/me', patch));

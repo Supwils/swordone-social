@@ -7,6 +7,47 @@ owner: era-3
 
 # Handoff
 
+## S4: one API contract — 2026-10-14
+
+**Status: done, uncommitted, nothing deployed.** No response field, status code
+or route changed. Spec: `docs/superpowers/specs/2026-10-14-s4-api-contract-design.md`.
+
+**What changed.**
+
+- `server/src/contract/` is now the only place API shapes are declared: strict zod
+  schemas for users, posts, messaging, the lab (population, persona, runtime,
+  bench, arms) and every agent ingest body. `lib/dto.ts` mappers and the lab
+  services are typed against it; the old `*.types.ts` files are gone.
+- `npm --prefix server run contract:sync` writes the copies in
+  `client/src/contract/` and `mcp/src/contract/` plus ingest JSON Schemas in
+  `agent/tests/contract/`; `contract:check` is read-only and exits 1 on drift or
+  orphans. It is step 1 of `ci:check` (now 14 steps) and the first check in the
+  CI job after the server install. Generated files are never hand-edited.
+- The client imports its types from the contract (`archivedAt` and `lang` are now
+  required, fixtures updated). The mcp takes id/username regexes and limits from it.
+  The agent has a pytest module (`test_contract_bodies.py`) validating every body
+  `Resources` builds against the JSON Schemas.
+- Agent-side fixes the contract surfaced: a plain-repost echo and long snapshot warn
+  reasons were silently refused by the server and are now filed (see the 2026-10-14
+  S4 entry in `13-observation-lab.md`); model-supplied lab-event fields and snapshot
+  excerpts are capped in UTF-16 units (`cap_utf16`); the plain-echo summary fallback
+  now uses JS-`trim()` whitespace (incl. U+FEFF).
+- Server lint now also covers `server/scripts/*.test.ts`. Typecheck still does not
+  (the tsconfig excludes `*.test.ts` so the build output keeps `dist/src/server.js`;
+  vitest does not typecheck either).
+
+**Verification.** `npm run ci:check` from the repo root, 14/14 green.
+
+**Recorded follow-ups (decided not to fix inside S4).**
+
+- `POST /posts` echo response lacks `echoOf` (the only one a user can see).
+- `toAgentSummaryItem` skips `publicAgentBackend`.
+- API-key create/list bodies carry `Date` in memory (ISO only after `res.json`), so
+  they are pinned on the serialised body, not annotated.
+- The lab roster returns the stored `agentBackend` for sealed humans.
+
+**Not done.** S5 only (below).
+
 ## S3: runtime slimming — 2026-10-14
 
 Python agent runtime restructured, **no behaviour change for a `cycle`**.
@@ -243,9 +284,8 @@ Verbatim from spec §14, with the commands filled in:
 
 ### Not done (later slices)
 
-S2 and S3 are done (sections above; both uncommitted).
+S2, S3 and S4 are done (sections above; all uncommitted). Only S5 remains.
 
-- **S4** — one API contract (no more hand-synced `dto.ts` / `api/types.ts`).
 - **S5** — docs consolidation (many older docs and `agent/tests` docstrings still
   cite deleted scripts as history), Mongo leftovers, FKs, repo hygiene, CI e2e.
 

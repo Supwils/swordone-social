@@ -2,27 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@/i18n';
 import type { AutocompleteResult } from './useAutocomplete';
-import type { TagDTO, UserLiteDTO } from '@/api/types';
+import { makeTag, makeUserLite } from '@/test/fixtures';
 
 import { AutocompleteDropdown } from './AutocompleteDropdown';
 
-function makeUser(over: Partial<UserLiteDTO> = {}): UserLiteDTO {
-  return {
-    id: 'u-alice',
-    username: 'alice',
-    usernameDisplay: 'alice',
-    displayName: 'Alice A',
-    avatarUrl: null,
-    headline: '',
-    profileTags: [],
-    isAgent: false,
-    ...over,
-  };
-}
-
-function makeTag(over: Partial<TagDTO> = {}): TagDTO {
-  return { slug: 'ai', display: 'ai', postCount: 1234, ...over };
-}
+const ALICE = makeUserLite({ id: 'u-alice', displayName: 'Alice A' });
+const BOB = makeUserLite({
+  id: 'u-bob',
+  username: 'bob',
+  usernameDisplay: 'bob',
+  displayName: 'Bob B',
+});
+const AI_TAG = makeTag({ slug: 'ai', display: 'ai', postCount: 1234 });
 
 afterEach(() => {
   cleanup();
@@ -39,8 +30,8 @@ describe('AutocompleteDropdown', () => {
 
   it('renders user results with display name and @username, and fires onSelect on click', () => {
     const onSelect = vi.fn();
-    const alice = makeUser();
-    const bob = makeUser({ id: 'u-bob', username: 'bob', displayName: 'Bob B' });
+    const alice = ALICE;
+    const bob = BOB;
 
     render(
       <AutocompleteDropdown
@@ -64,7 +55,7 @@ describe('AutocompleteDropdown', () => {
     render(
       <AutocompleteDropdown
         prefix="@"
-        results={[makeUser({ displayName: '' })]}
+        results={[makeUserLite({ displayName: '' })]}
         activeIndex={0}
         onSelect={vi.fn()}
       />,
@@ -76,7 +67,7 @@ describe('AutocompleteDropdown', () => {
 
   it('renders tag results with a # prefix and post count, and fires onSelect on click', () => {
     const onSelect = vi.fn();
-    const tag = makeTag();
+    const tag = AI_TAG;
 
     render(
       <AutocompleteDropdown prefix="#" results={[tag]} activeIndex={0} onSelect={onSelect} />,
@@ -92,10 +83,7 @@ describe('AutocompleteDropdown', () => {
   });
 
   it('marks only the item at activeIndex as active', () => {
-    const results: AutocompleteResult[] = [
-      makeUser(),
-      makeUser({ id: 'u-bob', username: 'bob', displayName: 'Bob B' }),
-    ];
+    const results: AutocompleteResult[] = [ALICE, BOB];
 
     render(
       <AutocompleteDropdown prefix="@" results={results} activeIndex={1} onSelect={vi.fn()} />,
@@ -109,7 +97,7 @@ describe('AutocompleteDropdown', () => {
 
   it('prevents default on mousedown so the textarea keeps focus', () => {
     const { container } = render(
-      <AutocompleteDropdown prefix="@" results={[makeUser()]} activeIndex={0} onSelect={vi.fn()} />,
+      <AutocompleteDropdown prefix="@" results={[ALICE]} activeIndex={0} onSelect={vi.fn()} />,
     );
 
     const dropdown = container.firstChild as HTMLElement;

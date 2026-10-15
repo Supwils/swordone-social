@@ -1,4 +1,5 @@
 import { ObjectId } from 'bson';
+import { ID_RE } from '../contract/common';
 
 /**
  * Generate a new primary-key id in MongoDB ObjectId hex format (24 lowercase
@@ -12,5 +13,5 @@ export function newId(): string {
 
 /** True if a string is a well-formed 24-char ObjectId hex. */
 export function isValidId(value: string): boolean {
-  return /^[a-f0-9]{24}$/.test(value);
+  return ID_RE.test(value);
 }

@@ -1,5 +1,6 @@
 import { pgTable, text, boolean, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { newId } from '../../lib/id';
+import type { NotificationType } from '../../contract/messaging';
 
 export const conversations = pgTable(
   'conversations',
@@ -33,15 +34,6 @@ export const messages = pgTable(
   },
   (t) => [index('messages_conv_created_idx').on(t.conversationId, t.createdAt)],
 );
-
-export type NotificationType =
-  | 'like'
-  | 'comment'
-  | 'reply'
-  | 'follow'
-  | 'mention'
-  | 'message'
-  | 'echo';
 
 export const notifications = pgTable(
   'notifications',

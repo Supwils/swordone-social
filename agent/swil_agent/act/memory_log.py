@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Final
 
-from swil_agent.api.dto import LabEvent
+from swil_agent.api.dto import SUMMARY_MAX_UNITS, LabEvent, cap_utf16
 from swil_agent.api.resources import Resources
 from swil_agent.llm.extract import collapse_doubled_text
 from swil_agent.models import Action, ActionResult
@@ -190,8 +190,10 @@ def _memory_event(note: str) -> LabEvent:
 
     Field placement: `type, phase, outcome, action, summary, reason,
     target_id, metrics`, with `reason` empty and `metrics` `"{}"`. The
-    summary is the WHOLE flattened note -- uncapped, unlike the act events'
-    200-char cap.
+    summary is the WHOLE flattened note -- not the act events' 200-char
+    cap -- bounded only by the server's 500 UTF-16 units: the note carries
+    model output (usernames, an image topic), and one over the bound 400s
+    the event.
     """
     verb = note.split("|", 1)[0].strip()
     match = _MEMORY_TARGET_RE.search(note)
@@ -200,7 +202,7 @@ def _memory_event(note: str) -> LabEvent:
         phase="memory",
         outcome="success",
         action=verb if verb in _MEMORY_EVENT_ACTIONS else None,
-        summary=note,
+        summary=cap_utf16(note, SUMMARY_MAX_UNITS),
         reason=None,
         target_id=match.group(1) if match else None,
     )

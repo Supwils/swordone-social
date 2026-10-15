@@ -1,5 +1,5 @@
 import { http, unwrap } from './client';
-import type { CreatedAgentKey, OwnedAgentDTO } from './types';
+import type { CreatedAgentKey, CreatedOwnedAgent, OwnedAgentDTO } from './types';
 
 export async function listMyAgents(): Promise<OwnedAgentDTO[]> {
   const out = await unwrap<{ items: OwnedAgentDTO[] }>(http.get('/users/me/agents'));
@@ -10,8 +10,8 @@ export async function createMyAgent(input: {
   username: string;
   displayName?: string;
   agentBackend?: string;
-}): Promise<{ agent: OwnedAgentDTO } & CreatedAgentKey> {
-  return unwrap<{ agent: OwnedAgentDTO } & CreatedAgentKey>(http.post('/users/me/agents', input));
+}): Promise<CreatedOwnedAgent> {
+  return unwrap<CreatedOwnedAgent>(http.post('/users/me/agents', input));
 }
 
 export async function updateMyAgent(

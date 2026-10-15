@@ -2,7 +2,7 @@ import { http } from '@/api/client';
 import type { ApiEnvelope } from '@/api/types';
 import type {
   AccountRoundsDTO,
-  AgentLabSummary,
+  AgentSummaryDTO,
   ArmsReportDTO,
   LabEra,
   LabRange,
@@ -12,16 +12,16 @@ import type {
   AlertsDTO,
   CollapseWatchDTO,
   DriftCountdownDTO,
-  DriftPoint,
+  DriftPointDTO,
   FidelityDTO,
   HomogenizationDTO,
   InfluencesDTO,
   InteractionGraphDTO,
   PulseDTO,
   RuntimeHealthDTO,
-  BenchmarkLeaderboard,
-  BenchmarkMatrix,
-  BenchmarkCompare,
+  BenchmarkLeaderboardDTO,
+  BenchmarkMatrixDTO,
+  BenchmarkCompareDTO,
 } from '@/features/lab/types';
 
 /**
@@ -34,9 +34,9 @@ function withEra(qs: URLSearchParams, era: LabEra): string {
   return qs.toString();
 }
 
-export async function listLabAgents(era: LabEra, limit = 50): Promise<AgentLabSummary[]> {
+export async function listLabAgents(era: LabEra, limit = 50): Promise<AgentSummaryDTO[]> {
   const qs = withEra(new URLSearchParams({ limit: String(limit) }), era);
-  const { data } = await http.get<ApiEnvelope<{ items: AgentLabSummary[] }>>(`/agents?${qs}`);
+  const { data } = await http.get<ApiEnvelope<{ items: AgentSummaryDTO[] }>>(`/agents?${qs}`);
   return data.data.items;
 }
 
@@ -102,24 +102,24 @@ export async function getAccountRounds(username: string): Promise<AccountRoundsD
   return data.data;
 }
 
-export async function getBenchmarkLeaderboard(): Promise<BenchmarkLeaderboard> {
-  const { data } = await http.get<ApiEnvelope<BenchmarkLeaderboard>>(
+export async function getBenchmarkLeaderboard(): Promise<BenchmarkLeaderboardDTO> {
+  const { data } = await http.get<ApiEnvelope<BenchmarkLeaderboardDTO>>(
     `/agents/benchmark/leaderboard`,
   );
   return data.data;
 }
 
-export async function getBenchmarkMatrix(): Promise<BenchmarkMatrix> {
-  const { data } = await http.get<ApiEnvelope<BenchmarkMatrix>>(`/agents/benchmark/matrix`);
+export async function getBenchmarkMatrix(): Promise<BenchmarkMatrixDTO> {
+  const { data } = await http.get<ApiEnvelope<BenchmarkMatrixDTO>>(`/agents/benchmark/matrix`);
   return data.data;
 }
 
 export async function getBenchmarkCompare(
   persona: string,
   task: string,
-): Promise<BenchmarkCompare> {
+): Promise<BenchmarkCompareDTO> {
   const qs = new URLSearchParams({ persona, task });
-  const { data } = await http.get<ApiEnvelope<BenchmarkCompare>>(
+  const { data } = await http.get<ApiEnvelope<BenchmarkCompareDTO>>(
     `/agents/benchmark/compare?${qs.toString()}`,
   );
   return data.data;
@@ -145,8 +145,8 @@ export async function getAgentStats(
   return data.data;
 }
 
-export async function getAgentDrift(username: string): Promise<DriftPoint[]> {
-  const { data } = await http.get<ApiEnvelope<{ snapshots: DriftPoint[] }>>(
+export async function getAgentDrift(username: string): Promise<DriftPointDTO[]> {
+  const { data } = await http.get<ApiEnvelope<{ snapshots: DriftPointDTO[] }>>(
     `/agents/${username}/drift`,
   );
   return data.data.snapshots;

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { GraphEdge, GraphNode, InteractionGraphDTO } from '@/features/lab/types';
+import type { GraphEdgeDTO, GraphNodeDTO, InteractionGraphDTO } from '@/features/lab/types';
 import s from '@/features/lab/lab.module.css';
 
 /**
@@ -13,7 +13,7 @@ import s from '@/features/lab/lab.module.css';
  * the most-connected persona, AI↔person ties, and mutual (reciprocated) pairs.
  */
 
-interface Positioned extends GraphNode {
+interface Positioned extends GraphNodeDTO {
   x: number;
   y: number;
 }
@@ -33,7 +33,7 @@ const KIND_COLOR: Record<EdgeKind, string> = {
 };
 const KIND_ORDER: EdgeKind[] = ['comment', 'reply', 'echo', 'like'];
 
-function dominantKind(e: GraphEdge): EdgeKind {
+function dominantKind(e: GraphEdgeDTO): EdgeKind {
   let best: EdgeKind = 'like';
   let bestN = -1;
   for (const k of KIND_ORDER) {
@@ -56,7 +56,7 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-function computeLayout(nodes: GraphNode[], edges: GraphEdge[]): Positioned[] {
+function computeLayout(nodes: GraphNodeDTO[], edges: GraphEdgeDTO[]): Positioned[] {
   const n = nodes.length;
   if (n === 0) return [];
   const rand = mulberry32(0x9e3779b9 ^ n);

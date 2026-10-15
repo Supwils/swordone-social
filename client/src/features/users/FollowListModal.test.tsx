@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import '@/i18n';
-import type { UserLiteDTO } from '@/api/types';
+import { makeUserLite } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
   listFollowers: vi.fn(),
@@ -23,19 +23,7 @@ vi.mock('@/components/InfiniteScrollSentinel', () => ({
 
 import { FollowListModal } from './FollowListModal';
 
-function makeUser(over: Partial<UserLiteDTO> = {}): UserLiteDTO {
-  return {
-    id: 'u-alice',
-    username: 'alice',
-    usernameDisplay: 'alice',
-    displayName: 'Alice A',
-    avatarUrl: null,
-    headline: '',
-    profileTags: [],
-    isAgent: false,
-    ...over,
-  };
-}
+const ALICE = makeUserLite({ id: 'u-alice', displayName: 'Alice A' });
 
 function renderModal(type: 'followers' | 'following' = 'followers') {
   const onClose = vi.fn();
@@ -58,7 +46,16 @@ afterEach(() => {
 describe('FollowListModal', () => {
   it('lists the followers of the given username in a dialog', async () => {
     mocks.listFollowers.mockResolvedValue({
-      items: [makeUser(), makeUser({ id: 'u-agent', username: 'zenith', displayName: 'Zenith', isAgent: true })],
+      items: [
+        ALICE,
+        makeUserLite({
+          id: 'u-agent',
+          username: 'zenith',
+          usernameDisplay: 'zenith',
+          displayName: 'Zenith',
+          isAgent: true,
+        }),
+      ],
       nextCursor: null,
     });
 
@@ -79,7 +76,7 @@ describe('FollowListModal', () => {
   });
 
   it('lists following via the following endpoint with its own title', async () => {
-    mocks.listFollowing.mockResolvedValue({ items: [makeUser()], nextCursor: null });
+    mocks.listFollowing.mockResolvedValue({ items: [ALICE], nextCursor: null });
 
     renderModal('following');
 
@@ -105,7 +102,7 @@ describe('FollowListModal', () => {
   });
 
   it('debounces the search box into the list query and shows the no-match state', async () => {
-    mocks.listFollowers.mockResolvedValue({ items: [makeUser()], nextCursor: null });
+    mocks.listFollowers.mockResolvedValue({ items: [ALICE], nextCursor: null });
     renderModal('followers');
     await screen.findByText('Alice A');
 
@@ -123,7 +120,7 @@ describe('FollowListModal', () => {
   });
 
   it('closes when a user row is clicked', async () => {
-    mocks.listFollowers.mockResolvedValue({ items: [makeUser()], nextCursor: null });
+    mocks.listFollowers.mockResolvedValue({ items: [ALICE], nextCursor: null });
     const onClose = renderModal('followers');
 
     fireEvent.click(await screen.findByText('Alice A'));

@@ -7,7 +7,6 @@ import { db } from '../../../db/client';
 import { agentEvents, apiKeys, posts, postVectors, users } from '../../../db/schema';
 import { resetDb } from '../../../test/db-reset';
 import { ingestPostVector } from './postVectors';
-import { postVectorIngest } from './arms.schemas';
 
 /**
  * Review Focus 3: the act path files a post's vector with its round id, and a
@@ -83,32 +82,6 @@ const body = (postId: string, over: Record<string, unknown> = {}) => ({
 
 beforeEach(async () => {
   await resetDb();
-});
-
-describe('postVectorIngest schema', () => {
-  it('accepts the wire contract the agent speaks', () => {
-    expect(postVectorIngest.safeParse(body('p1')).success).toBe(true);
-    expect(
-      postVectorIngest.safeParse(body('p1', { roundId: null, cardSim: null, maxSim: null }))
-        .success,
-    ).toBe(true);
-    expect(postVectorIngest.safeParse(body('p1', { roundId: '20261014T060000Z-m' })).success).toBe(
-      true,
-    );
-  });
-
-  it.each([
-    ['a 1023-dim vector', { embedding: vec(1023) }],
-    ['a 1025-dim vector', { embedding: vec(1025) }],
-    ['a malformed round id', { roundId: '2026-10-14-r' }],
-    ['an unknown round kind', { roundId: '20261014T060000Z-x' }],
-    ['cardSim above 1', { cardSim: 1.01 }],
-    ['maxSim below -1', { maxSim: -1.5 }],
-    ['an empty postId', { postId: '' }],
-    ['a postId over 64 chars', { postId: 'x'.repeat(65) }],
-  ])('rejects %s', (_label, over) => {
-    expect(postVectorIngest.safeParse(body('p1', over)).success).toBe(false);
-  });
 });
 
 describe('ingestPostVector', () => {

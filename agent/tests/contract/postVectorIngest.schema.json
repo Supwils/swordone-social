@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "GENERATED from server/src/contract by contract:sync — do not edit.",
+  "description": "Request body of POST /api/v1/agents/:username/post-vectors (zod source: `postVectorIngest` in server/src/contract/ingest.ts). Stricter than the server on purpose: unknown keys are rejected here, where the server strips them, so a misspelt field fails a test instead of being dropped. Looser than the server, so the agent's test asserts these directly: every number must be finite: NaN and Infinity pass `type: number` and every minimum/maximum here, but JSON cannot carry them (httpx raises before sending, the server's parser rejects them), and the server also checks embedding[] for finiteness explicitly; `pattern` (roundId) is ECMA-262, but a Python validator evaluates it with `re.search`, where `$` also matches before a trailing newline and `\\d` matches non-ASCII digits, so check those fields with `re.fullmatch(..., flags=re.ASCII)`.",
+  "$ref": "#/definitions/postVectorIngest",
+  "definitions": {
+    "postVectorIngest": {
+      "type": "object",
+      "properties": {
+        "postId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "roundId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{8}T\\d{6}Z-[rm]$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "embedding": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1024,
+          "maxItems": 1024
+        },
+        "cardSim": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxSim": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "postId",
+        "roundId",
+        "embedding",
+        "cardSim",
+        "maxSim"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

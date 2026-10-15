@@ -30,14 +30,15 @@ must follow.
 npm run ci:check
 ```
 
-Runs all 13 steps that GitHub Actions runs:
+Runs all 14 steps that GitHub Actions runs:
 
-1. Typecheck server + 2. client
-3. Lint server + 4. client
-5. Test server + 6. client (coverage thresholds enforced since 2026-08-24)
-7. Typecheck mcp + 8. Test mcp (with its own coverage floor)
-9. Build server + 10. client
-11. Lint agent + 12. Typecheck agent + 13. Test agent (pytest, cov ≥ 97)
+1. Contract in sync (`contract:check`)
+2. Typecheck server + 3. client
+4. Lint server + 5. client
+6. Test server + 7. client (coverage thresholds enforced since 2026-08-24)
+8. Typecheck mcp + 9. Test mcp (with its own coverage floor)
+10. Build server + 11. client
+12. Lint agent + 13. Typecheck agent + 14. Test agent (pytest, cov ≥ 97)
 
 Even with the local git hooks installed (`npm run install-hooks`), the
 hooks run a *subset* per phase — pre-commit skips the build, pre-push
@@ -87,8 +88,11 @@ Run `npm run lint:fix` and `npm run format` before opening a PR.
 - Server services use the `*.write.ts / *.read.ts / *.hydrate.ts`
   pattern when one file gets > 300 lines (see `modules/posts/`).
 - Tests live next to the file they test (`foo.ts` + `foo.test.ts`).
-- Shared types: `server/src/lib/dto.ts` and `client/src/api/types.ts`
-  are kept manually in sync (no codegen yet — see roadmap).
+- Shared API shapes: `server/src/contract/` (zod schemas + `z.infer` types) is
+  the single authority. `client/src/contract/`, `mcp/src/contract/` and
+  `agent/tests/contract/*.schema.json` are **generated copies — never hand-edit
+  them.** After changing a contract file run `npm --prefix server run
+  contract:sync`; `contract:check` (ci:check step 1 and CI) fails on any drift.
 
 ## What not to do
 
@@ -117,6 +121,8 @@ npm run lint                 # both packages
 npm run test                 # both packages
 npm run test:coverage        # both, with thresholds
 npm run knip                 # find unused code / deps
+npm --prefix server run contract:sync   # regenerate client/mcp/agent contract copies
+npm --prefix server run contract:check  # same, read-only (exit 1 on drift)
 npm run ci:check             # full pipeline locally — RUN BEFORE PUSH
 
 # Targeted

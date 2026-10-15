@@ -8,7 +8,7 @@
  */
 import { TTLCache } from '../../../lib/ttlCache';
 import { ARMS } from '../lab/roster';
-import type { ArmsReportDTO } from './arms.types';
+import type { ArmsReportDTO } from '../../../contract/lab/arms';
 import { contagionReport, resetEra2Baseline } from './contagion';
 import { homophilyReport } from './homophily';
 import {

@@ -272,6 +272,17 @@ def test_echo_without_a_quote_is_a_plain_repost() -> None:
     assert resources.created_posts[0].echo_of == "p" * 24
 
 
+def test_a_bom_only_quote_falls_back_to_the_plain_echo_summary() -> None:
+    """JS `trim()` removes U+FEFF but Python `strip()` keeps it; the server would
+    refuse a BOM-only summary, so the fallback must apply."""
+    resources = FakeResources()
+    result = execute_action(
+        resources, Action(kind="echo", post_id="p" * 24, text="\ufeff\u00a0\ufeff"), **CTX
+    )
+    assert result.landed is True
+    assert resources.lab_events[-1].summary == "echoed post"
+
+
 def test_echo_failure_is_not_swallowed() -> None:
     resources = FakeResources(post_raises=ApiError(404, "not found", None))
     result = execute_action(resources, Action(kind="echo", post_id="p" * 24), **CTX)

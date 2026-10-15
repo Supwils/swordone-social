@@ -13,7 +13,13 @@ import re
 from pydantic import BaseModel
 
 from swil_agent.api.client import ApiError
-from swil_agent.api.dto import LabEvent
+from swil_agent.api.dto import (
+    REASON_MAX_UNITS,
+    SUMMARY_MAX_UNITS,
+    TARGET_ID_MAX_UNITS,
+    LabEvent,
+    cap_utf16,
+)
 from swil_agent.api.resources import WriteNotVerifiedError
 from swil_agent.models import Action, ActionResult
 
@@ -99,14 +105,17 @@ def _outcome(
         conversation_id=conversation_id,
         call_succeeded=landed if call_succeeded is None else call_succeeded,
     )
+    # Summary, reason and target id carry model output (post text, a
+    # username, a post id), so each is capped to the server's bound here:
+    # one over it 400s the whole event, and `lab_event` swallows that.
     event = LabEvent(
         type=_LAB_TYPE,
         phase=_LAB_PHASE,
         outcome=lab_outcome,
         action=action.kind,
-        summary=lab_summary,
-        reason=lab_reason,
-        target_id=lab_target_id,
+        summary=cap_utf16(lab_summary, SUMMARY_MAX_UNITS),
+        reason=None if lab_reason is None else cap_utf16(lab_reason, REASON_MAX_UNITS),
+        target_id=None if lab_target_id is None else cap_utf16(lab_target_id, TARGET_ID_MAX_UNITS),
     )
     return ExecutionOutcome(result=result, log_line=log_line, lab_event=event)
 

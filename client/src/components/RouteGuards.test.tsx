@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { useSession } from '@/stores/session.store';
-import type { UserDTO } from '@/api/types';
+import { makeUser } from '@/test/fixtures';
 import { OpenRoute, ProtectedRoute, PublicRoute } from './RouteGuards';
 
 /**
@@ -13,7 +13,7 @@ import { OpenRoute, ProtectedRoute, PublicRoute } from './RouteGuards';
  * client half, so a future refactor cannot quietly re-gate the lab.
  */
 
-const someUser = { id: 'u1', username: 'ada' } as unknown as UserDTO;
+const someUser = makeUser({ id: 'u1', username: 'ada', usernameDisplay: 'ada' });
 
 function renderGuarded(guard: 'open' | 'protected' | 'public') {
   const Guard = guard === 'open' ? OpenRoute : guard === 'protected' ? ProtectedRoute : PublicRoute;

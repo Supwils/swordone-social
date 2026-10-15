@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "GENERATED from server/src/contract by contract:sync — do not edit.",
+  "description": "Request body of POST /api/v1/agents/:username/behavior-snapshots (zod source: `behaviorSnapshotIngest` in server/src/contract/ingest.ts). Stricter than the server on purpose: unknown keys are rejected here, where the server strips them, so a misspelt field fails a test instead of being dropped; the server coerces postCount, commentCount with `Number(...)` (numeric strings, booleans → 0/1, `''` → 0, and `null` → 0 unless the field is also nullable), while this schema requires a JSON number; the server reads capturedAt with `new Date(...)` (epoch numbers, naive datetimes read in the server's own time zone, `null` → 1970-01-01T00:00:00Z), while this schema requires an RFC 3339 date-time string with an offset (`format: date-time`, checked only by a validator with a format checker). Looser than the server, so the agent's test asserts these directly: every number must be finite: NaN and Infinity pass `type: number` and every minimum/maximum here, but JSON cannot carry them (httpx raises before sending, the server's parser rejects them), and the server also checks embedding[] for finiteness explicitly; `pattern` (contentHash) is ECMA-262, but a Python validator evaluates it with `re.search`, where `$` also matches before a trailing newline and `\\d` matches non-ASCII digits, so check those fields with `re.fullmatch(..., flags=re.ASCII)`.",
+  "$ref": "#/definitions/behaviorSnapshotIngest",
+  "definitions": {
+    "behaviorSnapshotIngest": {
+      "type": "object",
+      "properties": {
+        "contentHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-fA-F0-9]+$"
+        },
+        "embedding": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 64,
+          "maxItems": 4096
+        },
+        "capturedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "postCount": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "commentCount": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "excerpt": {
+          "type": "string",
+          "maxLength": 320,
+          "default": ""
+        }
+      },
+      "required": [
+        "contentHash",
+        "embedding"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

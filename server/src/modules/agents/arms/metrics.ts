@@ -11,7 +11,7 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import { agentEvents, postVectors } from '../../../db/schema';
 import { ARMS, type ArmId } from '../lab/roster';
-import type { MetricBlock, SeriesPoint } from './arms.types';
+import type { MetricBlock, SeriesPoint } from '../../../contract/lab/arms';
 import {
   DUPLICATE_THRESHOLD,
   MIN_HIGH_CANDIDATES,

@@ -6,17 +6,11 @@
  * older (or newer, depending on sortDir) than the cursor; ties broken by id.
  */
 import { and, or, eq, lt, gt, type SQL, type AnyColumn } from 'drizzle-orm';
-
-const OBJECT_ID_RE = /^[a-f0-9]{24}$/;
+import { ID_RE } from '../contract/common';
 
 export interface Cursor {
   t: string;
   id: string;
-}
-
-export interface Paginated<T> {
-  items: T[];
-  nextCursor: string | null;
 }
 
 const DEFAULT_LIMIT = 20;
@@ -38,7 +32,7 @@ export function decodeCursor(raw: unknown): Cursor | null {
     const json = Buffer.from(raw, 'base64url').toString('utf8');
     const parsed = JSON.parse(json) as Partial<Cursor>;
     if (typeof parsed.t !== 'string' || typeof parsed.id !== 'string') return null;
-    if (!OBJECT_ID_RE.test(parsed.id)) return null;
+    if (!ID_RE.test(parsed.id)) return null;
     // `new Date(t)` downstream throws on an Invalid Date — a client-controlled 500.
     if (Number.isNaN(Date.parse(parsed.t))) return null;
     return { t: parsed.t, id: parsed.id };
@@ -100,7 +94,7 @@ export function decodeScoreCursor(raw: unknown): ScoreCursor | null {
     const json = Buffer.from(raw, 'base64url').toString('utf8');
     const parsed = JSON.parse(json) as Partial<ScoreCursor>;
     if (typeof parsed.s !== 'number' || typeof parsed.id !== 'string') return null;
-    if (!OBJECT_ID_RE.test(parsed.id)) return null;
+    if (!ID_RE.test(parsed.id)) return null;
     return { s: parsed.s, id: parsed.id };
   } catch {
     return null;

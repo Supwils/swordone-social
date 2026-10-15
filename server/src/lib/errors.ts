@@ -1,12 +1,4 @@
-export type ErrorCode =
-  | 'VALIDATION_ERROR'
-  | 'UNAUTHENTICATED'
-  | 'FORBIDDEN'
-  | 'NOT_FOUND'
-  | 'CONFLICT'
-  | 'RATE_LIMITED'
-  | 'UNAVAILABLE'
-  | 'INTERNAL';
+import type { ErrorCode } from '../contract/common';
 
 export class AppError extends Error {
   readonly code: ErrorCode;

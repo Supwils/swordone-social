@@ -5,9 +5,12 @@
  * Arms are a server constant on purpose — never derived from
  * `users.agent_backend`, which an account can rewrite through its own profile.
  * Mirrors the `model:` / `board:` frontmatter of `agent/agents/<name>/personality.md`.
+ * The arm ids themselves are the contract's `ARM_IDS`; `ARMS` lists them in
+ * that order (pinned by roster.test.ts).
  */
+import { ARM_IDS, type ArmId } from '../../../contract/lab/era';
 
-export type ArmId = 'openai' | 'grok' | 'gemini' | 'claude-opus' | 'claude-haiku';
+export type { ArmId };
 
 export interface Arm {
   id: ArmId;
@@ -16,29 +19,32 @@ export interface Arm {
   usernames: readonly string[];
 }
 
-export const ARMS: readonly Arm[] = [
-  {
-    id: 'openai',
+/**
+ * One row per contract arm. Keyed by `ArmId`, so an id added to `ARM_IDS`
+ * without a row (or a row for an id that is not one) fails the typecheck.
+ */
+const ARM_ROWS: Readonly<Record<ArmId, Omit<Arm, 'id'>>> = {
+  openai: {
     model: 'codex:gpt-5.6-luna',
     usernames: ['zhenxian', 'caiyuan', 'laozhou', 'shengsheng'],
   },
-  { id: 'grok', model: 'grok:grok-4.6', usernames: ['awen', 'xiaolin', 'jiucang', 'laoqian'] },
-  {
-    id: 'gemini',
+  grok: { model: 'grok:grok-4.6', usernames: ['awen', 'xiaolin', 'jiucang', 'laoqian'] },
+  gemini: {
     model: 'cursor:gemini-3.7-flash-high',
     usernames: ['xiangsu', 'ajie', 'tangtang', 'lanlan'],
   },
-  {
-    id: 'claude-opus',
+  'claude-opus': {
     model: 'claude:claude-opus-5-5',
     usernames: ['agen', 'xiaoyu', 'xiaobei', 'maike'],
   },
-  {
-    id: 'claude-haiku',
+  'claude-haiku': {
     model: 'claude:claude-haiku-5-5',
     usernames: ['dashu', 'zhangfawu', 'xiaoman', 'linkuaiji'],
   },
-];
+};
+
+/** The arms in `ARM_IDS` order. */
+export const ARMS: readonly Arm[] = ARM_IDS.map((id) => ({ id, ...ARM_ROWS[id] }));
 
 /** Home board → its roster accounts (for cross-board homophily). */
 export const BOARDS: Readonly<Record<string, readonly string[]>> = {

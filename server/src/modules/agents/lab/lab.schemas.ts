@@ -1,12 +1,9 @@
 import { z } from 'zod';
-import type { LabEra } from './era';
+import { usernameLookupSchema } from '../../../contract/common';
+import { LAB_RANGES, type LabEra } from '../../../contract/lab/era';
 
 export const usernameParam = z.object({
-  username: z
-    .string()
-    .min(3)
-    .max(24)
-    .regex(/^[a-zA-Z0-9_]+$/),
+  username: usernameLookupSchema,
 });
 
 /**
@@ -21,7 +18,7 @@ export const eraParam = z
 
 /** Per-account reads (`/:u/*`): a range only — they take no era. */
 export const rangeQuery = z.object({
-  range: z.enum(['7d', '30d', '90d']).optional().default('30d'),
+  range: z.enum(LAB_RANGES).optional().default('30d'),
 });
 
 /** Population reads (graph, homogenization, pulse, runtime, alerts). */

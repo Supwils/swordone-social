@@ -6,15 +6,20 @@
       "ignore": ["agent/**", ".remember/**", "e2e/**"]
     },
     "server": {
-      "entry": ["src/server.ts", "scripts/*.ts", "src/**/*.test.ts"],
+      "entry": ["src/server.ts", "scripts/*.ts", "src/**/*.test.ts", "src/contract/index.ts"],
       "project": ["src/**/*.ts", "scripts/*.ts"]
     },
     "client": {
-      "entry": ["src/main.tsx", "vite.config.ts", "src/**/*.test.{ts,tsx}"],
+      "entry": [
+        "src/main.tsx",
+        "vite.config.ts",
+        "src/**/*.test.{ts,tsx}",
+        "src/contract/index.ts"
+      ],
       "project": ["src/**/*.{ts,tsx}"]
     },
     "mcp": {
-      "entry": ["src/index.ts", "scripts/*.mts", "src/**/*.test.ts"],
+      "entry": ["src/index.ts", "scripts/*.mts", "src/**/*.test.ts", "src/contract/common.ts"],
       "project": ["src/**/*.ts"]
     }
   },

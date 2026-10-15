@@ -200,7 +200,8 @@ These override §1–§6 wherever they conflict.
 10. **Server constants single-sourced:** the server's own request schemas take
     `ID_RE` (`^[a-f0-9]{24}$`, today repeated 13×), `usernameSchema` and a `LIMITS`
     object (post 5000, comment 2000, DM 4000, post search q 100, user search 32,
-    slug 64) from `contract/common.ts`. `ROUND_ID_RE` moves with `postVectorIngest`;
+    slug 64) from `contract/common.ts`. `usernameLookupSchema` (same rule, zod's default message) serves
+    the param/lookup sites that never had the custom message. `ROUND_ID_RE` moves with `postVectorIngest`;
     `aspectDriftIngest` (Era 2, still accepted) moves with `snapshotIngest`; the
     ingest schema tests move to `server/src/contract/ingest.test.ts`.
 11. **Internal types stay put:** `roster.ts` (`ARMS`, `BOARDS`, `Arm`; typed against

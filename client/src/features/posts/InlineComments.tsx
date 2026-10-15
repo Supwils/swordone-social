@@ -398,7 +398,7 @@ export function InlineComments({ postId, open, indented = true }: Props) {
                           const translated = c.originalText ? c.text : manual?.text;
                           const shown = originalShown[c.id] && original ? original : (translated ?? c.text);
                           const canTranslate =
-                            !original && Boolean(c.lang) && c.lang !== language && c.text.trim().length > 0;
+                            !original && c.lang !== language && c.text.trim().length > 0;
                           const pending =
                             translateMutation.isPending && translateMutation.variables === c.id;
                           return (

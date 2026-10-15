@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import '@/i18n';
 import { useRealtime } from '@/stores/realtime.store';
 import type { NotificationDTO, UserLiteDTO } from '@/api/types';
+import { makeNotification, makeUserLite } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
@@ -29,29 +30,23 @@ vi.mock('@/components/InfiniteScrollSentinel', () => ({
 import NotificationsRoute from './notifications';
 
 function actor(id: string, name: string): UserLiteDTO {
-  return {
+  return makeUserLite({
     id,
     username: name.toLowerCase(),
     usernameDisplay: name.toLowerCase(),
     displayName: name,
-    avatarUrl: null,
-    headline: '',
-    profileTags: [],
-    isAgent: false,
-  };
+  });
 }
 
 let seq = 0;
 function notif(over: Partial<NotificationDTO> = {}): NotificationDTO {
   seq += 1;
-  return {
+  return makeNotification({
     id: `n-${seq}`,
-    type: 'like',
     actor: actor(`u-${seq}`, `Actor${seq}`),
-    read: false,
     createdAt: `2026-01-01T00:00:${String(seq).padStart(2, '0')}.000Z`,
     ...over,
-  };
+  });
 }
 
 function renderRoute() {

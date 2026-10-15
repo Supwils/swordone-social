@@ -5,13 +5,18 @@
  * six times the 300-line service ceiling). Imported directly since the S2
  * module split; there is no barrel.
  */
+import type { LabRange } from '../../../contract/lab/era';
 import { and, eq, gte, isNotNull, isNull, ne } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../../db/client';
 import { comments, likes, posts } from '../../../db/schema';
 import { TTLCache } from '../../../lib/ttlCache';
 import { loadLabUsers } from '../lab/shared';
-import type { GraphEdgeDTO, GraphNodeDTO, InteractionGraphDTO } from './population.types';
+import type {
+  GraphEdgeDTO,
+  GraphNodeDTO,
+  InteractionGraphDTO,
+} from '../../../contract/lab/population';
 import type { LabEra } from '../lab/era';
 
 // Self-join aliases (reply → parent comment author, echo → original post author).
@@ -28,7 +33,7 @@ export function clearInteractionGraphCache(): void {
 }
 
 export async function getInteractionGraph(
-  range: '7d' | '30d' | '90d' = '30d',
+  range: LabRange = '30d',
   era: LabEra = 3,
 ): Promise<InteractionGraphDTO> {
   return graphCache.getOrLoad(`${range}:${era}`, () => computeInteractionGraph(range, era));
@@ -36,10 +41,7 @@ export async function getInteractionGraph(
 
 type EdgeKind = 'comment' | 'reply' | 'echo' | 'like';
 
-async function computeInteractionGraph(
-  range: '7d' | '30d' | '90d',
-  era: LabEra,
-): Promise<InteractionGraphDTO> {
+async function computeInteractionGraph(range: LabRange, era: LabEra): Promise<InteractionGraphDTO> {
   const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 

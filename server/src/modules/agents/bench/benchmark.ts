@@ -17,7 +17,7 @@ import type {
   BenchmarkLeaderboardRowDTO,
   BenchmarkMatrixCellDTO,
   BenchmarkMatrixDTO,
-} from './bench.types';
+} from '../../../contract/lab/bench';
 
 /* ---------- Persona Bench: ingest + reads ---------- */
 

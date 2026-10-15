@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@/i18n';
-import type { TagDTO } from '@/api/types';
+import { makePost, makeTag } from '@/test/fixtures';
 
 vi.mock('@/api/feed.api', () => ({ byTag: vi.fn() }));
 vi.mock('@/api/tags.api', () => ({ getBySlug: vi.fn() }));
@@ -25,17 +25,9 @@ import * as feedApi from '@/api/feed.api';
 import * as tagsApi from '@/api/tags.api';
 import FeedTagRoute from './feedTag';
 
-function makeTag(over: Partial<TagDTO> = {}): TagDTO {
-  return {
-    slug: 'compilers',
-    display: 'compilers',
-    description: '',
-    coverImage: null,
-    postCount: 0,
-    status: 'active',
-    ...over,
-  } as unknown as TagDTO;
-}
+// The server omits `description` / `coverImage` when empty and `status` when
+// active, so the bare tag carries none of them.
+const COMPILERS = makeTag({ slug: 'compilers', display: 'compilers' });
 
 function renderAt(slug: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -57,11 +49,11 @@ afterEach(() => {
 
 describe('FeedTagRoute', () => {
   it('passes the slug and language through to the tag feed endpoint', async () => {
-    vi.mocked(tagsApi.getBySlug).mockResolvedValue(makeTag());
+    vi.mocked(tagsApi.getBySlug).mockResolvedValue(COMPILERS);
     vi.mocked(feedApi.byTag).mockResolvedValue({
-      items: [{ id: 'p-1', text: 'tagged post' }],
+      items: [makePost({ id: 'p-1', text: 'tagged post' })],
       nextCursor: null,
-    } as never);
+    });
 
     renderAt('compilers');
 
@@ -74,9 +66,14 @@ describe('FeedTagRoute', () => {
 
   it('renders the rich header with description and archived badge', async () => {
     vi.mocked(tagsApi.getBySlug).mockResolvedValue(
-      makeTag({ display: 'ai-gov', description: 'Measurement and power.', status: 'archived' }),
+      makeTag({
+        ...COMPILERS,
+        display: 'ai-gov',
+        description: 'Measurement and power.',
+        status: 'archived',
+      }),
     );
-    vi.mocked(feedApi.byTag).mockResolvedValue({ items: [], nextCursor: null } as never);
+    vi.mocked(feedApi.byTag).mockResolvedValue({ items: [], nextCursor: null });
 
     renderAt('ai-gov');
 
@@ -85,8 +82,8 @@ describe('FeedTagRoute', () => {
   });
 
   it('shows the empty state for a tag with no recent posts', async () => {
-    vi.mocked(tagsApi.getBySlug).mockResolvedValue(makeTag());
-    vi.mocked(feedApi.byTag).mockResolvedValue({ items: [], nextCursor: null } as never);
+    vi.mocked(tagsApi.getBySlug).mockResolvedValue(COMPILERS);
+    vi.mocked(feedApi.byTag).mockResolvedValue({ items: [], nextCursor: null });
 
     renderAt('compilers');
 
@@ -95,7 +92,7 @@ describe('FeedTagRoute', () => {
   });
 
   it('shows the not-found state when the feed errors', async () => {
-    vi.mocked(tagsApi.getBySlug).mockResolvedValue(makeTag());
+    vi.mocked(tagsApi.getBySlug).mockResolvedValue(COMPILERS);
     vi.mocked(feedApi.byTag).mockRejectedValue({ status: 404, message: 'Tag not found' });
 
     renderAt('missing');

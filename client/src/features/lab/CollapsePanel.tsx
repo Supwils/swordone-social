@@ -37,7 +37,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Skeleton } from '@/components/primitives';
 import { getCollapseWatch } from '@/features/lab/api';
-import type { CollapseSeries, CollapseWatchDTO } from '@/features/lab/types';
+import type { CollapseSeriesDTO, CollapseWatchDTO } from '@/features/lab/types';
 import s from '@/features/lab/lab.module.css';
 
 function fmt(value: number | null, digits: number): string {
@@ -116,7 +116,7 @@ function CollapseBody({ data }: { data: CollapseWatchDTO }) {
   );
 }
 
-function CollapseRow({ series, data }: { series: CollapseSeries; data: CollapseWatchDTO }) {
+function CollapseRow({ series, data }: { series: CollapseSeriesDTO; data: CollapseWatchDTO }) {
   const { t } = useTranslation();
   return (
     <div className={s.diffRow}>
@@ -159,7 +159,7 @@ function verdictSentence(data: CollapseWatchDTO, t: TFunction): string {
  * self-similarity half (the service passes `preempted` for that series alone),
  * which is why its copy names the sampler.
  */
-function fitSentence(series: CollapseSeries, data: CollapseWatchDTO, t: TFunction): string {
+function fitSentence(series: CollapseSeriesDTO, data: CollapseWatchDTO, t: TFunction): string {
   const ns = series.key === 'length' ? 'len' : 'sim';
   switch (series.fit) {
     case 'fitted':

@@ -14,7 +14,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../../db/client';
 import { comments, follows, likes, posts } from '../../../db/schema';
 import { ARMS, BOARDS, type ArmId } from '../lab/roster';
-import type { Homophily } from './arms.types';
+import type { Homophily } from '../../../contract/lab/arms';
 import { zeroByArm, type RosterUser } from './rounds';
 
 /** `n` directed interactions from user id `source` to user id `target`. */

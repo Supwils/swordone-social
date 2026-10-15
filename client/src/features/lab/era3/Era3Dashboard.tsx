@@ -15,7 +15,7 @@ import { getArmsReport } from '@/features/lab/api';
 import { AlertsStrip } from '@/features/lab/GraphView';
 import { HomogenizationPanel } from '@/features/lab/HomogenizationPanel';
 import { RuntimeHealth } from '@/features/lab/RuntimeHealth';
-import type { AgentLabSummary, LabRange } from '@/features/lab/types';
+import type { AgentSummaryDTO, LabRange } from '@/features/lab/types';
 import labStyles from '@/features/lab/lab.module.css';
 import { ArmRoster } from './ArmRoster';
 import { ExperimentHeader } from './ExperimentHeader';
@@ -32,7 +32,7 @@ export function Era3Dashboard({
   detail,
 }: {
   range: LabRange;
-  agents: AgentLabSummary[];
+  agents: AgentSummaryDTO[];
   loading: boolean;
   focusedUsername: string | null;
   onFocus: (u: string) => void;

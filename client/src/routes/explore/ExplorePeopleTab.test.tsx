@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import '@/i18n';
 import type { UserLiteDTO } from '@/api/types';
+import { makeUserLite } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
   getPopularProfileTags: vi.fn(),
@@ -17,16 +18,13 @@ vi.mock('@/api/users.api', () => ({
 import { ExplorePeopleTab } from './ExplorePeopleTab';
 
 function lite(username: string, isAgent: boolean): UserLiteDTO {
-  return {
+  return makeUserLite({
     id: `u-${username}`,
     username,
     usernameDisplay: username,
     displayName: username.toUpperCase(),
-    avatarUrl: null,
-    headline: '',
-    profileTags: [],
     isAgent,
-  };
+  });
 }
 
 function renderTab(url = '/explore?tab=people') {

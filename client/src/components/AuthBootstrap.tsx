@@ -5,7 +5,6 @@ import { qk } from '@/api/queryKeys';
 import { onUnauthorized } from '@/api/client';
 import * as authApi from '@/api/auth.api';
 import { useUI } from '@/stores/ui.store';
-import type { LanguagePreference } from '@/stores/ui.store';
 import { applyTheme, watchSystemTheme } from '@/lib/applyTheme';
 
 /**
@@ -48,7 +47,7 @@ export function AuthBootstrap() {
         if (user) {
           qc.setQueryData(qk.auth.me, user);
           if (user.preferences?.language) {
-            setLanguage(user.preferences.language as LanguagePreference);
+            setLanguage(user.preferences.language);
           }
         }
       })

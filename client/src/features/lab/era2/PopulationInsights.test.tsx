@@ -13,8 +13,8 @@ vi.mock('@/features/lab/api', () => ({
 
 import * as agentsApi from '@/features/lab/api';
 import { PopulationInsights } from './PopulationInsights';
+import { makeLabAgent } from '@/test/fixtures';
 
-type Agents = Awaited<ReturnType<typeof agentsApi.listLabAgents>>;
 type Overview = Awaited<ReturnType<typeof agentsApi.getAgentOverview>>;
 
 /**
@@ -27,12 +27,38 @@ type Overview = Awaited<ReturnType<typeof agentsApi.getAgentOverview>>;
  * - empty pulse/alerts => activity + dream conclusions must NOT fire
  * - two echo flags => echo roll-up with both handles
  */
+// Era 2 rows are sealed; the humans are the simulated cohort.
+const sealed = { archivedAt: '2026-10-14T00:00:00.000Z' };
 const agents = [
-  { username: 'steady1', isAgent: true, currentFidelity: 0.8, currentDriftFromAnchor: 0.1 },
-  { username: 'steady2', isAgent: true, currentFidelity: 0.82, currentDriftFromAnchor: 0.09 },
-  { username: 'lowfid', isAgent: false, currentFidelity: 0.79, currentDriftFromAnchor: 0.11 },
-  { username: 'wanderer', isAgent: false, currentFidelity: 0.84, currentDriftFromAnchor: 0.12 },
-] as unknown as Agents;
+  makeLabAgent({
+    ...sealed,
+    username: 'steady1',
+    currentFidelity: 0.8,
+    currentDriftFromAnchor: 0.1,
+  }),
+  makeLabAgent({
+    ...sealed,
+    username: 'steady2',
+    currentFidelity: 0.82,
+    currentDriftFromAnchor: 0.09,
+  }),
+  makeLabAgent({
+    ...sealed,
+    username: 'lowfid',
+    isAgent: false,
+    cohort: 'human',
+    currentFidelity: 0.79,
+    currentDriftFromAnchor: 0.11,
+  }),
+  makeLabAgent({
+    ...sealed,
+    username: 'wanderer',
+    isAgent: false,
+    cohort: 'human',
+    currentFidelity: 0.84,
+    currentDriftFromAnchor: 0.12,
+  }),
+];
 
 function Harness({ onSelect }: { onSelect: (u: string) => void }) {
   const overviewQ = useQuery({

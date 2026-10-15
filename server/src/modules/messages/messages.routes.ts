@@ -7,13 +7,14 @@ import { messageWriteLimiter } from '../../middlewares/rateLimit';
 import { ok, noContent } from '../../lib/respond';
 import { decodeCursor, parseLimit } from '../../lib/pagination';
 import { AppError } from '../../lib/errors';
+import { ID_RE, LIMITS } from '../../contract/common';
 import { inArray } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { users } from '../../db/schema';
 import { toConversationDTO } from '../../lib/dto';
 import * as svc from './messages.service';
 
-const oid = z.string().regex(/^[a-f0-9]{24}$/);
+const oid = z.string().regex(ID_RE);
 const pagingQuery = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -93,7 +94,7 @@ conversationsRouter.post(
   requireUser,
   messageWriteLimiter,
   validate(z.object({ id: oid }), 'params'),
-  validate(z.object({ text: z.string().trim().min(1).max(4000) })),
+  validate(z.object({ text: z.string().trim().min(1).max(LIMITS.messageText) })),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user) throw AppError.unauthenticated();
     const dto = await svc.send(req.user, req.params.id, req.body.text);

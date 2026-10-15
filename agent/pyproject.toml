@@ -23,6 +23,8 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "types-pyyaml>=6.0.12.20260906",
+    "jsonschema>=4.26.0",
+    "rfc3339-validator>=0.1.4",
 ]
 
 [build-system]

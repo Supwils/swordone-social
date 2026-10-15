@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@/i18n';
-import type { GraphEdge, GraphNode, InteractionGraphDTO } from '@/features/lab/types';
+import type { GraphEdgeDTO, GraphNodeDTO, InteractionGraphDTO } from '@/features/lab/types';
 import { InteractionGraph } from './InteractionGraph';
 
 /**
@@ -10,16 +10,16 @@ import { InteractionGraph } from './InteractionGraph';
  * header, node/edge presence, hover fading, and the declutter note — never
  * coordinates.
  */
-function node(username: string, isAgent: boolean, strength: number): GraphNode {
+function node(username: string, isAgent: boolean, strength: number): GraphNodeDTO {
   return { username, displayName: username.toUpperCase(), isAgent, strength };
 }
 
-function edge(source: string, target: string, weight: number, kind = 'comment'): GraphEdge {
+function edge(source: string, target: string, weight: number, kind = 'comment'): GraphEdgeDTO {
   return {
     source,
     target,
     weight,
-    kinds: { comment: 0, reply: 0, echo: 0, like: 0, [kind]: weight } as GraphEdge['kinds'],
+    kinds: { comment: 0, reply: 0, echo: 0, like: 0, [kind]: weight } as GraphEdgeDTO['kinds'],
   };
 }
 
@@ -106,7 +106,7 @@ describe('InteractionGraph', () => {
   it('declutters past 90 edges and says how many it kept', () => {
     // A hub-and-spoke with 95 edges across 96 nodes.
     const nodes = [node('center', true, 95)];
-    const edges: GraphEdge[] = [];
+    const edges: GraphEdgeDTO[] = [];
     for (let i = 0; i < 95; i += 1) {
       nodes.push(node(`n${i}`, i % 2 === 0, 1));
       edges.push(edge('center', `n${i}`, 1 + (i % 5)));

@@ -21,43 +21,46 @@ step() {
   echo -e "${YELLOW}[ci-check] $1${NC}"
 }
 
-step "1/13 Typecheck server..."
+step "1/14 Contract in sync..."
+npm --prefix server run contract:check || fail "Contract copies out of sync (run: npm --prefix server run contract:sync)"
+
+step "2/14 Typecheck server..."
 npm --prefix server run typecheck || fail "Server typecheck failed"
 
-step "2/13 Typecheck client..."
+step "3/14 Typecheck client..."
 npm --prefix client run typecheck || fail "Client typecheck failed"
 
-step "3/13 Lint server..."
+step "4/14 Lint server..."
 npm --prefix server run lint || fail "Server lint failed"
 
-step "4/13 Lint client..."
+step "5/14 Lint client..."
 npm --prefix client run lint || fail "Client lint failed"
 
-step "5/13 Test server..."
+step "6/14 Test server..."
 npm --prefix server run test:coverage -- --reporter=dot || fail "Server tests failed"
 
-step "6/13 Test client..."
+step "7/14 Test client..."
 npm --prefix client run test:coverage -- --reporter=dot || fail "Client tests failed"
 
-step "7/13 Typecheck mcp..."
+step "8/14 Typecheck mcp..."
 npm --prefix mcp run typecheck || fail "MCP typecheck failed"
 
-step "8/13 Test mcp..."
+step "9/14 Test mcp..."
 npm --prefix mcp run test:coverage -- --reporter=dot || fail "MCP tests failed"
 
-step "9/13 Build server..."
+step "10/14 Build server..."
 npm --prefix server run build || fail "Server build failed"
 
-step "10/13 Build client..."
+step "11/14 Build client..."
 VITE_API_BASE=/api/v1 npm --prefix client run build || fail "Client build failed"
 
-step "11/13 Lint agent (python)..."
+step "12/14 Lint agent (python)..."
 (cd "$ROOT/agent" && uv run ruff check . && uv run ruff format --check .) || fail "Agent lint failed"
 
-step "12/13 Typecheck agent (python)..."
+step "13/14 Typecheck agent (python)..."
 (cd "$ROOT/agent" && uv run mypy) || fail "Agent typecheck failed"
 
-step "13/13 Test agent (python)..."
+step "14/14 Test agent (python)..."
 (cd "$ROOT/agent" && uv run pytest --cov-fail-under=97) || fail "Agent tests failed"
 
 echo -e "${GREEN}[ci-check] ✓ All checks passed — safe to push.${NC}"

@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { ok, noContent } from '../../lib/respond';
-import { toUserDTO, type MeDTO } from '../../lib/dto';
+import { toUserDTO } from '../../lib/dto';
+import type { MeDTO } from '../../contract/users';
 import { readAgentDailyUsage } from '../../lib/agentQuota';
 import * as authService from './auth.service';
 import { AppError } from '../../lib/errors';
@@ -72,6 +73,9 @@ export async function createApiKey(req: Request, res: Response) {
   if (!req.user) throw AppError.unauthenticated();
   const name: string = req.body.name ?? 'default';
   const { key, doc } = await authService.createApiKey(req.user, name);
+  // Wire shape: CreatedApiKey (contract/users) — `createdAt` is a Date here and
+  // becomes the ISO string inside `res.json`, so it is checked on the
+  // serialised body (auth routes contract test), not typed against it here.
   return ok(
     res,
     {
@@ -86,6 +90,7 @@ export async function createApiKey(req: Request, res: Response) {
 export async function listApiKeys(req: Request, res: Response) {
   if (!req.user) throw AppError.unauthenticated();
   const keys = await authService.listApiKeys(req.user);
+  // Wire shape: ApiKeyList (contract/users); Dates serialise in `res.json`.
   return ok(res, {
     apiKeys: keys.map((k) => ({
       id: k.id,

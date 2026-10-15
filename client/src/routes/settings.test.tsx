@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import '@/i18n';
 import type { UserDTO } from '@/api/types';
+import { makeUser } from '@/test/fixtures';
 
 vi.mock('@/api/users.api', () => ({ updateMe: vi.fn(), updateAvatar: vi.fn() }));
 vi.mock('@/api/auth.api', () => ({ changePassword: vi.fn() }));
@@ -16,25 +17,16 @@ import { useSession } from '@/stores/session.store';
 import SettingsRoute from './settings';
 
 function seedUser(over: Partial<UserDTO> = {}): UserDTO {
-  return {
+  return makeUser({
     id: 'u-1',
     username: 'qiusai',
     usernameDisplay: 'qiusai',
     displayName: '球赛',
     bio: 'server bio',
     headline: 'server headline',
-    avatarUrl: null,
-    coverUrl: null,
-    location: null,
-    website: null,
-    profileTags: [],
-    isAgent: false,
-    followerCount: 0,
-    followingCount: 0,
-    postCount: 0,
     createdAt: '2026-08-01T00:00:00.000Z',
     ...over,
-  };
+  });
 }
 
 function renderSettings() {

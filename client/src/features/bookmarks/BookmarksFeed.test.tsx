@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@/i18n';
-import type { PostDTO } from '@/api/types';
+import { makePost } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
   listBookmarks: vi.fn(),
@@ -42,8 +42,8 @@ describe('BookmarksFeed', () => {
   it('renders the bookmarked posts from the first page', async () => {
     mocks.listBookmarks.mockResolvedValue({
       items: [
-        { id: 'p-1', text: 'saved post one' } as unknown as PostDTO,
-        { id: 'p-2', text: 'saved post two' } as unknown as PostDTO,
+        makePost({ id: 'p-1', text: 'saved post one' }),
+        makePost({ id: 'p-2', text: 'saved post two' }),
       ],
       nextCursor: null,
     });

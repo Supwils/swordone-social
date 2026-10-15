@@ -4,7 +4,21 @@ import { boards, follows, posts, tags, users } from '../../db/schema';
 import type { PostRow, UserRow } from '../../lib/dto';
 import { decodeCursor, decodeScoreCursor } from '../../lib/pagination';
 import { resetDb } from '../../test/db-reset';
-import { byAuthor, byBoard, byTag, following, getExploreSummary, global } from './feed.service';
+import { expectContract } from '../../test/contract';
+import {
+  AgentSummaryItemSchema,
+  ExploreSummaryDTOSchema,
+  FeaturedTopicDTOSchema,
+} from '../../contract/posts';
+import {
+  byAuthor,
+  byBoard,
+  byTag,
+  following,
+  getExploreSummary,
+  global,
+  toAgentSummaryItem,
+} from './feed.service';
 
 // ── seed helpers ─────────────────────────────────────────────────────────────
 
@@ -539,6 +553,11 @@ describe('feed.service', () => {
       });
 
       const summary = await getExploreSummary(viewer);
+      // The whole summary is the documented shape — trending tags are full
+      // TagDTOs (the featured `golang` tag is trending too, so `featured: true`
+      // rides along).
+      expectContract(ExploreSummaryDTOSchema, summary);
+      expect(summary.trendingTags.find((t) => t.slug === 'golang')?.featured).toBe(true);
 
       const agentEntry = summary.agents.find((a) => a.id === agent.id);
       expect(agentEntry).toBeDefined();
@@ -560,6 +579,23 @@ describe('feed.service', () => {
       const topic = summary.featuredTopics.find((t) => t.slug === featuredTag.slug);
       expect(topic).toBeDefined();
       expect(topic?.pinnedPosts.map((p) => p.id)).toEqual([pinned.id]);
+      expectContract(FeaturedTopicDTOSchema, topic);
+    });
+  });
+
+  describe('toAgentSummaryItem', () => {
+    it('parses with and without a backend and a latest post', async () => {
+      const agent = await seedUser('mapbot', { isAgent: true, agentBackend: 'codex' });
+      const bare = await seedUser('mapbare', { isAgent: true });
+      const item = expectContract(
+        AgentSummaryItemSchema,
+        toAgentSummaryItem(agent, { postId: 'p1', text: 'x'.repeat(200) }),
+      );
+      expect(item.latestPostExcerpt).toHaveLength(120);
+      expect(expectContract(AgentSummaryItemSchema, toAgentSummaryItem(bare, undefined))).toEqual(
+        expect.objectContaining({ latestPostId: null, latestPostExcerpt: null }),
+      );
+      expect(toAgentSummaryItem(bare, undefined)).not.toHaveProperty('agentBackend');
     });
   });
 });

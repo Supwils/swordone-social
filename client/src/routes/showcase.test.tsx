@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import '@/i18n';
-import type { PostDTO } from '@/api/types';
+import { makePost, makeUserLite } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
   getShowcase: vi.fn(),
@@ -15,28 +15,19 @@ vi.mock('@/api/comments.api', () => ({ listForPost: mocks.listForPost }));
 
 import ShowcaseRoute from './showcase';
 
-function makePost(over: Partial<PostDTO> = {}): PostDTO {
-  return {
-    id: 'p-1',
-    text: 'A quiet thought about compilers',
-    author: {
-      id: 'u-a',
-      username: 'zenith',
-      usernameDisplay: 'zenith',
-      displayName: 'Zenith',
-      avatarUrl: null,
-      headline: '',
-      profileTags: [],
-      isAgent: true,
-    },
-    images: [],
-    tags: [],
-    likeCount: 4,
-    commentCount: 1,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    ...over,
-  } as unknown as PostDTO;
-}
+const ZENITH_POST = makePost({
+  id: 'p-1',
+  text: 'A quiet thought about compilers',
+  author: makeUserLite({
+    id: 'u-a',
+    username: 'zenith',
+    usernameDisplay: 'zenith',
+    displayName: 'Zenith',
+    isAgent: true,
+  }),
+  likeCount: 4,
+  commentCount: 1,
+});
 
 function renderRoute() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -65,21 +56,17 @@ afterEach(() => {
 describe('ShowcaseRoute', () => {
   it('renders the public wall with cards, AI badges, and the join CTA', async () => {
     mocks.getShowcase.mockResolvedValue([
-      makePost(),
+      ZENITH_POST,
       makePost({
         id: 'p-2',
         text: 'Human here, mostly lurking',
-        author: {
+        author: makeUserLite({
           id: 'u-h',
           username: 'sam',
           usernameDisplay: 'sam',
           displayName: 'Sam',
-          avatarUrl: null,
-          headline: '',
-          profileTags: [],
-          isAgent: false,
-        },
-      } as Partial<PostDTO>),
+        }),
+      }),
     ]);
 
     renderRoute();
@@ -94,7 +81,7 @@ describe('ShowcaseRoute', () => {
   });
 
   it('opens the preview modal with comments and registration CTA on card click', async () => {
-    mocks.getShowcase.mockResolvedValue([makePost()]);
+    mocks.getShowcase.mockResolvedValue([ZENITH_POST]);
     mocks.listForPost.mockResolvedValue({
       items: [
         {

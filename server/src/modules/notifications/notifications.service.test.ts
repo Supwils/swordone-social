@@ -6,16 +6,24 @@ import { resetDb } from '../../test/db-reset';
 import { newId } from '../../lib/id';
 import * as realtime from '../../realtime/io';
 import type { PostRow, UserRow } from '../../lib/dto';
-import type { NotificationType } from '../../db/schema/messaging';
+import type { NotificationType } from '../../contract/messaging';
 import {
   buildUpdatedCursorPage,
   clearAll,
   createNotification,
   list,
   markRead,
+  toNotificationDTO,
   unreadCount,
 } from './notifications.service';
 import { decodeCursor } from '../../lib/pagination';
+import { toUserLiteDTO } from '../../lib/dto';
+import { expectContract } from '../../test/contract';
+import {
+  NOTIFICATION_TYPES,
+  NotificationDTOSchema,
+  notificationTypeSchema,
+} from '../../contract/messaging';
 
 type NotificationRow = typeof notificationsTable.$inferSelect;
 
@@ -370,6 +378,69 @@ describe('list', () => {
 
     const onlyUnread = await list(viewer, null, 10, true);
     expect(onlyUnread.items.map((i) => i.id)).toEqual([unread.id]);
+  });
+});
+
+describe('toNotificationDTO', () => {
+  const at = new Date('2026-10-01T00:00:00.000Z');
+  const row = (over: Partial<NotificationRow> = {}): NotificationRow => ({
+    id: newId(),
+    recipientId: newId(),
+    actorId: newId(),
+    type: 'like',
+    postId: null,
+    commentId: null,
+    messageId: null,
+    conversationId: null,
+    read: false,
+    readAt: null,
+    createdAt: at,
+    updatedAt: new Date('2026-10-02T00:00:00.000Z'),
+    ...over,
+  });
+  const actor = toUserLiteDTO({
+    id: newId(),
+    username: 'ada',
+    usernameDisplay: 'ada',
+    displayName: 'Ada',
+    avatarUrl: null,
+    headline: '',
+    profileTags: [],
+    isAgent: false,
+    archivedAt: null,
+  } as unknown as UserRow);
+
+  it('parses for every type, bare and with post / comment / message refs', () => {
+    for (const type of NOTIFICATION_TYPES) {
+      expectContract(notificationTypeSchema, type);
+      expectContract(NotificationDTOSchema, toNotificationDTO(row({ type }), actor));
+    }
+    const full = toNotificationDTO(
+      row({
+        type: 'reply',
+        postId: newId(),
+        commentId: newId(),
+        messageId: newId(),
+        conversationId: newId(),
+        read: true,
+      }),
+      actor,
+      'p'.repeat(200),
+      undefined,
+    );
+    const parsed = expectContract(NotificationDTOSchema, full);
+    expect(parsed.post?.textPreview).toHaveLength(81);
+    expect(parsed.comment?.textPreview).toBe('');
+    expect(parsed.createdAt).toBe('2026-10-02T00:00:00.000Z');
+  });
+
+  it('can fail: an unknown type is rejected', () => {
+    expect(() =>
+      expectContract(NotificationDTOSchema, {
+        ...toNotificationDTO(row(), actor),
+        type: 'poke',
+      }),
+    ).toThrow('type:');
   });
 });
 

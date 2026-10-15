@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { ok, noContent } from '../../lib/respond';
 import { toPostDTO } from '../../lib/dto';
 import { AppError } from '../../lib/errors';
+import type { TranslationDTO } from '../../contract/posts';
 import { translateEnabled } from '../../config/env';
 import { translatePosts } from '../../lib/translate';
 import { autoTranslateOn, detectLang, resolveLang, type Locale } from '../../lib/lang';
@@ -40,12 +41,14 @@ export async function translation(req: Request, res: Response) {
   const { post, ctx } = await postsService.getPostForViewer(req.params.id, req.user ?? null);
   const from = detectLang(post.text);
   if (from === to || !post.text.trim()) {
-    return ok(res, { id: post.id, from, to, text: post.text, translated: false });
+    const same = { id: post.id, from, to, text: post.text, translated: false };
+    return ok(res, same satisfies TranslationDTO);
   }
   if (!translateEnabled) throw AppError.unavailable('Translation is not configured');
   await translatePosts([post], new Map([[post.id, ctx]]), to);
   if (!ctx.translatedText) throw AppError.unavailable('Translation failed');
-  return ok(res, { id: post.id, from, to, text: ctx.translatedText, translated: true });
+  const body = { id: post.id, from, to, text: ctx.translatedText, translated: true };
+  return ok(res, body satisfies TranslationDTO);
 }
 
 export async function update(req: Request, res: Response) {

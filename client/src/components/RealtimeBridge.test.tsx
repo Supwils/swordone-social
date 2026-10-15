@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useSession } from '@/stores/session.store';
 import { useRealtime } from '@/stores/realtime.store';
 import { qk } from '@/api/queryKeys';
-import type { MessageDTO, NotificationDTO, Paginated, UserDTO, UserLiteDTO } from '@/api/types';
+import type { MessageDTO, NotificationDTO, Paginated } from '@/api/types';
+import { makeMessage, makeNotification, makeUser, makeUserLite } from '@/test/fixtures';
 
 /**
  * The socket is faked at the module boundary: handlers are captured in a map
@@ -45,53 +46,7 @@ vi.mock('sonner', () => ({ toast: mocks.toast }));
 
 import { RealtimeBridge } from './RealtimeBridge';
 
-function makeUser(id: string): UserDTO {
-  return {
-    id,
-    username: `u-${id}`,
-    usernameDisplay: `u-${id}`,
-    displayName: `User ${id}`,
-    bio: '',
-    headline: '',
-    avatarUrl: null,
-    coverUrl: null,
-    location: null,
-    website: null,
-    profileTags: [],
-    isAgent: false,
-    followerCount: 0,
-    followingCount: 0,
-    postCount: 0,
-    createdAt: '2026-01-01T00:00:00.000Z',
-  };
-}
-
-const actor: UserLiteDTO = {
-  id: 'u-actor',
-  username: 'alice',
-  usernameDisplay: 'alice',
-  displayName: 'Alice',
-  avatarUrl: null,
-  headline: '',
-  profileTags: [],
-  isAgent: false,
-};
-
-function makeNotification(id: string, over: Partial<NotificationDTO> = {}): NotificationDTO {
-  return { id, type: 'like', actor, read: false, createdAt: '2026-01-02T00:00:00.000Z', ...over };
-}
-
-function makeMessage(id: string, over: Partial<MessageDTO> = {}): MessageDTO {
-  return {
-    id,
-    conversationId: 'c-1',
-    sender: actor,
-    text: 'hi',
-    readBy: [],
-    createdAt: '2026-01-02T00:00:00.000Z',
-    ...over,
-  };
-}
+const actor = makeUserLite({ id: 'u-actor' });
 
 type Pages<T> = { pages: Paginated<T>[]; pageParams: unknown[] };
 
@@ -127,7 +82,10 @@ function fire(event: string, payload?: unknown) {
 }
 
 beforeEach(() => {
-  useSession.setState({ user: makeUser('me'), bootstrap: 'ready' });
+  useSession.setState({
+    user: makeUser({ id: 'me', username: 'u-me', usernameDisplay: 'u-me' }),
+    bootstrap: 'ready',
+  });
   useRealtime.setState({
     connected: false,
     unreadNotifications: 0,
@@ -205,10 +163,10 @@ describe('RealtimeBridge lifecycle', () => {
 describe('RealtimeBridge notifications', () => {
   it('upserts into the cached list, bumps unread, and toasts', async () => {
     const { qc } = await renderBridgeSeeded();
-    const n1 = makeNotification('n-1');
+    const n1 = makeNotification({ id: 'n-1', actor });
     qc.setQueryData(qk.notifications.list, pagesOf([n1]));
 
-    const n2 = makeNotification('n-2', { type: 'follow' });
+    const n2 = makeNotification({ id: 'n-2', actor, type: 'follow' });
     fire('notification', n2);
 
     const cached = qc.getQueryData<Pages<NotificationDTO>>(qk.notifications.list);
@@ -219,7 +177,7 @@ describe('RealtimeBridge notifications', () => {
 
   it('dedupes a redelivered notification instead of listing it twice', async () => {
     const { qc } = await renderBridgeSeeded();
-    const n1 = makeNotification('n-1');
+    const n1 = makeNotification({ id: 'n-1', actor });
     qc.setQueryData(qk.notifications.list, pagesOf([n1]));
 
     fire('notification', n1);
@@ -230,22 +188,22 @@ describe('RealtimeBridge notifications', () => {
 
   it('does not materialise a list cache that does not exist yet', async () => {
     const { qc } = await renderBridgeSeeded();
-    fire('notification', makeNotification('n-1'));
+    fire('notification', makeNotification({ id: 'n-1', actor }));
     expect(qc.getQueryData(qk.notifications.list)).toBeUndefined();
   });
 
   it('summarizes each notification type for the toast', async () => {
     await renderBridgeSeeded();
 
-    fire('notification', makeNotification('n-1', { type: 'like' }));
+    fire('notification', makeNotification({ id: 'n-1', actor, type: 'like' }));
     fire(
       'notification',
-      makeNotification('n-2', { type: 'like', comment: { id: 'c', textPreview: '' } }),
+      makeNotification({ id: 'n-2', actor, type: 'like', comment: { id: 'c', textPreview: '' } }),
     );
-    fire('notification', makeNotification('n-3', { type: 'comment' }));
-    fire('notification', makeNotification('n-4', { type: 'reply' }));
-    fire('notification', makeNotification('n-5', { type: 'mention' }));
-    fire('notification', makeNotification('n-6', { type: 'message' }));
+    fire('notification', makeNotification({ id: 'n-3', actor, type: 'comment' }));
+    fire('notification', makeNotification({ id: 'n-4', actor, type: 'reply' }));
+    fire('notification', makeNotification({ id: 'n-5', actor, type: 'mention' }));
+    fire('notification', makeNotification({ id: 'n-6', actor, type: 'message' }));
 
     expect(mocks.toast.mock.calls.map((c) => c[0])).toEqual([
       'Alice liked your post',
@@ -273,10 +231,10 @@ describe('RealtimeBridge messages', () => {
   it('prepends an incoming message, bumps unread, and toasts when off-thread', async () => {
     const { qc } = await renderBridgeSeeded();
     const invalidate = vi.spyOn(qc, 'invalidateQueries');
-    const m1 = makeMessage('m-1');
+    const m1 = makeMessage({ id: 'm-1', sender: actor });
     qc.setQueryData(qk.conversations.messages('c-1'), pagesOf([m1]));
 
-    fire('message', makeMessage('m-2', { text: 'hello there' }));
+    fire('message', makeMessage({ id: 'm-2', sender: actor, text: 'hello there' }));
 
     const cached = qc.getQueryData<Pages<MessageDTO>>(qk.conversations.messages('c-1'));
     expect(cached?.pages[0].items.map((m) => m.id)).toEqual(['m-2', 'm-1']);
@@ -288,9 +246,12 @@ describe('RealtimeBridge messages', () => {
   it('does not toast or bump unread when already viewing the conversation', async () => {
     const { qc } = await renderBridgeSeeded();
     window.history.replaceState(null, '', '/messages/c-1');
-    qc.setQueryData(qk.conversations.messages('c-1'), pagesOf([makeMessage('m-1')]));
+    qc.setQueryData(
+      qk.conversations.messages('c-1'),
+      pagesOf([makeMessage({ id: 'm-1', sender: actor })]),
+    );
 
-    fire('message', makeMessage('m-2'));
+    fire('message', makeMessage({ id: 'm-2', sender: actor }));
 
     const cached = qc.getQueryData<Pages<MessageDTO>>(qk.conversations.messages('c-1'));
     expect(cached?.pages[0].items).toHaveLength(2);
@@ -302,7 +263,7 @@ describe('RealtimeBridge messages', () => {
     const { qc } = await renderBridgeSeeded();
     qc.setQueryData(qk.conversations.messages('c-1'), pagesOf([]));
 
-    fire('message', makeMessage('m-2', { sender: { ...actor, id: 'me' } }));
+    fire('message', makeMessage({ id: 'm-2', sender: { ...actor, id: 'me' } }));
 
     const cached = qc.getQueryData<Pages<MessageDTO>>(qk.conversations.messages('c-1'));
     expect(cached?.pages[0].items.map((m) => m.id)).toEqual(['m-2']);
@@ -312,7 +273,7 @@ describe('RealtimeBridge messages', () => {
 
   it('does not materialise a thread cache nobody is looking at', async () => {
     const { qc } = await renderBridgeSeeded();
-    fire('message', makeMessage('m-1', { conversationId: 'c-quiet' }));
+    fire('message', makeMessage({ id: 'm-1', sender: actor, conversationId: 'c-quiet' }));
     expect(qc.getQueryData(qk.conversations.messages('c-quiet'))).toBeUndefined();
   });
 
@@ -320,7 +281,10 @@ describe('RealtimeBridge messages', () => {
     const { qc } = await renderBridgeSeeded();
     qc.setQueryData(
       qk.conversations.messages('c-1'),
-      pagesOf([makeMessage('m-1'), makeMessage('m-2', { readBy: ['u-2'] })]),
+      pagesOf([
+        makeMessage({ id: 'm-1', sender: actor }),
+        makeMessage({ id: 'm-2', sender: actor, readBy: ['u-2'] }),
+      ]),
     );
 
     fire('message:read', { conversationId: 'c-1', userId: 'u-2' });

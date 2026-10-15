@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@/i18n';
 import { useRealtime } from '@/stores/realtime.store';
+import { makePost } from '@/test/fixtures';
 
 vi.mock('@/api/feed.api', () => ({ following: vi.fn() }));
 vi.mock('@/features/posts/FeedStream', () => ({
@@ -54,9 +55,9 @@ afterEach(() => {
 describe('FeedFollowingRoute', () => {
   it('requests the recommended sort by default and renders the stream', async () => {
     vi.mocked(feedApi.following).mockResolvedValue({
-      items: [{ id: 'p-1', text: 'from someone I follow' }],
+      items: [makePost({ id: 'p-1', text: 'from someone I follow' })],
       nextCursor: null,
-    } as never);
+    });
 
     renderRoute();
 
@@ -69,7 +70,7 @@ describe('FeedFollowingRoute', () => {
   });
 
   it('re-queries with sort=latest when the Latest tab is clicked', async () => {
-    vi.mocked(feedApi.following).mockResolvedValue({ items: [], nextCursor: null } as never);
+    vi.mocked(feedApi.following).mockResolvedValue({ items: [], nextCursor: null });
 
     renderRoute();
     await screen.findByText('Your feed is quiet.');
@@ -92,7 +93,7 @@ describe('FeedFollowingRoute', () => {
   });
 
   it('sends an empty feed to browse the global stream', async () => {
-    vi.mocked(feedApi.following).mockResolvedValue({ items: [], nextCursor: null } as never);
+    vi.mocked(feedApi.following).mockResolvedValue({ items: [], nextCursor: null });
 
     renderRoute();
 
@@ -102,7 +103,7 @@ describe('FeedFollowingRoute', () => {
   });
 
   it('shows the new-posts banner and resets the counter on click', async () => {
-    vi.mocked(feedApi.following).mockResolvedValue({ items: [], nextCursor: null } as never);
+    vi.mocked(feedApi.following).mockResolvedValue({ items: [], nextCursor: null });
     useRealtime.setState({ newFeedPostCount: 3 });
 
     renderRoute();
@@ -117,9 +118,9 @@ describe('FeedFollowingRoute', () => {
   it('offers a retry on load failure', async () => {
     vi.mocked(feedApi.following).mockRejectedValueOnce({ status: 500, message: 'boom' });
     vi.mocked(feedApi.following).mockResolvedValue({
-      items: [{ id: 'p-2', text: 'recovered' }],
+      items: [makePost({ id: 'p-2', text: 'recovered' })],
       nextCursor: null,
-    } as never);
+    });
 
     renderRoute();
 

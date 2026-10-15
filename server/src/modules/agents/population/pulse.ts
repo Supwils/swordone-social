@@ -5,6 +5,7 @@
  * six times the 300-line service ceiling). Imported directly since the S2
  * module split; there is no barrel.
  */
+import type { LabRange } from '../../../contract/lab/era';
 import { and, asc, eq, gte, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../../db/client';
@@ -27,7 +28,7 @@ import type {
   InfluencesDTO,
   PulseDTO,
   PulsePointDTO,
-} from './population.types';
+} from '../../../contract/lab/population';
 import type { LabEra } from '../lab/era';
 
 // Self-join aliases (reply → parent comment author, echo → original post author).
@@ -48,13 +49,10 @@ const pulseCache = new TTLCache<string, PulseDTO>(60_000);
 export function clearPulseCache(): void {
   pulseCache.clear();
 }
-export async function getPulse(
-  range: '7d' | '30d' | '90d' = '30d',
-  era: LabEra = 3,
-): Promise<PulseDTO> {
+export async function getPulse(range: LabRange = '30d', era: LabEra = 3): Promise<PulseDTO> {
   return pulseCache.getOrLoad(`${range}:${era}`, () => computePulse(range, era));
 }
-async function computePulse(range: '7d' | '30d' | '90d', era: LabEra): Promise<PulseDTO> {
+async function computePulse(range: LabRange, era: LabEra): Promise<PulseDTO> {
   const { since } = dayBuckets(range);
   const labIds = (await loadLabUsers(era)).map((u) => u.id);
 
@@ -187,13 +185,10 @@ const alertsCache = new TTLCache<string, AlertsDTO>(60_000);
 export function clearAlertsCache(): void {
   alertsCache.clear();
 }
-export async function getAlerts(
-  range: '7d' | '30d' | '90d' = '30d',
-  era: LabEra = 3,
-): Promise<AlertsDTO> {
+export async function getAlerts(range: LabRange = '30d', era: LabEra = 3): Promise<AlertsDTO> {
   return alertsCache.getOrLoad(`${range}:${era}`, () => computeAlerts(range, era));
 }
-async function computeAlerts(range: '7d' | '30d' | '90d', era: LabEra): Promise<AlertsDTO> {
+async function computeAlerts(range: LabRange, era: LabEra): Promise<AlertsDTO> {
   const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const idToUser = new Map((await loadLabUsers(era)).map((u) => [u.id, u]));
@@ -389,16 +384,13 @@ async function computeAlerts(range: '7d' | '30d' | '90d', era: LabEra): Promise<
 const influencesCache = new TTLCache<string, InfluencesDTO>(60_000);
 export async function getInfluences(
   username: string,
-  range: '7d' | '30d' | '90d' = '30d',
+  range: LabRange = '30d',
 ): Promise<InfluencesDTO> {
   return influencesCache.getOrLoad(`${username}:${range}`, () =>
     computeInfluences(username, range),
   );
 }
-async function computeInfluences(
-  username: string,
-  range: '7d' | '30d' | '90d',
-): Promise<InfluencesDTO> {
+async function computeInfluences(username: string, range: LabRange): Promise<InfluencesDTO> {
   const agent = await findAgentByUsername(username);
   const uid = agent.id;
   const { since, days } = dayBuckets(range);

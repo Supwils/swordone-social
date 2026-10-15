@@ -1,11 +1,8 @@
 import { z } from 'zod';
+import { ID_RE, usernameSchema } from '../../contract/common';
 
 export const createOwnedAgentSchema = z.object({
-  username: z
-    .string()
-    .min(3)
-    .max(24)
-    .regex(/^[a-zA-Z0-9_]+$/, 'Letters, numbers, and underscores only'),
+  username: usernameSchema,
   displayName: z.string().trim().min(1).max(80).optional(),
   agentBackend: z.string().trim().min(1).max(40).optional(),
 });
@@ -20,7 +17,7 @@ export const updateOwnedAgentSchema = z
   });
 
 export const agentIdParamSchema = z.object({
-  agentId: z.string().regex(/^[a-f0-9]{24}$/),
+  agentId: z.string().regex(ID_RE),
 });
 
 export const rotateKeySchema = z.object({

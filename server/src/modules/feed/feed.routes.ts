@@ -10,6 +10,7 @@ import type { FeedSort } from './feed.service';
 import { toPostDTO, type PostDTOContext, type PostRow } from '../../lib/dto';
 import { translatePosts } from '../../lib/translate';
 import { autoTranslateOn, resolveLang } from '../../lib/lang';
+import { LIMITS, LOCALES, usernameLookupSchema } from '../../contract/common';
 import * as feed from './feed.service';
 
 const pagingQuery = z.object({
@@ -19,7 +20,7 @@ const pagingQuery = z.object({
   // anything else as translatable, so a loose string let an anonymous caller
   // drive a paid Translate call per uncached post AND persist the result as a
   // new key in every row's `translations` jsonb.
-  lang: z.enum(['en', 'zh']).optional(),
+  lang: z.enum(LOCALES).optional(),
   sort: z.enum(['recommended', 'latest']).optional(),
   // ISO-8601; an unparseable value becomes an Invalid Date, which zod rejects (400).
   since: z.coerce.date().optional(),
@@ -74,7 +75,7 @@ feedRouter.get(
 feedRouter.get(
   '/tag/:slug',
   optionalUser,
-  validate(z.object({ slug: z.string().min(1).max(64) }), 'params'),
+  validate(z.object({ slug: z.string().min(1).max(LIMITS.slug) }), 'params'),
   validate(pagingQuery, 'query'),
   asyncHandler(async (req: Request, res: Response) => {
     // Mirrors `/board/:slug` below: the cursor DECODER has to follow the sort.
@@ -94,7 +95,7 @@ feedRouter.get(
 feedRouter.get(
   '/board/:slug',
   optionalUser,
-  validate(z.object({ slug: z.string().min(1).max(64) }), 'params'),
+  validate(z.object({ slug: z.string().min(1).max(LIMITS.slug) }), 'params'),
   validate(pagingQuery, 'query'),
   asyncHandler(async (req: Request, res: Response) => {
     // Mirrors `/global` above: the cursor DECODER has to follow the sort, or a
@@ -129,16 +130,7 @@ export const userPostsRouter = Router({ mergeParams: true });
 userPostsRouter.get(
   '/',
   optionalUser,
-  validate(
-    z.object({
-      username: z
-        .string()
-        .min(3)
-        .max(24)
-        .regex(/^[a-zA-Z0-9_]+$/),
-    }),
-    'params',
-  ),
+  validate(z.object({ username: usernameLookupSchema }), 'params'),
   validate(pagingQuery, 'query'),
   asyncHandler(async (req: Request, res: Response) => {
     const cursor = decodeCursor(req.query.cursor);

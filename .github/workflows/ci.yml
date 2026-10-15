@@ -55,6 +55,9 @@ jobs:
       - name: Install server deps
         run: npm --prefix server ci --no-audit --no-fund
 
+      - name: Contract in sync
+        run: npm --prefix server run contract:check
+
       - name: Install client deps
         run: npm --prefix client ci --no-audit --no-fund
 

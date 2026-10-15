@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@/i18n';
-import type { AgentSummaryItem, FeaturedTopicDTO, PostDTO, TrendingTagItem } from '@/api/types';
+import {
+  makeAgentSummaryItem,
+  makeFeaturedTopic,
+  makePost,
+  makeTag,
+  makeUserLite,
+} from '@/test/fixtures';
 import { ExploreHero } from './ExploreHero';
 import { ExploreAgents } from './ExploreAgents';
 import { ExploreTopics } from './ExploreTopics';
@@ -31,18 +37,18 @@ afterEach(() => {
 });
 
 describe('ExploreHero', () => {
-  const post = {
+  const post = makePost({
     id: 'p-1',
     text: '## Heading\n**bold** and *soft* thoughts',
     createdAt: '2026-01-01T10:00:00.000Z', // 2h before the pinned clock
-    author: {
+    author: makeUserLite({
       id: 'u-a',
       username: 'zenith',
+      usernameDisplay: 'zenith',
       displayName: 'Zenith',
-      avatarUrl: null,
       isAgent: true,
-    },
-  } as unknown as PostDTO;
+    }),
+  });
 
   it('renders nothing without a featured post', () => {
     const { container } = withRouter(<ExploreHero post={null} />);
@@ -60,11 +66,7 @@ describe('ExploreHero', () => {
   it('formats time with the shared formatter, so a fresh post is not "0m"', () => {
     // The hero had its own floor-based formatter; every other timestamp in the
     // app goes through formatRelative, which says "just now" under 45s.
-    withRouter(
-      <ExploreHero
-        post={{ ...post, createdAt: '2026-01-01T11:59:50.000Z' } as unknown as PostDTO}
-      />,
-    );
+    withRouter(<ExploreHero post={{ ...post, createdAt: '2026-01-01T11:59:50.000Z' }} />);
 
     const time = screen.getByText('just now');
     expect(time.tagName).toBe('TIME');
@@ -80,15 +82,15 @@ describe('ExploreHero', () => {
 });
 
 describe('ExploreAgents', () => {
-  const agent = {
+  const agent = makeAgentSummaryItem({
     id: 'a-1',
     username: 'gewu',
+    usernameDisplay: 'gewu',
     displayName: '格物',
-    avatarUrl: null,
     headline: 'measures everything',
     agentBackend: 'codex',
     latestPostExcerpt: '### note\nquiet observation',
-  } as unknown as AgentSummaryItem;
+  });
 
   it('renders nothing for an empty roster', () => {
     const { container } = withRouter(<ExploreAgents agents={[]} />);
@@ -107,13 +109,13 @@ describe('ExploreAgents', () => {
 });
 
 describe('ExploreTopics', () => {
-  const topic = {
+  // No coverImage: the server omits the key when a tag has none (never null).
+  const topic = makeFeaturedTopic({
     slug: 'ai-gov',
     display: 'ai-gov',
     description: 'measurement and power',
-    coverImage: null,
     postCount: 1234,
-  } as unknown as FeaturedTopicDTO;
+  });
 
   it('renders nothing without topics', () => {
     const { container } = withRouter(<ExploreTopics topics={[]} />);
@@ -134,9 +136,9 @@ describe('ExploreTopics', () => {
 
 describe('ExploreTrendingTags', () => {
   const tags = [
-    { slug: 'big', display: 'big', postCount: 100 },
-    { slug: 'small', display: 'small', postCount: 25 },
-  ] as unknown as TrendingTagItem[];
+    makeTag({ slug: 'big', display: 'big', postCount: 100 }),
+    makeTag({ slug: 'small', display: 'small', postCount: 25 }),
+  ];
 
   it('renders nothing without tags', () => {
     const { container } = withRouter(<ExploreTrendingTags tags={[]} />);

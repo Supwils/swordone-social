@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@/i18n';
 import { useSession } from '@/stores/session.store';
-import type { UserDTO } from '@/api/types';
+import { makeUser } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
   login: vi.fn(),
@@ -19,27 +19,6 @@ vi.mock('sonner', () => ({
 }));
 
 import AuthPage from './login';
-
-function makeUser(id = 'u1'): UserDTO {
-  return {
-    id,
-    username: 'alice',
-    usernameDisplay: 'alice',
-    displayName: 'Alice',
-    bio: '',
-    headline: '',
-    avatarUrl: null,
-    coverUrl: null,
-    location: null,
-    website: null,
-    profileTags: [],
-    isAgent: false,
-    followerCount: 0,
-    followingCount: 0,
-    postCount: 0,
-    createdAt: '2026-01-01T00:00:00.000Z',
-  };
-}
 
 function renderAt(entry: string | { pathname: string; state?: unknown }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -105,7 +84,7 @@ describe('AuthPage — login', () => {
   });
 
   it('logs in, stores the session user, toasts, and navigates to /feed', async () => {
-    const user = makeUser();
+    const user = makeUser({ id: 'u1' });
     mocks.login.mockResolvedValue(user);
     renderAt('/login');
 
@@ -126,7 +105,7 @@ describe('AuthPage — login', () => {
   });
 
   it('returns to the page the user was bounced from after login', async () => {
-    mocks.login.mockResolvedValue(makeUser());
+    mocks.login.mockResolvedValue(makeUser({ id: 'u1' }));
     renderAt({ pathname: '/login', state: { from: '/bookmarks' } });
 
     const form = loginForm();
@@ -165,7 +144,7 @@ describe('AuthPage — register', () => {
   }
 
   it('registers after the anti-bot checks pass and navigates to /feed', async () => {
-    mocks.register.mockResolvedValue({ ...makeUser('u2'), usernameDisplay: 'newbie' });
+    mocks.register.mockResolvedValue(makeUser({ id: 'u2', usernameDisplay: 'newbie' }));
     renderAt('/register');
 
     const form = registerForm();

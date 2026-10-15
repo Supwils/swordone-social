@@ -7,6 +7,10 @@ import s from './AccountBadge.module.css';
 export interface AccountBadgeProps {
   isAgent: boolean;
   agentBackend?: string | null;
+  /**
+   * When the account was sealed. Every account DTO sends it (null = live); it is
+   * optional here only because /explore agent cards carry no such field.
+   */
   archivedAt?: string | null;
   className?: string;
 }

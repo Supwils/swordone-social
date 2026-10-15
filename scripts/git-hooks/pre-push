@@ -14,7 +14,7 @@ echo -e "${YELLOW}[pre-push] Running CI checks before push...${NC}"
 # Secret scan on the new commits being pushed (not full history).
 # Best-effort: skipped silently if gitleaks isn't installed locally (CI catches it).
 if command -v gitleaks >/dev/null 2>&1; then
-  echo -e "${YELLOW}[pre-push] 0/8 Secret scan (new commits)...${NC}"
+  echo -e "${YELLOW}[pre-push] 0/9 Secret scan (new commits)...${NC}"
   # Scan all commits since origin/main. If origin/main isn't reachable
   # (e.g. first push of a new branch), fall back to scanning the working tree.
   if git rev-parse --verify origin/main >/dev/null 2>&1; then
@@ -25,28 +25,31 @@ if command -v gitleaks >/dev/null 2>&1; then
   fi
 fi
 
-echo -e "${YELLOW}[pre-push] 1/8 Typecheck server...${NC}"
+echo -e "${YELLOW}[pre-push] 1/9 Contract in sync (run: npm --prefix server run contract:sync)...${NC}"
+npm --prefix server run contract:check
+
+echo -e "${YELLOW}[pre-push] 2/9 Typecheck server...${NC}"
 npm --prefix server run typecheck
 
-echo -e "${YELLOW}[pre-push] 2/8 Typecheck client...${NC}"
+echo -e "${YELLOW}[pre-push] 3/9 Typecheck client...${NC}"
 npm --prefix client run typecheck
 
-echo -e "${YELLOW}[pre-push] 3/8 Lint server...${NC}"
+echo -e "${YELLOW}[pre-push] 4/9 Lint server...${NC}"
 npm --prefix server run lint
 
-echo -e "${YELLOW}[pre-push] 4/8 Lint client...${NC}"
+echo -e "${YELLOW}[pre-push] 5/9 Lint client...${NC}"
 npm --prefix client run lint
 
-echo -e "${YELLOW}[pre-push] 5/8 Test server...${NC}"
+echo -e "${YELLOW}[pre-push] 6/9 Test server...${NC}"
 npm --prefix server run test -- --reporter=dot
 
-echo -e "${YELLOW}[pre-push] 6/8 Test client...${NC}"
+echo -e "${YELLOW}[pre-push] 7/9 Test client...${NC}"
 npm --prefix client run test:run -- --reporter=dot
 
-echo -e "${YELLOW}[pre-push] 7/8 Build server...${NC}"
+echo -e "${YELLOW}[pre-push] 8/9 Build server...${NC}"
 npm --prefix server run build
 
-echo -e "${YELLOW}[pre-push] 8/8 Build client...${NC}"
+echo -e "${YELLOW}[pre-push] 9/9 Build client...${NC}"
 VITE_API_BASE=/api/v1 npm --prefix client run build
 
 echo -e "${GREEN}[pre-push] All checks passed. Proceeding with push.${NC}"

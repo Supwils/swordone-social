@@ -21,10 +21,15 @@ import {
   type UserRow,
   type TagRow,
   type PostDTOContext,
-  type PostDTO,
-  type TagDTO,
-  type FeaturedTopicDTO,
 } from '../../lib/dto';
+import type { Visibility } from '../../contract/common';
+import type {
+  AgentSummaryItem,
+  ExploreSummaryDTO,
+  FeaturedTopicDTO,
+  PostDTO,
+  TagDTO,
+} from '../../contract/posts';
 import { TTLCache } from '../../lib/ttlCache';
 
 interface FeedPage {
@@ -196,23 +201,22 @@ export async function byBoard(
     : paginateByScore(base, viewer, cursor as ScoreCursor, limit, since);
 }
 
-export interface AgentSummaryItem {
-  id: string;
-  username: string;
-  usernameDisplay: string;
-  displayName: string;
-  avatarUrl: string | null;
-  headline: string;
-  agentBackend?: string;
-  latestPostExcerpt: string | null;
-  latestPostId: string | null;
-}
-
-export interface ExploreSummary {
-  featuredPost: PostDTO | null;
-  agents: AgentSummaryItem[];
-  trendingTags: TagDTO[];
-  featuredTopics: FeaturedTopicDTO[];
+/** One /explore agent card: the agent and its latest public post, if any. */
+export function toAgentSummaryItem(
+  u: UserRow,
+  latest: { postId: string; text: string } | undefined,
+): AgentSummaryItem {
+  return {
+    id: u.id,
+    username: u.username,
+    usernameDisplay: u.usernameDisplay,
+    displayName: u.displayName,
+    avatarUrl: u.avatarUrl,
+    headline: u.headline,
+    ...(u.agentBackend ? { agentBackend: u.agentBackend } : {}),
+    latestPostExcerpt: latest ? latest.text.slice(0, 120) : null,
+    latestPostId: latest ? latest.postId : null,
+  };
 }
 
 /**
@@ -298,7 +302,7 @@ async function loadExploreSlice(): Promise<ExploreCacheSlice> {
   return { agentUsers, trendingTagDocs, featuredTagDocs, featuredPostDoc, latestByAuthor };
 }
 
-export async function getExploreSummary(viewer: UserRow | null): Promise<ExploreSummary> {
+export async function getExploreSummary(viewer: UserRow | null): Promise<ExploreSummaryDTO> {
   const slice = await exploreSliceCache.getOrLoad('global', loadExploreSlice);
   const { agentUsers, trendingTagDocs, featuredTagDocs, featuredPostDoc, latestByAuthor } = slice;
 
@@ -309,20 +313,9 @@ export async function getExploreSummary(viewer: UserRow | null): Promise<Explore
     if (ctx) featuredPost = toPostDTO(featuredPostDoc, ctx);
   }
 
-  const agents: AgentSummaryItem[] = agentUsers.map((u) => {
-    const latest = latestByAuthor.get(u.id);
-    return {
-      id: u.id,
-      username: u.username,
-      usernameDisplay: u.usernameDisplay,
-      displayName: u.displayName,
-      avatarUrl: u.avatarUrl,
-      headline: u.headline,
-      ...(u.agentBackend ? { agentBackend: u.agentBackend } : {}),
-      latestPostExcerpt: latest ? latest.text.slice(0, 120) : null,
-      latestPostId: latest ? latest.postId : null,
-    };
-  });
+  const agents: AgentSummaryItem[] = agentUsers.map((u) =>
+    toAgentSummaryItem(u, latestByAuthor.get(u.id)),
+  );
 
   const trendingTags: TagDTO[] = trendingTagDocs.map((t) => toTagDTO(t));
 
@@ -378,7 +371,7 @@ export async function byAuthor(
     .limit(1);
   if (!author) throw AppError.notFound('User not found');
 
-  const allowedVisibilities: Array<'public' | 'followers' | 'private'> = ['public'];
+  const allowedVisibilities: Visibility[] = ['public'];
   if (viewer) {
     if (viewer.id === author.id) {
       allowedVisibilities.push('followers', 'private');

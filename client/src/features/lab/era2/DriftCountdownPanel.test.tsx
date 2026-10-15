@@ -31,7 +31,11 @@ import '@/i18n';
 vi.mock('@/features/lab/api', () => ({ getDriftCountdown: vi.fn() }));
 
 import * as agentsApi from '@/features/lab/api';
-import type { DriftCountdownDTO, DriftCountdownKey, DriftCountdownSeries } from '@/features/lab/types';
+import type {
+  DriftCountdownDTO,
+  DriftCountdownKey,
+  DriftCountdownSeriesDTO,
+} from '@/features/lab/types';
 import {
   DriftCountdownPanel,
   aspectThresholdsFrom,
@@ -41,7 +45,7 @@ import {
 const AS_OF = '2026-08-20T11:22:33.000Z';
 
 /** Per-series baselines, every field deliberately distinct across the four. */
-const BASE: Record<DriftCountdownKey, DriftCountdownSeries> = {
+const BASE: Record<DriftCountdownKey, DriftCountdownSeriesDTO> = {
   anchor: {
     key: 'anchor',
     n: 7,
@@ -107,9 +111,9 @@ const BASE: Record<DriftCountdownKey, DriftCountdownSeries> = {
 };
 
 const over = (
-  base: DriftCountdownSeries,
-  o: Partial<DriftCountdownSeries>,
-): DriftCountdownSeries => ({ ...base, ...o });
+  base: DriftCountdownSeriesDTO,
+  o: Partial<DriftCountdownSeriesDTO>,
+): DriftCountdownSeriesDTO => ({ ...base, ...o });
 
 function mk(o: Partial<DriftCountdownDTO> = {}): DriftCountdownDTO {
   return {
@@ -400,7 +404,7 @@ describe('DriftCountdownPanel — every refusal is its own sentence', () => {
   });
 
   it('says "not measured yet" — not "no signal" — when the window holds nothing', async () => {
-    const empty = (key: DriftCountdownKey): DriftCountdownSeries => ({
+    const empty = (key: DriftCountdownKey): DriftCountdownSeriesDTO => ({
       key,
       n: 0,
       latestSim: null,

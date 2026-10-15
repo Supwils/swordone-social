@@ -22,7 +22,13 @@ from pathlib import Path
 from typing import Any, Final, NamedTuple, Protocol
 
 from swil_agent.api.client import ApiError
-from swil_agent.api.dto import LabEvent
+from swil_agent.api.dto import (
+    EXCERPT_MAX_UNITS,
+    REASON_MAX_UNITS,
+    SUMMARY_MAX_UNITS,
+    LabEvent,
+    cap_utf16,
+)
 from swil_agent.api.resources import Resources, WriteNotVerifiedError
 from swil_agent.config import Settings
 from swil_agent.dream.candidate import (
@@ -91,7 +97,8 @@ def build_snapshot_payload(
 ) -> dict[str, Any]:
     """The `POST /agents/:username/snapshots` body for `text`.
 
-    `excerpt` is sliced by code point, so a CJK character is never split.
+    `excerpt` is sliced by code point, so a CJK character is never split,
+    then capped to the server's 320 UTF-16 units (an emoji counts two).
     `captured_at` must already be UTC.
     """
     return {
@@ -99,7 +106,7 @@ def build_snapshot_payload(
         "snapshotType": "dream",
         "capturedAt": captured_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "archivePath": (directory / "personality.md").relative_to(agent_root).as_posix(),
-        "excerpt": text.replace("\n", " ")[:_EXCERPT_MAX_CHARS],
+        "excerpt": cap_utf16(text.replace("\n", " ")[:_EXCERPT_MAX_CHARS], EXCERPT_MAX_UNITS),
         "embedding": list(embedding),
     }
 
@@ -228,7 +235,9 @@ def write_step(
     except PersonaFormatError as exc:
         reason = str(exc)
         logger.warning("FAIL %s — %s; keeping original", name, reason)
-        _emit(resources, persona.username, _dream_event("fail", reason[:500]))
+        _emit(
+            resources, persona.username, _dream_event("fail", cap_utf16(reason, SUMMARY_MAX_UNITS))
+        )
         return WriteStep(written=False, reason=reason)
     state.record_dream(name, at=int(now.timestamp()))
     persona_source.append_memory(name, f"{now:%Y-%m-%d} | {DREAM_MEMORY_NOTE}")
@@ -287,7 +296,9 @@ def snapshot_step(
                 phase="snapshot",
                 outcome="warn",
                 summary="snapshot upload failed",
-                reason=reason,
+                # `str(exc)` is unbounded (an `ApiError` alone renders up to
+                # 310 chars): uncapped, a long refusal 400s this very event.
+                reason=cap_utf16(reason, REASON_MAX_UNITS),
             ),
         )
         return SnapshotStep(ok=False, reason=reason)

@@ -13,7 +13,7 @@ import { cosineDist, cosineSim } from '../../../lib/vector';
 import type { UserRow } from '../../../lib/dto';
 import type { BehaviorSnapshotIngestInput, SnapshotIngestInput } from './persona.schemas';
 import { findAgentByUsername } from '../lab/shared';
-import type { DriftPointDTO, FidelityDTO, FidelityPointDTO } from './persona.types';
+import type { DriftPointDTO, FidelityDTO, FidelityPointDTO } from '../../../contract/lab/persona';
 
 /* ---------- drift ---------- */
 

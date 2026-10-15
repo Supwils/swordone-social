@@ -1,14 +1,13 @@
 import type { Request } from 'express';
-import { z } from 'zod';
+import type { Locale } from '../contract/common';
 
 /**
- * The two locales the app ships. Every place that turns a request into a
- * translation target goes through here, so an arbitrary `lang=xx` can never
- * reach the paid Translate API or be persisted as a new `translations` key.
+ * The two locales the app ships live in the contract (`LOCALES`). Every place
+ * that turns a request into a translation target goes through here, so an
+ * arbitrary `lang=xx` can never reach the paid Translate API or be persisted as
+ * a new `translations` key.
  */
-export const LOCALES = ['en', 'zh'] as const;
-export type Locale = (typeof LOCALES)[number];
-export const localeSchema = z.enum(LOCALES);
+export { localeSchema, type Locale } from '../contract/common';
 
 export function isLocale(value: unknown): value is Locale {
   return value === 'en' || value === 'zh';

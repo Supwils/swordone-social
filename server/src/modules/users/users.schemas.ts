@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LIMITS, LOCALES, usernameLookupSchema } from '../../contract/common';
 
 export const updateMeSchema = z.object({
   displayName: z.string().trim().min(1).max(80).optional(),
@@ -21,7 +22,7 @@ export const updateMeSchema = z.object({
   preferences: z
     .object({
       theme: z.enum(['system', 'light', 'dark']).optional(),
-      language: z.enum(['en', 'zh']).optional(),
+      language: z.enum(LOCALES).optional(),
       emailNotifications: z.boolean().optional(),
       pushNotifications: z.boolean().optional(),
       autoTranslate: z.boolean().optional(),
@@ -32,15 +33,11 @@ export const updateMeSchema = z.object({
 });
 
 export const usernameParamSchema = z.object({
-  username: z
-    .string()
-    .min(3)
-    .max(24)
-    .regex(/^[a-zA-Z0-9_]+$/),
+  username: usernameLookupSchema,
 });
 
 export const searchUsersQuerySchema = z.object({
-  search: z.string().trim().min(1).max(32).optional(),
+  search: z.string().trim().min(1).max(LIMITS.userSearch).optional(),
   tag: z.string().trim().min(1).max(30).optional(),
   limit: z.coerce.number().int().min(1).max(50).optional(),
 });

@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { ReactElement } from 'react';
 import '@/i18n';
-import type { PostDTO, UserLiteDTO } from '@/api/types';
+import type { PostDTO } from '@/api/types';
+import { makePost, makeUserLite } from '@/test/fixtures';
 
 vi.mock('@/api/likes.api', () => ({ likePost: vi.fn(), unlikePost: vi.fn() }));
 vi.mock('@/api/posts.api', () => ({ update: vi.fn(), remove: vi.fn(), translate: vi.fn() }));
@@ -13,40 +14,25 @@ vi.mock('@/api/bookmarks.api', () => ({ bookmarkPost: vi.fn(), unbookmarkPost: v
 import * as postsApi from '@/api/posts.api';
 import { PostCard } from './PostCard';
 
-function author(over: Partial<UserLiteDTO> = {}): UserLiteDTO {
-  return {
-    id: 'u-qiusai',
-    username: 'qiusai',
-    usernameDisplay: 'qiusai',
-    displayName: '球赛',
-    avatarUrl: null,
-    headline: '',
-    profileTags: [],
-    isAgent: true,
-    ...over,
-  };
-}
+const QIUSAI = makeUserLite({
+  id: 'u-qiusai',
+  username: 'qiusai',
+  usernameDisplay: 'qiusai',
+  displayName: '球赛',
+  isAgent: true,
+});
 
-function post(over: Partial<PostDTO> = {}): PostDTO {
-  return {
+const post = (over: Partial<PostDTO> = {}): PostDTO =>
+  makePost({
     id: 'p-basil',
-    author: author(),
+    author: QIUSAI,
     text: '罗勒掐顶之后侧芽会更快。',
-    images: [],
-    video: null,
     tags: [{ slug: 'garden', display: 'garden' }],
-    mentions: [],
-    visibility: 'public',
     likeCount: 3,
     commentCount: 1,
-    echoCount: 0,
-    likedByMe: false,
-    bookmarkedByMe: false,
     createdAt: '2026-08-20T08:00:00.000Z',
-    editedAt: null,
     ...over,
-  };
-}
+  });
 
 function renderCard(node: ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -80,10 +66,27 @@ describe('PostCard', () => {
 
   it('does not show the AI badge for a non-agent author', () => {
     renderCard(
-      <PostCard post={post({ author: author({ isAgent: false, displayName: '绿窗' }) })} />,
+      <PostCard
+        post={post({ author: makeUserLite({ ...QIUSAI, isAgent: false, displayName: '绿窗' }) })}
+      />,
     );
 
     expect(screen.getByText('绿窗')).toBeTruthy();
+    expect(screen.queryByText('AI')).toBeNull();
+  });
+
+  it('treats a null archivedAt as a live account and a set one as sealed', () => {
+    const { unmount } = renderCard(
+      <PostCard post={post({ author: { ...QIUSAI, archivedAt: null } })} />,
+    );
+    expect(screen.getByText('AI')).toBeTruthy();
+    expect(screen.queryByText(/Era 2/)).toBeNull();
+    unmount();
+
+    renderCard(
+      <PostCard post={post({ author: { ...QIUSAI, archivedAt: '2026-10-14T00:00:00.000Z' } })} />,
+    );
+    expect(screen.getByText(/Era 2/)).toBeTruthy();
     expect(screen.queryByText('AI')).toBeNull();
   });
 

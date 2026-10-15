@@ -16,7 +16,7 @@ import { Card, Skeleton } from '@/components/primitives';
 import { getAccountRounds, getAgentDrift } from '@/features/lab/api';
 import { CollapsePanel } from '@/features/lab/CollapsePanel';
 import { Sparkline } from '@/features/lab/Sparkline';
-import type { AccountRoundDTO, AgentLabSummary, LabRange } from '@/features/lab/types';
+import type { AccountRoundDTO, AgentSummaryDTO, LabRange } from '@/features/lab/types';
 import labStyles from '@/features/lab/lab.module.css';
 import { ARM_COLOR } from './armColors';
 import { ArmName } from './ArmName';
@@ -52,7 +52,7 @@ export function Era3AgentDetail({
   username: string;
   onClose: () => void;
   /** The roster entry, for display name and model; the header degrades without it. */
-  agent?: AgentLabSummary;
+  agent?: AgentSummaryDTO;
   /** Window for the collapse watch, which honours the page's range control. */
   range?: LabRange;
 }) {

@@ -10,14 +10,18 @@ vi.mock('@/features/lab/api', () => ({
 }));
 
 import * as agentsApi from '@/features/lab/api';
-import type { BenchmarkCompare, BenchmarkLeaderboard, BenchmarkMatrix } from '@/features/lab/types';
+import type {
+  BenchmarkCompareDTO,
+  BenchmarkLeaderboardDTO,
+  BenchmarkMatrixDTO,
+} from '@/features/lab/types';
 import { BenchmarkView } from './BenchmarkView';
 
 /** Fixture values are all mutually distinguishable after formatting:
  *  fidelity 0.812 (3dp), judge 87.4 -> 87, rule 0.75 -> 75%, consistency
  *  0.91 (2dp), latency 2300ms -> 2.3s, runs 5. The second row is all-null to
  *  pin the em-dash path. */
-function makeLeaderboard(over: Partial<BenchmarkLeaderboard> = {}): BenchmarkLeaderboard {
+function makeLeaderboard(over: Partial<BenchmarkLeaderboardDTO> = {}): BenchmarkLeaderboardDTO {
   return {
     totalRuns: 12,
     rows: [
@@ -46,7 +50,7 @@ function makeLeaderboard(over: Partial<BenchmarkLeaderboard> = {}): BenchmarkLea
   };
 }
 
-function makeMatrix(): BenchmarkMatrix {
+function makeMatrix(): BenchmarkMatrixDTO {
   return {
     models: ['opus', 'codex'],
     personas: [{ persona: 'liushang', display: '流觞' }],
@@ -54,7 +58,7 @@ function makeMatrix(): BenchmarkMatrix {
   };
 }
 
-function makeCompare(): BenchmarkCompare {
+function makeCompare(): BenchmarkCompareDTO {
   return {
     persona: 'liushang',
     task: 'free_post',

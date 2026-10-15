@@ -6,7 +6,7 @@
  * report must never serialise NaN or Infinity.
  */
 import type { ArmId } from '../lab/roster';
-import type { MetricBlock, Verdict } from './arms.types';
+import type { MetricBlock, Verdict } from '../../../contract/lab/arms';
 import { MIN_ARM_ACCOUNTS, MIN_ARM_ROUNDS } from './protocol';
 
 function finiteOrNull(x: number): number | null {

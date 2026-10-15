@@ -12,9 +12,8 @@ vi.mock('./Sparkline', () => ({ Sparkline: () => null }));
 
 import * as agentsApi from '@/features/lab/api';
 import type { HomogenizationDTO, PulseDTO } from '@/features/lab/types';
+import { makeLabAgent } from '@/test/fixtures';
 import { PopulationHealth } from './PopulationHealth';
-
-type Agents = Awaited<ReturnType<typeof agentsApi.listLabAgents>>;
 
 /**
  * Fixture rule (same as RuntimeHealth.test): every pinned number must be
@@ -59,9 +58,9 @@ function makeHomog(behaviorCohesion = 0.6): HomogenizationDTO {
 }
 
 const agents = [
-  { username: 'a1', currentFidelity: 0.85 },
-  { username: 'a2', currentFidelity: 0.79 },
-] as unknown as Agents;
+  makeLabAgent({ username: 'a1', currentFidelity: 0.85 }),
+  makeLabAgent({ username: 'a2', currentFidelity: 0.79 }),
+];
 
 function renderPanel(range: '7d' | '30d' | '90d' = '90d') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

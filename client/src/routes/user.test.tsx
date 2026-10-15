@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@/i18n';
 import { useSession } from '@/stores/session.store';
-import type { ConversationDTO, PostDTO, UserDTO } from '@/api/types';
+import { makeConversation, makePost, makeUser } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
   getByUsername: vi.fn(),
@@ -46,27 +46,16 @@ vi.mock('@/features/bookmarks/BookmarksFeed', () => ({
 
 import UserRoute from './user';
 
-function makeUser(over: Partial<UserDTO> = {}): UserDTO {
-  return {
-    id: 'u-bob',
-    username: 'bob',
-    usernameDisplay: 'bob',
-    displayName: 'Bob',
-    bio: '',
-    headline: '',
-    avatarUrl: null,
-    coverUrl: null,
-    location: null,
-    website: null,
-    profileTags: [],
-    isAgent: false,
-    followerCount: 5,
-    followingCount: 3,
-    postCount: 7,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    ...over,
-  };
-}
+const BOB = makeUser({
+  id: 'u-bob',
+  username: 'bob',
+  usernameDisplay: 'bob',
+  displayName: 'Bob',
+  followerCount: 5,
+  followingCount: 3,
+  postCount: 7,
+});
+const ME = makeUser({ id: 'u-me', username: 'me', usernameDisplay: 'me' });
 
 function renderAt(
   username = 'bob',
@@ -97,9 +86,9 @@ afterEach(() => {
 
 describe('UserRoute', () => {
   it('renders the profile and its posts; anonymous viewers get no actions', async () => {
-    mocks.getByUsername.mockResolvedValue(makeUser());
+    mocks.getByUsername.mockResolvedValue(BOB);
     mocks.byUser.mockResolvedValue({
-      items: [{ id: 'p-1', text: 'a post by bob' } as PostDTO],
+      items: [makePost({ id: 'p-1', text: 'a post by bob' })],
       nextCursor: null,
     });
 
@@ -128,8 +117,8 @@ describe('UserRoute', () => {
   });
 
   it('follows a user and bumps the follower count optimistically', async () => {
-    useSession.setState({ user: makeUser({ id: 'u-me', username: 'me' }), bootstrap: 'ready' });
-    mocks.getByUsername.mockResolvedValue(makeUser());
+    useSession.setState({ user: ME, bootstrap: 'ready' });
+    mocks.getByUsername.mockResolvedValue(BOB);
     mocks.follow.mockResolvedValue(undefined);
 
     renderAt();
@@ -151,8 +140,8 @@ describe('UserRoute', () => {
     // Those caches sit under a 30s staleTime; without an explicit
     // invalidation a user who followed someone and went straight back to
     // /feed kept seeing the pre-follow river.
-    useSession.setState({ user: makeUser({ id: 'u-me', username: 'me' }), bootstrap: 'ready' });
-    mocks.getByUsername.mockResolvedValue(makeUser());
+    useSession.setState({ user: ME, bootstrap: 'ready' });
+    mocks.getByUsername.mockResolvedValue(BOB);
     mocks.follow.mockResolvedValue(undefined);
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const feedKey = ['feed', 'following', 'en', 'recommended'];
@@ -177,8 +166,8 @@ describe('UserRoute', () => {
   });
 
   it('unfollows and decrements the follower count', async () => {
-    useSession.setState({ user: makeUser({ id: 'u-me', username: 'me' }), bootstrap: 'ready' });
-    mocks.getByUsername.mockResolvedValue(makeUser());
+    useSession.setState({ user: ME, bootstrap: 'ready' });
+    mocks.getByUsername.mockResolvedValue(BOB);
     mocks.checkFollowing.mockResolvedValue(true);
     mocks.unfollow.mockResolvedValue(undefined);
 
@@ -192,9 +181,9 @@ describe('UserRoute', () => {
   });
 
   it('starts a conversation from the Message button', async () => {
-    useSession.setState({ user: makeUser({ id: 'u-me', username: 'me' }), bootstrap: 'ready' });
-    mocks.getByUsername.mockResolvedValue(makeUser());
-    mocks.findOrCreate.mockResolvedValue({ id: 'c-9' } as ConversationDTO);
+    useSession.setState({ user: ME, bootstrap: 'ready' });
+    mocks.getByUsername.mockResolvedValue(BOB);
+    mocks.findOrCreate.mockResolvedValue(makeConversation({ id: 'c-9' }));
 
     renderAt();
 
@@ -205,7 +194,7 @@ describe('UserRoute', () => {
   });
 
   it('shows tabs on your own profile and switches to bookmarks', async () => {
-    const bob = makeUser();
+    const bob = BOB;
     useSession.setState({ user: bob, bootstrap: 'ready' });
     mocks.getByUsername.mockResolvedValue(bob);
 
@@ -220,7 +209,7 @@ describe('UserRoute', () => {
   });
 
   it('opens the followers modal from the count button', async () => {
-    mocks.getByUsername.mockResolvedValue(makeUser());
+    mocks.getByUsername.mockResolvedValue(BOB);
 
     renderAt();
 

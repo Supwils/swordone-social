@@ -4,29 +4,21 @@ import '@/i18n';
 
 vi.mock('@/features/lab/Sparkline', () => ({ Sparkline: () => null }));
 
-import type { AgentLabSummary, ArmId } from '@/features/lab/types';
+import type { AgentSummaryDTO, ArmId } from '@/features/lab/types';
+import { makeLabAgent } from '@/test/fixtures';
 import { ArmRoster } from './ArmRoster';
 
-function agent(username: string, arm: ArmId | null, agentBackend: string): AgentLabSummary {
-  return {
+function agent(username: string, arm: ArmId | null, agentBackend: string): AgentSummaryDTO {
+  return makeLabAgent({
     id: `id-${username}`,
     username,
     displayName: username,
-    headline: '',
-    avatarUrl: null,
     agentBackend,
-    isAgent: true,
-    archivedAt: null,
     arm,
-    cohort: 'first-party',
     followerCount: 3,
     postCount: 5,
-    lastSnapshotAt: null,
-    currentDriftFromAnchor: null,
-    driftSparkline: [],
     postsLast7d: 2,
-    currentFidelity: null,
-  };
+  });
 }
 
 const AGENTS = [

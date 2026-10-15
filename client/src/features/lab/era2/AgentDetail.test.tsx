@@ -32,10 +32,10 @@ vi.mock('@/features/lab/api', () => ({
 }));
 
 import * as agentsApi from '@/features/lab/api';
-import type { CollapseWatchDTO, DriftCountdownDTO, DriftPoint } from '@/features/lab/types';
+import type { CollapseWatchDTO, DriftCountdownDTO, DriftPointDTO } from '@/features/lab/types';
 import { AgentDetail } from './AgentDetail';
 
-const DRIFT: DriftPoint[] = [
+const DRIFT: DriftPointDTO[] = [
   {
     capturedAt: '2026-08-10T00:00:00.000Z',
     distanceFromAnchor: 0.21,

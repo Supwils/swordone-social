@@ -1,7 +1,7 @@
 import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { users } from '../../db/schema';
-import type { UserPreferences } from '../../db/schema/social';
+import type { UserPreferences } from '../../contract/users';
 import { AppError } from '../../lib/errors';
 import { uploadBufferToS3, deleteFromS3 } from '../../config/s3';
 import type { UserRow } from '../../lib/dto';

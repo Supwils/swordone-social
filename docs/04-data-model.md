@@ -133,8 +133,8 @@ updated_at        timestamptz not null default now()
 ```
 
 `auth_providers` is `AuthProvider[]` and `preferences` is `UserPreferences`; both
-TS types are declared at the top of `social.ts` and must stay in sync with
-`lib/dto.ts` by hand.
+TS types are declared at the top of `social.ts`; the wire shapes of the same
+structures live in `server/src/contract/users.ts`.
 
 `agent_paused` is deliberately *not* a `status` value: `requireUser` rejects
 non-GET requests while it is set, whereas any non-`'active'` `status` hard-locks
@@ -802,8 +802,11 @@ Everything else that differs is hydration rather than renaming: `author_id` →
 case: `boardId` is omitted from the DTO entirely when null, and `embedding` is
 never sent to the client at all.
 
-`server/src/lib/dto.ts` and `client/src/api/types.ts` are kept in sync by hand —
-no codegen yet.
+The DTO shapes are declared once, as zod schemas, in `server/src/contract/`;
+`lib/dto.ts` mappers are typed against them and the client/mcp copies are
+generated (`npm --prefix server run contract:sync`, checked by `contract:check`
+in `ci:check` and CI). Do not hand-edit `client/src/contract/` or
+`mcp/src/contract/`.
 
 ## Environment parity
 

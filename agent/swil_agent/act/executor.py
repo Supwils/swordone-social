@@ -73,6 +73,14 @@ from swil_agent.models import Action, ActionResult
 logger = logging.getLogger(__name__)
 
 _SUMMARY_CAP = 200
+
+# ECMAScript `String.prototype.trim` whitespace: WhiteSpace + LineTerminator.
+# Python's `str.strip()` keeps U+FEFF (and strips a few C0/C1 separators JS keeps),
+# so the server's `trim().min(1)` would disagree with a plain `.strip()`.
+_JS_TRIM_CHARS = (
+    "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006"
+    "\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
+)
 _LOG_PREVIEW_CAP = 60
 _QUOTE_PREVIEW_CAP = 40
 
@@ -363,9 +371,17 @@ def _execute_echo(resources: Resources, action: Action, *, agent_name: str) -> E
         detail=None,
         log_line=f"DONE {agent_name} echoed {post_id}{quote_tag}",
         lab_outcome="success",
-        lab_summary=text[:_SUMMARY_CAP],
+        # A plain repost has no text, and the server refuses an empty
+        # summary (`trim().min(1)`), dropping the event. "echoed post" is
+        # `like`'s "liked post": the target is already in `targetId`.
+        lab_summary=_echo_summary(text),
         lab_target_id=post_id,
     )
+
+
+def _echo_summary(text: str) -> str:
+    capped = text[:_SUMMARY_CAP]
+    return capped if capped.strip(_JS_TRIM_CHARS) else "echoed post"
 
 
 def _execute_dm(resources: Resources, action: Action, *, agent_name: str) -> ExecutionOutcome:

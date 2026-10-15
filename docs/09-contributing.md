@@ -126,7 +126,7 @@ before committing as a courtesy, not because something will stop you.
 breaks the build exactly like an error does. Fix it or write an explicit
 `eslint-disable` with a reason — you cannot let it slide.
 
-### `ci:check` — 10 steps
+### `ci:check` — 14 steps
 
 **Before every commit and push:**
 
@@ -136,18 +136,22 @@ npm run ci:check
 
 `scripts/ci-check.sh` mirrors `.github/workflows/ci.yml` step for step:
 
-1. Typecheck server
-2. Typecheck client
-3. Lint server (eslint, `--max-warnings=0`)
-4. Lint client (eslint, `--max-warnings=0`)
-5. Test server (vitest)
-6. Test client (vitest)
-7. **Typecheck mcp**
-8. **Test mcp**
-9. Build server
-10. Build client (with `VITE_API_BASE=/api/v1`)
+1. **Contract in sync** (`npm --prefix server run contract:check`)
+2. Typecheck server
+3. Typecheck client
+4. Lint server (eslint, `--max-warnings=0`)
+5. Lint client (eslint, `--max-warnings=0`)
+6. Test server (vitest)
+7. Test client (vitest)
+8. **Typecheck mcp**
+9. **Test mcp**
+10. Build server
+11. Build client (with `VITE_API_BASE=/api/v1`)
+12. Lint agent (ruff check + format)
+13. Typecheck agent (mypy)
+14. Test agent (pytest, cov ≥ 97)
 
-Steps 7–8 are the ones people forget the repo has: the `mcp/` package is a real
+Steps 8–9 are the ones people forget the repo has: the `mcp/` package is a real
 CI citizen, and skipping it locally is the most common way to push a red build.
 
 **Preconditions — `ci:check` is not hermetic:**
@@ -155,11 +159,11 @@ CI citizen, and skipping it locally is the most common way to push a red build.
 - **A pgvector-enabled Postgres must be reachable.** Server tests run against a
   real database (Drizzle migrations, seeded rows, `vector` columns), not a mock.
   CI provides it as a `pgvector/pgvector:pg16` service; locally you need an
-  equivalent instance up before step 5. See `server/src/test/setup.ts` for the
+  equivalent instance up before step 6. See `server/src/test/setup.ts` for the
   connection defaults.
 - **`mcp/` dependencies must be installed.** `npm run install:all` covers root +
   server + client + mcp; a plain `npm install` at the root does not, and steps
-  7–8 will fail on a missing `node_modules`.
+  8–9 will fail on a missing `node_modules`.
 
 Hooks run subsets (pre-commit omits the build), so for anything touching build
 config, dependencies, ESLint config or the CI workflow itself, run `ci:check`
@@ -200,6 +204,19 @@ collides with `npm run dev`.
 Postgres and two dev servers, and takes long enough that gating every commit on
 it would not be worth it. Run it yourself when you touch auth, registration, or
 the BYOA lifecycle (the flows `e2e/auth.spec.ts` and `e2e/byoa.spec.ts` cover).
+
+### API contract (S4)
+
+Request/response shapes are declared once, as strict zod schemas, in
+`server/src/contract/` (`XSchema` + `type X = z.infer<typeof XSchema>`; ingest
+bodies keep their `…Ingest` names). Contract files import only `zod` and sibling
+contract files. To change a shape: edit the schema, run
+`npm --prefix server run contract:sync`, fix what the typechecks then flag.
+`client/src/contract/`, `mcp/src/contract/` and `agent/tests/contract/*.schema.json`
+are generated (header `GENERATED from server/src/contract by contract:sync`) and
+must never be edited by hand; `contract:check` fails `ci:check` and CI on any
+drift. The agent's pytest suite validates the bodies it builds against the JSON
+Schemas. A new DTO needs a schema and a test pinning the mapper to it.
 
 ### Code style
 

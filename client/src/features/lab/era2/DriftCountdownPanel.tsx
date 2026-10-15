@@ -40,7 +40,11 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Skeleton } from '@/components/primitives';
 import { getDriftCountdown } from '@/features/lab/api';
-import type { DriftCountdownDTO, DriftCountdownKey, DriftCountdownSeries } from '@/features/lab/types';
+import type {
+  DriftCountdownDTO,
+  DriftCountdownKey,
+  DriftCountdownSeriesDTO,
+} from '@/features/lab/types';
 import s from '@/features/lab/lab.module.css';
 
 /** One query for the whole detail view: `AgentDetail` reuses this key for the chart's thresholds. */
@@ -75,8 +79,8 @@ export function aspectThresholdsFrom(data: DriftCountdownDTO | undefined): {
 export type CountdownHeadline =
   | { kind: 'no-measurements' }
   | { kind: 'mode-unknown' }
-  | { kind: 'crossed'; series: DriftCountdownSeries }
-  | { kind: 'projected'; series: DriftCountdownSeries }
+  | { kind: 'crossed'; series: DriftCountdownSeriesDTO }
+  | { kind: 'projected'; series: DriftCountdownSeriesDTO }
   | { kind: 'waiting' }
   | { kind: 'none' };
 
@@ -90,7 +94,7 @@ export function countdownHeadline(data: DriftCountdownDTO): CountdownHeadline {
   // No binding series, and every series the gate decides with is still short of
   // a fit: this is "not watched yet", not "nothing is moving".
   const gating = data.series.filter((x) => data.gating.includes(x.key));
-  const unfitted = (x: DriftCountdownSeries) =>
+  const unfitted = (x: DriftCountdownSeriesDTO) =>
     x.projection === 'insufficient-points' || x.projection === 'no-time-span';
   if (gating.length > 0 && gating.every(unfitted)) return { kind: 'waiting' };
   return { kind: 'none' };
@@ -189,7 +193,7 @@ function CountdownRow({
   gating,
   maxExtrapolation,
 }: {
-  series: DriftCountdownSeries;
+  series: DriftCountdownSeriesDTO;
   gating: boolean;
   maxExtrapolation: number;
 }) {
@@ -229,7 +233,7 @@ function CountdownRow({
  * another — see the module header for what each one means.
  */
 function projectionSentence(
-  series: DriftCountdownSeries,
+  series: DriftCountdownSeriesDTO,
   maxExtrapolation: number,
   t: TFunction,
 ): string {

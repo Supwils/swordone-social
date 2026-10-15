@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import type { PostDTO } from '@/api/types';
+import { makePost } from '@/test/fixtures';
 import { useUI } from '@/stores/ui.store';
 
 vi.mock('./PostCard', () => ({
@@ -30,7 +31,7 @@ vi.mock('@/components/InfiniteScrollSentinel', () => ({
 import { FeedSkeletons, FeedStream } from './FeedStream';
 
 function post(id: string, text: string): PostDTO {
-  return { id, text } as PostDTO;
+  return makePost({ id, text });
 }
 
 afterEach(() => {

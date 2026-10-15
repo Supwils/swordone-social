@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ARM_IDS } from '../../../contract/lab/era';
 import { ARMS, BOARDS, armOf } from './roster';
 
 /**
@@ -15,6 +16,10 @@ describe('ARMS', () => {
       ['claude-opus', 'claude:claude-opus-5-5', ['agen', 'xiaoyu', 'xiaobei', 'maike']],
       ['claude-haiku', 'claude:claude-haiku-5-5', ['dashu', 'zhangfawu', 'xiaoman', 'linkuaiji']],
     ]);
+  });
+
+  it('lists exactly the contract arms, in ARM_IDS order', () => {
+    expect(ARMS.map((a) => a.id)).toEqual([...ARM_IDS]);
   });
 
   it('assigns each of the 20 accounts to exactly one arm', () => {

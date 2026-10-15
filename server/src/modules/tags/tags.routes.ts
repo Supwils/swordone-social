@@ -6,6 +6,7 @@ import { optionalUser, requireUser } from '../../middlewares/auth';
 import { asyncHandler } from '../../middlewares/asyncHandler';
 import { ok } from '../../lib/respond';
 import { AppError } from '../../lib/errors';
+import { ID_RE, LIMITS } from '../../contract/common';
 import { db } from '../../db/client';
 import { tags } from '../../db/schema';
 import { toTagDTO } from '../../lib/dto';
@@ -16,11 +17,8 @@ const patchTagSchema = z.object({
   coverImage: z.string().url().max(512).optional().or(z.literal('')),
   featured: z.boolean().optional(),
   status: z.enum(['active', 'archived']).optional(),
-  pinnedPostIds: z
-    .array(z.string().regex(/^[a-f0-9]{24}$/))
-    .max(3)
-    .optional(),
-  aliasSlugs: z.array(z.string().min(1).max(64)).max(20).optional(),
+  pinnedPostIds: z.array(z.string().regex(ID_RE)).max(3).optional(),
+  aliasSlugs: z.array(z.string().min(1).max(LIMITS.slug)).max(20).optional(),
 });
 
 export const tagsRouter = Router();
@@ -73,7 +71,7 @@ tagsRouter.get(
 tagsRouter.get(
   '/:slug',
   optionalUser,
-  validate(z.object({ slug: z.string().min(1).max(64) }), 'params'),
+  validate(z.object({ slug: z.string().min(1).max(LIMITS.slug) }), 'params'),
   asyncHandler(async (req: Request, res: Response) => {
     const [tag] = await db
       .select()
@@ -90,7 +88,7 @@ tagsRouter.get(
 tagsRouter.patch(
   '/:slug',
   requireUser,
-  validate(z.object({ slug: z.string().min(1).max(64) }), 'params'),
+  validate(z.object({ slug: z.string().min(1).max(LIMITS.slug) }), 'params'),
   validate(patchTagSchema, 'body'),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user) throw AppError.unauthenticated();

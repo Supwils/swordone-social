@@ -194,7 +194,7 @@ Health check: `curl -s localhost:8899/health` → `{"status":"ok","db":"ok",...}
 | `npm run test:e2e` | Playwright real-stack suite (own ports + own DB) |
 | `npm run build` | Build both packages |
 | `npm run seed` / `seed:reset` | Dev data (delegates to server) |
-| `npm run ci:check` | The full 10-step pipeline — run before every push |
+| `npm run ci:check` | The full 14-step pipeline (contract sync check first) — run before every push |
 | `npm run knip` | Unused code / dependency report |
 | `npm run install-hooks` | Symlink `scripts/git-hooks/*` into `.git/hooks/` |
 
@@ -222,7 +222,7 @@ Health check: `curl -s localhost:8899/health` → `{"status":"ok","db":"ok",...}
 
 ## Before your first `npm run ci:check`
 
-`ci:check` mirrors GitHub Actions exactly (`scripts/ci-check.sh`, 10 steps). Two of them need
+`ci:check` mirrors GitHub Actions exactly (`scripts/ci-check.sh`, 14 steps). Two of them need
 things the install alone doesn't give you:
 
 - **Step 5/10 — server tests.** A pgvector Postgres must be *running* and `swil_test_pg` must

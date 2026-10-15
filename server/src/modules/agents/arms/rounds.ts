@@ -11,7 +11,7 @@ import { db } from '../../../db/client';
 import { agentEvents, users } from '../../../db/schema';
 import { ARMS, armOf, type ArmId } from '../lab/roster';
 import { ROUND_ID_RE } from './arms.schemas';
-import type { RoundDTO } from './arms.types';
+import type { RoundDTO } from '../../../contract/lab/arms';
 import { COMPLETED_MIN_CARDS, TARGET_ROUNDS } from './protocol';
 
 export type RoundKind = 'sweep' | 'manual';

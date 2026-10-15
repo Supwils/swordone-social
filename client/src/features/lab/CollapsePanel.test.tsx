@@ -23,7 +23,7 @@ import '@/i18n';
 vi.mock('@/features/lab/api', () => ({ getCollapseWatch: vi.fn() }));
 
 import * as agentsApi from '@/features/lab/api';
-import type { CollapseSeries, CollapseWatchDTO } from '@/features/lab/types';
+import type { CollapseSeriesDTO, CollapseWatchDTO } from '@/features/lab/types';
 import { CollapsePanel } from './CollapsePanel';
 
 /**
@@ -31,7 +31,7 @@ import { CollapsePanel } from './CollapsePanel';
  * detector can be validated against. `basis: 'length-only'` is the correct
  * answer for it — `maxSim` did not exist yet — and that is the point of the field.
  */
-const LENGTH_FITTED: CollapseSeries = {
+const LENGTH_FITTED: CollapseSeriesDTO = {
   key: 'length',
   unit: 'characters',
   n: 8,
@@ -47,7 +47,7 @@ const LENGTH_FITTED: CollapseSeries = {
   fit: 'fitted',
 };
 
-const SIM_PREDATES: CollapseSeries = {
+const SIM_PREDATES: CollapseSeriesDTO = {
   key: 'selfSimilarity',
   unit: 'cosine-similarity',
   n: 0,
@@ -63,7 +63,7 @@ const SIM_PREDATES: CollapseSeries = {
   fit: 'predates-instrument',
 };
 
-const SIM_FITTED: CollapseSeries = {
+const SIM_FITTED: CollapseSeriesDTO = {
   key: 'selfSimilarity',
   unit: 'cosine-similarity',
   n: 6,

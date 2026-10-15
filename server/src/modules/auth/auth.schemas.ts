@@ -1,10 +1,5 @@
 import { z } from 'zod';
-
-export const usernameSchema = z
-  .string()
-  .min(3)
-  .max(24)
-  .regex(/^[a-zA-Z0-9_]+$/, 'Letters, numbers, and underscores only');
+import { ID_RE, usernameSchema } from '../../contract/common';
 
 export const passwordSchema = z.string().min(8).max(128);
 
@@ -36,7 +31,7 @@ export const createApiKeySchema = z.object({
 });
 
 export const apiKeyIdParamSchema = z.object({
-  keyId: z.string().regex(/^[a-f0-9]{24}$/, 'Invalid id'),
+  keyId: z.string().regex(ID_RE, 'Invalid id'),
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;

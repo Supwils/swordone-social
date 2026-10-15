@@ -6,6 +6,8 @@ import { agentEvents, postVectors } from '../../../db/schema';
 import { resetDb } from '../../../test/db-reset';
 import { axis, mixed06, seedUser } from '../lab/lab.testSeeds';
 import { getAccountRounds } from './accountRounds';
+import { AccountRoundDTOSchema, AccountRoundsDTOSchema } from '../../../contract/lab/arms';
+import { envelopeData, expectContract } from '../../../test/contract';
 
 const sweep = (d: number) => `202610${String(d).padStart(2, '0')}T060000Z-r`;
 
@@ -118,6 +120,10 @@ describe('GET /agents/:username/rounds', () => {
 
     const res = await request(createApp()).get('/api/v1/agents/agen/rounds');
     expect(res.status).toBe(200);
+    // The serialised body is the strict contract shape (spec §7.8): one round
+    // with a candidate and a post, one with neither.
+    const parsed = expectContract(AccountRoundsDTOSchema, envelopeData(res.body));
+    for (const r of parsed.rounds) expectContract(AccountRoundDTOSchema, r);
     const body = res.body.data;
     expect(body.username).toBe('agen');
     expect(body.arm).toBe('claude-opus');

@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "GENERATED from server/src/contract by contract:sync — do not edit.",
+  "description": "Request body of POST /api/v1/agents/:username/snapshots (zod source: `snapshotIngest` in server/src/contract/ingest.ts). Stricter than the server on purpose: unknown keys are rejected here, where the server strips them, so a misspelt field fails a test instead of being dropped; the server reads capturedAt with `new Date(...)` (epoch numbers, naive datetimes read in the server's own time zone, `null` → 1970-01-01T00:00:00Z), while this schema requires an RFC 3339 date-time string with an offset (`format: date-time`, checked only by a validator with a format checker). Looser than the server, so the agent's test asserts these directly: every number must be finite: NaN and Infinity pass `type: number` and every minimum/maximum here, but JSON cannot carry them (httpx raises before sending, the server's parser rejects them), and the server also checks embedding[] for finiteness explicitly; `pattern` (contentHash) is ECMA-262, but a Python validator evaluates it with `re.search`, where `$` also matches before a trailing newline and `\\d` matches non-ASCII digits, so check those fields with `re.fullmatch(..., flags=re.ASCII)`.",
+  "$ref": "#/definitions/snapshotIngest",
+  "definitions": {
+    "snapshotIngest": {
+      "type": "object",
+      "properties": {
+        "contentHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-fA-F0-9]+$"
+        },
+        "embedding": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 64,
+          "maxItems": 4096
+        },
+        "snapshotType": {
+          "type": "string",
+          "enum": [
+            "anchor",
+            "dream"
+          ],
+          "default": "dream"
+        },
+        "capturedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "archivePath": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "excerpt": {
+          "type": "string",
+          "maxLength": 320,
+          "default": ""
+        },
+        "diffNarrative": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "aspectDrift": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "shadow",
+                "aspect"
+              ]
+            },
+            "promptVersion": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "values": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1
+            },
+            "style": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1
+            },
+            "topic": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1
+            },
+            "breached": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "values",
+                  "style",
+                  "topic"
+                ]
+              },
+              "default": []
+            }
+          },
+          "required": [
+            "mode",
+            "promptVersion",
+            "values",
+            "style",
+            "topic"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "contentHash",
+        "embedding",
+        "archivePath"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

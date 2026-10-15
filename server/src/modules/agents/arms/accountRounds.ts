@@ -12,7 +12,7 @@ import { db } from '../../../db/client';
 import { agentEvents, postVectors } from '../../../db/schema';
 import { armOf } from '../lab/roster';
 import { findAgentByUsername } from '../lab/shared';
-import type { AccountRoundDTO, AccountRoundsDTO } from './arms.types';
+import type { AccountRoundDTO, AccountRoundsDTO } from '../../../contract/lab/arms';
 import { SIMILARITY_SUMMARIES } from './metrics';
 import { dedupeCards, loadCycleRunCards, loadRosterUsers, parseRoundId } from './rounds';
 

@@ -164,6 +164,27 @@ Dated entries for anything that changes what a round *does* or what the series
 on this page *mean*. A window of data either side of one of these dates is two
 regimes, not one — read this list before comparing across a date.
 
+### 2026-10-14 — S4: two silent drops fixed; earlier counts are undercounts
+
+Spec: `docs/superpowers/specs/2026-10-14-s4-api-contract-design.md`. Validating the
+agent's ingest bodies against the server's schemas found two cases the server
+refused, so the agent's event was never filed (fire-and-forget):
+
+- **Plain-echo act events** (an echo with no quote text) carried an empty `summary`;
+  the server requires `trim().min(1)`. They now file `summary: "echoed post"`.
+- **Long snapshot/warn `reason` strings** exceeded the server's 300-unit bound and
+  were refused. The agent now caps them (and all model-supplied lab-event fields and
+  snapshot excerpts) in UTF-16 code units, which is what zod counts.
+
+Any count of echo actions or snapshot warnings from before this date is an
+**undercount**: those events were dropped, not absent. The posts themselves
+(and their post vectors) were not affected. Read a series across this date as two
+regimes for echo-action and snapshot-warn counts only.
+
+The undercount applies to Era 1/2 history only: Era 3 has not started, so its series
+begins in the fixed regime. `/runtime` health and the event stream will now show
+plain-echo act events that previously vanished.
+
 ### 2026-10-14 — S3: the Persona Bench moves from Bash to Python (small, deliberate behaviour changes)
 
 Spec: `docs/superpowers/specs/2026-10-14-s3-runtime-slimming-design.md` (§8, §12.19–§12.24).

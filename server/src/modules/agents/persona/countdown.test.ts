@@ -5,7 +5,13 @@ import { resetDb } from '../../../test/db-reset';
 import { agentEvents, users } from '../../../db/schema';
 import { createApp } from '../../../app';
 import { DRIFT_MEASURED_SUMMARY, getDriftCountdown } from './countdown';
-import type { DriftCountdownDTO, DriftCountdownKey } from './persona.types';
+import {
+  DriftCountdownDTOSchema,
+  DriftCountdownSeriesDTOSchema,
+  type DriftCountdownDTO,
+  type DriftCountdownKey,
+} from '../../../contract/lab/persona';
+import { envelopeData, expectContract } from '../../../test/contract';
 
 /**
  * The drift countdown, against the real test Postgres.
@@ -909,6 +915,10 @@ describe('GET /agents/:username/drift-countdown', () => {
     const res = await request(createApp()).get('/api/v1/agents/zenith/drift-countdown?range=30d');
 
     expect(res.status).toBe(200);
+    // The serialised body is the strict contract shape (spec §7.8).
+    const parsed = expectContract(DriftCountdownDTOSchema, envelopeData(res.body));
+    expect(parsed.series.length).toBeGreaterThan(0);
+    for (const s of parsed.series) expectContract(DriftCountdownSeriesDTOSchema, s);
     expect(res.body.data.range).toBe('30d');
     expect(res.body.data.driftMode).toBe('aspect');
     expect(res.body.data.binding).toBe('style');

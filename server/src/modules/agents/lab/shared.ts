@@ -5,6 +5,7 @@
  * six times the 300-line service ceiling). Imported directly since the S2
  * module split; there is no barrel.
  */
+import type { LabRange } from '../../../contract/lab/era';
 import { and, eq, inArray, or } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import { agentEvents, personalitySnapshots, users } from '../../../db/schema';
@@ -14,7 +15,7 @@ import { eraCondition, type LabEra } from './era';
 
 /* ---------- helpers ---------- */
 
-export function dayBuckets(range: '7d' | '30d' | '90d'): { since: Date; days: number } {
+export function dayBuckets(range: LabRange): { since: Date; days: number } {
   const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
   const since = new Date();
   since.setUTCHours(0, 0, 0, 0);
