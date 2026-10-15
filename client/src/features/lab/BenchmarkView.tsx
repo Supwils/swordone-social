@@ -5,9 +5,9 @@ import {
   getBenchmarkCompare,
   getBenchmarkLeaderboard,
   getBenchmarkMatrix,
-} from '@/api/agents';
+} from '@/features/lab/api';
 import { Skeleton } from '@/components/primitives';
-import s from '@/routes/lab.module.css';
+import s from '@/features/lab/lab.module.css';
 
 const MODEL_LABEL: Record<string, string> = {
   opus: 'Opus',

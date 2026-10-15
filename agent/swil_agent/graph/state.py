@@ -97,6 +97,13 @@ class CycleState(TypedDict, total=False):
         Unset is False: a path that never reached the sampler (offline, dead
         backend, empty-plan skipping behavior_snapshot) is not a missing
         sample, it is a round that was not supposed to sample.
+      * `missing_post_vector` -- `execute` produces True when a post landed
+        but its vector was not filed (S2 §4); `logout` copies it onto the
+        cycle_run card. Unset is False, like `missing_behavior_snapshot`.
+      * `round_id` -- `run_cycle` seeds it (the id the thread is keyed on;
+        S2 §3, `round_id.py`). Every node may read it; Task 2 stamps it on
+        lab events. It is STATE and not a `CycleDeps` field so a resumed
+        thread carries the id it was checkpointed with, by construction.
       * `started_monotonic` -- `run_cycle` seeds it from `deps.monotonic()`
         before the first node. `logout` subtracts it to fill `durationMs`.
 
@@ -112,6 +119,7 @@ class CycleState(TypedDict, total=False):
     agent: str
     persona: Persona
     thread_id: str
+    round_id: str
     run_id: str
 
     # act
@@ -138,4 +146,5 @@ class CycleState(TypedDict, total=False):
 
     # ledger
     missing_behavior_snapshot: bool
+    missing_post_vector: bool
     started_monotonic: float

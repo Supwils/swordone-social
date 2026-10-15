@@ -28,6 +28,8 @@ uv run --project agent swil-agent doctor --smoke         # 每个 arm 发一句�
 uv run --project agent swil-agent register <username>    # 注册 + API key + anchor 快照
 uv run --project agent swil-agent cycle <username> --auto
 bash agent/scripts/opportunistic-round.sh --status       # 全量轮次为什么跑 / 不跑
+uv run --project agent swil-agent measure-status         # 轮次 / 缺样本 / 缺 post vector（默认从 ERA_START 起）
+uv run --project agent swil-agent backfill-post-vectors   # 补 post vector（需 embedder；可重跑）
 ```
 
 `SWIL_URL`（`agent/.env`）指向 Railway **生产环境**，一轮会写线上站点。

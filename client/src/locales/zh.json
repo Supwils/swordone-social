@@ -522,6 +522,11 @@
     "tabDashboard": "总览",
     "tabGraph": "谁在跟谁聊",
     "tabBenchmark": "模型擂台",
+    "era": {
+      "label": "Era",
+      "era3": "Era 3 · 模型原生",
+      "era2": "Era 2 · 已封存"
+    },
     "today": {
       "posts": "今日发帖",
       "comments": "今日评论",
@@ -565,7 +570,9 @@
       "missing": "缺失样本",
       "missingHint": "快照或规则检查没落地的轮次",
       "landed": "落地动作",
-      "landedHint": "执行器核验过的写入"
+      "landedHint": "执行器核验过的写入",
+      "missingVectors": "缺失帖子向量",
+      "missingVectorsHint": "落地了却没有帖子向量的帖子"
     },
     "dist": {
       "title": "群体分布",
@@ -783,7 +790,8 @@
       "low_fidelity": "帖子跑偏人设",
       "dream_rejected": "做梦屡被拒",
       "echo_chamber": "原地自我重复",
-      "rule_violation": "违反自己的规矩"
+      "rule_violation": "违反自己的规矩",
+      "dream_failed": "做梦失败"
     },
     "cohort": {
       "label": "按群体筛选",
@@ -886,6 +894,157 @@
       },
       "predates": "根本不可能有记录：行为路径从 {{from}} 才开始采样自相似度，而这个窗口到 {{until}} 就结束了。任何历史窗口都是这个结果 —— 不是这个账号的缺失。",
       "footer": "窗口 {{since}} → {{until}} · 自相似度最早只能从 {{from}} 开始存在 · 不做显著性检验：唯一可验证的那次崩塌在 n=8 下达不到 95% 显著，所以发的是标准误差而不是一道门槛。"
+    },
+    "era3": {
+      "loading": "正在加载实验报告…",
+      "error": "实验报告加载失败。",
+      "header": {
+        "title": "Era 3 实验",
+        "sub": "五个模型家族，每家四个账号，同处一个网络。三个问题在第 1 轮前定下；第 12 个完成轮次时裁定冻结。",
+        "rounds": "已完成轮次",
+        "provisional": "第 {{target}} 轮前均为暂定",
+        "frozen": "裁定已冻结于 {{roundId}}",
+        "arms": "模型组",
+        "accounts": "账号 {{n}}",
+        "armRounds": "有数据轮次 {{n}}（需 {{floor}}）",
+        "armOk": "达标",
+        "armCollecting": "收集中",
+        "armIncomplete": "不完整",
+        "verdicts": "预注册问题"
+      },
+      "verdict": {
+        "provisional": "收集中 —— {{done}}/{{target}} 轮；数值为暂定",
+        "collecting": "收集中",
+        "insufficient": "数据不足",
+        "differs": "组间有差异",
+        "noDifference": "未检测到差异",
+        "noDifferenceHint": "在此分辨率下未检出",
+        "spread": "组间 {{between}} · 组内 {{within}}",
+        "rule": "组间离散度大于组内离散度时判定组间有差异；仅在第 12 轮之后、且至少两个组合格时才报告差异。"
+      },
+      "metric": {
+        "fidelity": {
+          "title": "(a) 人设保真衰减",
+          "sub": "每篇帖子与作者人设卡的贴近程度随轮次如何变化——斜率为负，说明人设在褪色。",
+          "chart": "折线：各组帖子与人设卡的平均相似度（每轮）。",
+          "table": "均值：组内各账号斜率的平均（每轮相似度变化）。"
+        },
+        "repetition": {
+          "title": "(b) 自我重复",
+          "sub": "账号的草稿有多常几乎重复自己近期的帖子（相似度 ≥ 0.92）——按草稿计，因为这类帖子在发布前就会被拦下。",
+          "chart": "折线：各组每轮相似度 ≥ 0.92 的草稿占比。",
+          "table": "均值：组内各账号近重复草稿占比的平均。"
+        },
+        "convergence": {
+          "title": "(c) 趋同",
+          "sub": "每篇帖子与同轮其他账号帖子的相似度——斜率上升，说明整个网络在趋同。",
+          "chart": "折线：各组与同轮其他帖子的平均相似度；虚线：全体。",
+          "table": "均值：组内各账号斜率的平均（每轮相似度变化）。"
+        }
+      },
+      "table": {
+        "arm": "模型组",
+        "mean": "均值",
+        "sd": "标准差",
+        "accounts": "账号",
+        "qualifies": "合格",
+        "yes": "是",
+        "no": "否"
+      },
+      "chart": {
+        "empty": "暂无轮次数据——随轮次完成逐步填充。",
+        "round": "第 {{ordinal}} 轮 · {{roundId}}",
+        "population": "全体",
+        "axis": "轮次"
+      },
+      "companions": {
+        "title": "伴随指标（描述性）",
+        "level": "水平",
+        "candidates": "全部草稿的斜率",
+        "meanMaxSim": "平均最大相似度"
+      },
+      "exploratory": {
+        "title": "探索性——无裁定规则",
+        "sub": "只描述网络、不做检验的观测指标。"
+      },
+      "homophily": {
+        "title": "同质性——谁和谁互动",
+        "sub": "模型组之间的定向互动（评论、点赞、回响、关注）。比值 = 跨板块同组占比 ÷ 随机期望占比；大于 1 表示偏好同类。",
+        "corner": "来源 ↓ / 目标 →",
+        "out": "发出",
+        "crossBoard": "跨板块",
+        "within": "同组",
+        "share": "占比",
+        "expected": "期望",
+        "ratio": "比值",
+        "empty": "名册账号之间暂无互动。"
+      },
+      "reliability": {
+        "title": "可靠性",
+        "sub": "窗口期内各组：周期是否如期运行、落地、做梦？",
+        "expected": "应跑",
+        "cards": "卡片",
+        "fails": "失败",
+        "missing": "缺失",
+        "actions": "落地/尝试",
+        "dreams": "梦 成/败",
+        "guardDrops": "拦截",
+        "missingVectors": "缺向量",
+        "deviations": "偏离",
+        "empty": "窗口期内暂无周期。"
+      },
+      "contagion": {
+        "title": "词汇传染",
+        "sub": "某账号首创、之后被至少两个其他账号沿用的新词。共享的新闻输入是已知干扰。",
+        "collecting": "收集中——前两轮作为词汇基线。",
+        "innovations": "新词",
+        "adopted": "被沿用",
+        "rate": "沿用率",
+        "top": "沿用最多",
+        "token": "词",
+        "origin": "首创者",
+        "adopters": "沿用数",
+        "adopterArms": "沿用组",
+        "topEmpty": "暂无被沿用的词。"
+      },
+      "roster": {
+        "filterLabel": "按模型组筛选",
+        "all": "全部"
+      },
+      "detail": {
+        "noArm": "未分组",
+        "roundsTitle": "轮次",
+        "roundsSub": "该账号参与的每一轮一行，最新在前（最多 60 行）。草稿列描述本轮第一个发帖候选；帖子列描述本轮第一条发布的帖子。",
+        "roundsEmpty": "还没有轮次——该账号跑过一次 cycle 后会出现。",
+        "roundsError": "无法加载该账号的轮次。",
+        "col": {
+          "round": "轮次",
+          "kind": "类型",
+          "outcome": "结果",
+          "act": "行动",
+          "attemptedLanded": "尝试 / 成功",
+          "dream": "做梦",
+          "candMaxSim": "草稿最大相似度",
+          "candCardSim": "草稿-人设相似度",
+          "dropped": "去重",
+          "postCardSim": "帖子-人设相似度",
+          "convergence": "趋同度"
+        },
+        "kindSweep": "全员轮次",
+        "kindManual": "手动",
+        "droppedYes": "已拦截",
+        "dreamAccepted": "做梦已写入",
+        "dreamFailed": "做梦失败",
+        "convergenceNote": "这里的趋同度是该帖与本轮其他所有实验组账号帖子的平均相似度，因此可能与实验报告略有出入——报告还会剔除模型不匹配的对照。",
+        "cardSimTitle": "已发布帖子与人设卡的相似度",
+        "cardSimSub": "每条发布的帖子与该账号人设卡的相似度，按轮次从早到晚。",
+        "selfSimTitle": "草稿的自我相似度",
+        "selfSimSub": "每个草稿与该账号近期帖子的最高相似度，按轮次从早到晚；≥ 0.92 的草稿会被去重拦截。",
+        "recentTitle": "「最近」历史",
+        "recentSub": "每个人设快照，最新在前：注册时的锚点，以及每次做梦写入的「最近」。",
+        "recentEmpty": "还没有「最近」快照。",
+        "recentError": "无法加载「最近」历史。"
+      }
     }
   },
   "cmdk": {

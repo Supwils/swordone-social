@@ -74,7 +74,7 @@ from contextlib import ExitStack, closing, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Annotated, Any, Final, Protocol
+from typing import Annotated, Any, Final, NamedTuple, Protocol
 from urllib.parse import urlparse
 
 import httpx
@@ -88,6 +88,7 @@ from swil_agent.act.context import (
     render_now_context,
 )
 from swil_agent.act.round import run_act
+from swil_agent.analysis.backfill_post_vectors import run_backfill_post_vectors
 from swil_agent.analysis.behavior_snapshot import run_behavior_snapshot
 from swil_agent.analysis.intervention import (
     DatingBasis,
@@ -115,11 +116,12 @@ from swil_agent.graph.checkpoint import (
     Checkpointer,
     checkpointer_at,
     latest_round_id,
+    thread_exists,
 )
 from swil_agent.graph.cycle import run_cycle
 from swil_agent.graph.leases import LEASE_DB_NAME, LeaseBusy, open_lease_db
 from swil_agent.graph.nodes import CycleDeps, agent_dir_name
-from swil_agent.graph.state import BUILTIN_TENANT, CycleState
+from swil_agent.graph.state import BUILTIN_TENANT, CycleState, thread_id
 from swil_agent.llm.base import (
     Backend,
     BackendBinaryMissingError,
@@ -138,10 +140,11 @@ from swil_agent.llm.selection import (
 )
 from swil_agent.locks import LockBusy
 from swil_agent.models import ActResult, DreamResult, Persona
-from swil_agent.persona.format import PersonaFormatError
+from swil_agent.persona.format import PersonaFormatError, card_text
 from swil_agent.persona.loader import load_persona
 from swil_agent.persona.source import GitPersonaSource, PersonaSource
 from swil_agent.register import RegisterError, register_account
+from swil_agent.round_id import is_valid_round_id, round_kind, sweep_or_manual_round_id
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +157,7 @@ logger = logging.getLogger(__name__)
 dream_logger = logging.getLogger(f"{__name__}.dream")
 
 EXIT_OK = 0
+EXIT_USAGE = 64
 EXIT_NO_SUCH_ACCOUNT = 66
 EXIT_NO_ACTION = 75
 
@@ -186,6 +190,17 @@ class AccountSetupError(RuntimeError):
     message) -- see `_skip_for_exception` and the module docstring's mapping
     section for why a curated type beats enumerating library exceptions one
     except-clause at a time.
+    """
+
+
+class SweepResumeRefusedError(RuntimeError):
+    """`--resume` of a sweep's thread from outside that sweep (S2 §3).
+
+    A sweep thread's data is filed under the sweep's round id, so a late
+    resume -- an operator hours later, or a stale shell -- would mix a
+    different moment's cycle into that round. Only the sweep itself, whose
+    `SWIL_ROUND_ID` is that id, may resume it. Exit 64: the invocation is
+    wrong, not the account; the remedy is a fresh manual `cycle`.
     """
 
 
@@ -899,6 +914,10 @@ def _cycle_deps_for(
         agent_root=settings.agent_root,
         health_check=lambda: _health_check(settings),
         memory_text=persona_source.read_memory(agent_dir_name(persona)),
+        # `persona` is `_select_backend`'s resolved copy, the one `backend`
+        # was built from -- so these are what ran, not what the file says.
+        llm_backend=persona.backend,
+        llm_model=persona.model,
         context_now=_context_now_for(resources, persona, settings, now=now, runner=runner),
         feed_context=_feed_context_for(resources, persona, now=now, era_start=settings.era_start),
         budget=budget,
@@ -911,9 +930,13 @@ def _cycle_deps_for(
     )
 
 
-def _resume_round_id(stores: _CycleStores, agent: str) -> str:
+def _resume_round_id(stores: _CycleStores, agent: str, *, env_round_id: str | None) -> str:
     """The round id `--resume` continues, read back out of the checkpoint
     database.
+
+    A SWEEP thread (`-r`) resumes only when `env_round_id` (`SWIL_ROUND_ID`)
+    is that same id -- the sweep re-launching its own account; anything else
+    raises `SweepResumeRefusedError`. A manual (`-m`) thread resumes as is.
 
     Recomputing it from the clock (`run_cycle`'s own default) would build a
     DIFFERENT `thread_id` and silently start a brand-new cycle instead of
@@ -933,11 +956,51 @@ def _resume_round_id(stores: _CycleStores, agent: str) -> str:
             f"`swil-agent cycle {agent}` (without --resume) first, or check that "
             f"{_checkpoint_db_path_hint()} still exists"
         )
+    is_sweep = is_valid_round_id(found) and round_kind(found) == "sweep"
+    if is_sweep and (env_round_id or "").strip() != found:
+        raise SweepResumeRefusedError(
+            f"{agent}: refusing to --resume sweep round {found} -- only that sweep "
+            f"(SWIL_ROUND_ID={found}) may resume its own thread; a late resume would "
+            f"file this cycle's data under the sweep. Run a fresh manual "
+            f"`swil-agent cycle {agent} --auto` (without --resume) instead"
+        )
     return found
 
 
 def _checkpoint_db_path_hint() -> str:
     return f"agent/.agent-state/{CHECKPOINT_DB_NAME}"
+
+
+def _fresh_round_id(settings: Settings, checkpointer: Checkpointer | None, agent: str) -> str:
+    """The round id a NON-resumed cycle runs under (S2 §3): a valid
+    `SWIL_ROUND_ID` this account has no thread for yet, else a manual id.
+
+    `checkpointer` is `None` on a dry run, which has no database to ask: the
+    guard then answers "no thread", and the label goes nowhere anyway.
+    """
+    return sweep_or_manual_round_id(
+        settings.swil_round_id,
+        now=datetime.now(UTC),
+        thread_exists=lambda rid: thread_exists(
+            checkpointer, thread_id(BUILTIN_TENANT, agent, rid)
+        ),
+    )
+
+
+def _act_round_id(settings: Settings, agent: str, *, dry_run: bool) -> str:
+    """`act`'s round id. `act` keeps no checkpoint of its own, but a sweep's
+    `cycle` left one for this account, and that thread is what marks an
+    exported id as used. The DB is only OPENED when it already exists and the
+    run is real: opening it runs `setup()`, a write, and a dry run writes
+    nothing. A DB that cannot be opened loses the guard, not the round."""
+    db = _checkpoint_db_path(settings)
+    if not dry_run and db.exists():
+        try:
+            with checkpointer_at(db) as saver:
+                return _fresh_round_id(settings, saver, agent)
+        except sqlite3.Error as exc:
+            logger.warning("could not read %s for the round-id guard: %s", db, exc)
+    return _fresh_round_id(settings, None, agent)
 
 
 # ── reporting ────────────────────────────────────────────────────────────
@@ -1220,39 +1283,67 @@ def _fetch_runtime_health(settings: Settings, *, since: date) -> dict[str, Any]:
     return data
 
 
-def _runtime_totals(payload: dict[str, Any], *, since: date) -> tuple[int, int, int, int]:
+class _RuntimeTotals(NamedTuple):
+    rounds: int
+    missing_samples: int
+    landed: int
+    # `None` when the server does not report the field (a server before S2).
+    missing_post_vectors: int | None
+
+
+def _runtime_totals(payload: dict[str, Any], *, since: date) -> _RuntimeTotals:
     """Sum points on/after `since`. Falls back to the DTO totals when the
     payload has no points (a fake/summary-only body)."""
     points = payload.get("points")
     if isinstance(points, list) and points:
-        rounds = fail_open = missing = landed = 0
+        rounds = missing = landed = vectors = 0
+        vectors_reported = "missingPostVectors" in payload
         since_s = since.isoformat()
         for point in points:
             if not isinstance(point, dict):
                 continue
+            vectors_reported = vectors_reported or "missingPostVectors" in point
             day = point.get("date")
             if not isinstance(day, str) or day < since_s:
                 continue
             rounds += int(point.get("rounds") or 0)
-            fail_open += int(point.get("failOpen") or 0)
             missing += int(point.get("missingSamples") or 0)
             landed += int(point.get("landed") or 0)
-        return rounds, fail_open, missing, landed
-    return (
+            vectors += int(point.get("missingPostVectors") or 0)
+        return _RuntimeTotals(rounds, missing, landed, vectors if vectors_reported else None)
+    return _RuntimeTotals(
         int(payload.get("rounds") or 0),
-        int(payload.get("failOpenGates") or 0),
         int(payload.get("missingSamples") or 0),
         int(payload.get("landedActions") or 0),
+        (int(payload.get("missingPostVectors") or 0) if "missingPostVectors" in payload else None),
+    )
+
+
+def _measure_since_default(settings: Settings) -> str:
+    """The ERA_START date (UTC, the server's day boundary) when an era is
+    open, else the design date."""
+    if settings.era_start is None:
+        return DEFAULT_MEASURE_SINCE
+    start = settings.era_start
+    if start.tzinfo is not None:
+        start = start.astimezone(UTC)
+    return start.date().isoformat()
+
+
+def _roster_names(agent_root: Path) -> list[str]:
+    """Every account directory with a `personality.md`, sorted."""
+    root = agent_root / ACCOUNTS_DIR
+    if not root.is_dir():
+        return []
+    return sorted(
+        child.name
+        for child in root.iterdir()
+        if child.is_dir() and (child / "personality.md").is_file()
     )
 
 
 def _roster_count(agent_root: Path) -> int:
-    root = agent_root / ACCOUNTS_DIR
-    if not root.is_dir():
-        return 0
-    return sum(
-        1 for child in root.iterdir() if child.is_dir() and (child / "personality.md").is_file()
-    )
+    return len(_roster_names(agent_root))
 
 
 # ── commands ─────────────────────────────────────────────────────────────
@@ -1328,6 +1419,8 @@ def act(
     _require_era_start(settings)
 
     try:
+        round_id = _act_round_id(settings, agent_dir_name(persona), dry_run=dry_run)
+        logger.info("%s — round %s", name, round_id)
         with _backend_setup_guard(persona):
             # Same hoist as `_cycle_deps_for`, for the same reasons: ONE
             # `Resources` (a second `_resources_for` would re-authenticate an
@@ -1362,6 +1455,7 @@ def act(
                 duplicate_window=settings.post_duplicate_window,
                 duplicate_threshold=settings.post_duplicate_threshold,
                 probe_board=probe_board,
+                round_id=round_id,
             )
     except Exception as exc:
         _skip_for_exception(name, exc)
@@ -1504,7 +1598,9 @@ def cycle(
     **`--resume`** continues the last checkpointed cycle for this account,
     reusing its `thread_id`. The round id is read back out of the checkpoint
     database (`latest_round_id`) rather than recomputed from the clock, which
-    would produce a different thread and silently start a fresh cycle.
+    would produce a different thread and silently start a fresh cycle. A
+    sweep's thread (`-r`) resumes only under that sweep's own
+    `SWIL_ROUND_ID`; otherwise exit 64 -- run a fresh manual `cycle`.
     """
     settings = load_settings()
     _refuse_production_writes(settings, i_mean_production=i_mean_production)
@@ -1540,6 +1636,13 @@ def cycle(
             persona, llm = _select_backend(
                 persona, settings, backend_override=backend, model_override=model
             )
+            dir_name = agent_dir_name(persona)
+            round_id = (
+                _resume_round_id(stores, dir_name, env_round_id=settings.swil_round_id)
+                if resume
+                else _fresh_round_id(settings, stores.checkpointer, dir_name)
+            )
+            logger.info("%s — round %s", name, round_id)
             final = run_cycle(
                 persona=persona,
                 deps=_cycle_deps_for(
@@ -1554,9 +1657,12 @@ def cycle(
                 ),
                 lease_db=stores.lease_db,
                 checkpointer=stores.checkpointer,
-                round_id=(_resume_round_id(stores, agent_dir_name(persona)) if resume else None),
+                round_id=round_id,
                 resume=resume,
             )
+    except SweepResumeRefusedError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(EXIT_USAGE) from exc
     except Exception as exc:
         _skip_for_exception(name, exc)
         raise typer.Exit(EXIT_NO_ACTION) from exc
@@ -1647,6 +1753,107 @@ def behavior_snapshot(
     else:
         typer.echo(f"behavior-snapshot {name} -- skipped ({result.reason})")
     raise typer.Exit(EXIT_OK)
+
+
+def _backfill_accounts(
+    settings: Settings,
+    targets: list[str],
+    era_start: datetime,
+    *,
+    embedder: EmbedderClient | None,
+) -> bool:
+    """`backfill-post-vectors`' per-account loop, one line per account. True
+    when every account was listed and every post filed. `embedder` is `None`
+    only on a dry run."""
+    dry_run = embedder is None
+    persona_source = _persona_source_for(settings)
+    clean = True
+    for name in targets:
+        try:
+            persona = _load_persona_or_raise_setup_error(persona_source, name)
+            resources = _resources_for_key(persona.directory, settings)
+        except Exception as exc:
+            typer.echo(f"backfill-post-vectors {name} -- skipped ({exc})")
+            clean = False
+            continue
+        result = run_backfill_post_vectors(
+            resources,
+            username=persona.username,
+            card=card_text(persona.card),
+            embedder=embedder,
+            era_start=era_start,
+            dry_run=dry_run,
+        )
+        if result.reason is not None:
+            typer.echo(f"backfill-post-vectors {name} -- skipped ({result.reason})")
+        elif dry_run:
+            typer.echo(f"backfill-post-vectors {name} -- dry-run posts={result.posts}")
+        else:
+            typer.echo(
+                f"backfill-post-vectors {name} -- posts={result.posts} "
+                f"filed={result.filed} failed={result.failed} echoes={result.skipped}"
+            )
+        clean = clean and result.ok
+    return clean
+
+
+@app.command("backfill-post-vectors")
+def backfill_post_vectors(
+    names: Annotated[
+        list[str] | None,
+        typer.Argument(help="Accounts to backfill (default: every roster account)."),
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="List and count era posts; embed and file nothing.")
+    ] = False,
+) -> None:
+    """File post vectors for each account's own posts since ERA_START (S2 §4).
+
+    For posts that landed without one: `[card, *texts]` is embedded in
+    batches and each post is filed with `roundId: null` and `maxSim: null`.
+    The ingest is idempotent, so a re-run is safe. Needs ERA_START (exit 75),
+    each account's `api_key.txt`, and the embedder: a real run brackets the
+    embedder guard like `cycle` and exits 75 with a remedy if /health still
+    fails; a dry run embeds nothing and starts nothing.
+
+    Exit 0 when every account was listed and every post filed; 75 when any
+    account was skipped or any post was not filed; 66 for an unknown name,
+    checked before anything is read.
+    """
+    settings = load_settings()
+    _require_era_start(settings)
+    era_start = settings.era_start
+    assert era_start is not None  # narrowed by `_require_era_start`
+    targets = names or _roster_names(settings.agent_root)
+    unknown = [name for name in targets if not _account_directory_exists(settings.agent_root, name)]
+    if unknown:
+        typer.echo(f"no such account: {', '.join(unknown)}", err=True)
+        raise typer.Exit(EXIT_NO_SUCH_ACCOUNT)
+
+    if dry_run:
+        clean = _backfill_accounts(settings, targets, era_start, embedder=None)
+        raise typer.Exit(EXIT_OK if clean else EXIT_NO_ACTION)
+
+    # Bracketed like `cycle`: the guard starts the daemon if nothing else
+    # holds it. `up()` cannot fail loudly, so the health check is what turns a
+    # dead daemon into one remedy line instead of every post counted failed.
+    guard = _guard_for(settings)
+    try:
+        guard.up()
+        embedder = _embedder_for(settings)
+        try:
+            embedder.health()
+        except EmbedderUnavailable as exc:
+            typer.echo(
+                f"backfill-post-vectors: embedder unreachable at {settings.embedder_url} "
+                f"({exc}) -- start it with `bash agent/scripts/embedder/start.sh`",
+                err=True,
+            )
+            raise typer.Exit(EXIT_NO_ACTION) from exc
+        clean = _backfill_accounts(settings, targets, era_start, embedder=embedder)
+    finally:
+        guard.down()
+    raise typer.Exit(EXIT_OK if clean else EXIT_NO_ACTION)
 
 
 @app.command("population-metric")
@@ -2155,14 +2362,17 @@ def register(
 @app.command("measure-status")
 def measure_status(
     since: str | None = typer.Option(
-        None, "--since", help="YYYY-MM-DD. Default 2026-07-25 (design date)."
+        None,
+        "--since",
+        help="YYYY-MM-DD. Default: the ERA_START date, else 2026-07-25 (design date).",
     ),
 ) -> None:
-    """Print rounds / fail-open / missing samples from GET /agents/runtime
-    plus the local roster (spec §11). Exit 0, or 75 on API fail."""
+    """Print rounds / missing samples / post vectors missing from GET
+    /agents/runtime plus the local roster (spec §11). Exit 0, or 75 on API
+    fail. "post vectors missing" prints only when the server reports it."""
     settings = load_settings()
     try:
-        since_date = _parse_iso_date(since or DEFAULT_MEASURE_SINCE)
+        since_date = _parse_iso_date(since or _measure_since_default(settings))
     except ValueError as exc:
         typer.echo(f"measure-status: {exc}", err=True)
         raise typer.Exit(EXIT_NO_ACTION) from exc
@@ -2172,15 +2382,16 @@ def measure_status(
         typer.echo(f"measure-status: API fail ({exc})", err=True)
         raise typer.Exit(EXIT_NO_ACTION) from exc
 
-    rounds, fail_open, missing, landed = _runtime_totals(payload, since=since_date)
+    totals = _runtime_totals(payload, since=since_date)
     range_ = payload.get("range", "?")
     accounts = payload.get("accountsRun", 0)
     roster = _roster_count(settings.agent_root)
     typer.echo(f"measure-status since={since_date.isoformat()} range={range_}")
-    typer.echo(f"  rounds: {rounds}")
-    typer.echo(f"  fail-open gates: {fail_open}")
-    typer.echo(f"  missing samples: {missing}")
-    typer.echo(f"  landed actions: {landed}")
+    typer.echo(f"  rounds: {totals.rounds}")
+    typer.echo(f"  missing samples: {totals.missing_samples}")
+    if totals.missing_post_vectors is not None:
+        typer.echo(f"  post vectors missing: {totals.missing_post_vectors}")
+    typer.echo(f"  landed actions: {totals.landed}")
     typer.echo(f"  accounts run: {accounts}")
     typer.echo(f"  roster: {roster}")
     raise typer.Exit(EXIT_OK)

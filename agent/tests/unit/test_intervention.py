@@ -182,7 +182,7 @@ def test_an_empty_summary_is_refused() -> None:
 
 
 def test_an_over_length_summary_is_refused_before_the_server_sees_it() -> None:
-    """The server caps `summary` at 500 (`agents.schemas.ts`). Checked here so
+    """The server caps `summary` at 500 (`runtime/runtime.schemas.ts`). Checked here so
     the operator is told which field is too long instead of being handed a 400
     whose body the CLI would have to unpick at 2am."""
     with pytest.raises(ValueError, match="500"):

@@ -106,3 +106,39 @@ def test_process_env_used_when_key_absent_from_file(
     env.write_text("SWIL_URL=https://example.test\n", encoding="utf-8")
     monkeypatch.setenv("POST_PROBABILITY", "25")
     assert load_settings(env).post_probability == 25
+
+
+def test_round_id_comes_from_the_process_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = tmp_path / ".env"
+    env.write_text("SWIL_URL=https://example.test\n", encoding="utf-8")
+    monkeypatch.setenv("SWIL_ROUND_ID", "20261014T091500Z-r")
+    assert load_settings(env).swil_round_id == "20261014T091500Z-r"
+
+
+@pytest.mark.parametrize("value", [None, "", "  "])
+def test_an_unset_or_blank_round_id_is_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    env = tmp_path / ".env"
+    env.write_text("SWIL_URL=https://example.test\n", encoding="utf-8")
+    if value is None:
+        monkeypatch.delenv("SWIL_ROUND_ID", raising=False)
+    else:
+        monkeypatch.setenv("SWIL_ROUND_ID", value)
+    assert load_settings(env).swil_round_id is None
+
+
+def test_a_round_id_in_the_env_file_is_ignored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The round script exports a fresh id per sweep; one written into `.env`
+    would be permanently stale and -- the file winning over process env --
+    would relabel every later sweep. Only the caller's environment counts."""
+    env = tmp_path / ".env"
+    env.write_text("SWIL_ROUND_ID=20261001T000000Z-r\n", encoding="utf-8")
+    monkeypatch.delenv("SWIL_ROUND_ID", raising=False)
+    assert load_settings(env).swil_round_id is None
+    monkeypatch.setenv("SWIL_ROUND_ID", "20261014T091500Z-r")
+    assert load_settings(env).swil_round_id == "20261014T091500Z-r"

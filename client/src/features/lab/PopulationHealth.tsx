@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { getHomogenization, getPopulationPulse, listLabAgents } from '@/api/agents';
+import { getHomogenization, getPopulationPulse, listLabAgents } from '@/features/lab/api';
 import { Skeleton } from '@/components/primitives';
 import { Sparkline } from './Sparkline';
 import { lastNonNull, mean, periodDelta } from './stats';
-import s from '@/routes/lab.module.css';
+import type { LabEra } from '@/features/lab/types';
+import s from '@/features/lab/lab.module.css';
 
 type Status = 'good' | 'warn' | 'bad' | 'neutral';
 type Range = '7d' | '30d' | '90d';
@@ -33,21 +34,23 @@ const STATUS_RANK: Record<Status, number> = { bad: 3, warn: 2, good: 1, neutral:
  * the three health-bearing signals up to one Healthy / Watch / Critical status.
  */
 export function PopulationHealth({
+  era,
   range,
   agents,
 }: {
+  era: LabEra;
   range: Range;
   agents: Awaited<ReturnType<typeof listLabAgents>>;
 }) {
   const { t } = useTranslation();
   const pulseQ = useQuery({
-    queryKey: ['lab-pulse', range],
-    queryFn: () => getPopulationPulse(range),
+    queryKey: ['lab-pulse', era, range],
+    queryFn: () => getPopulationPulse(era, range),
     staleTime: 60_000,
   });
   const homogQ = useQuery({
-    queryKey: ['lab-homogenization', range],
-    queryFn: () => getHomogenization(range),
+    queryKey: ['lab-homogenization', era, range],
+    queryFn: () => getHomogenization(era, range),
     staleTime: 60_000,
   });
 

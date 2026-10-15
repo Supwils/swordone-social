@@ -1,9 +1,9 @@
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { getAgentDrift } from '@/api/agents';
+import { getAgentDrift } from '@/features/lab/api';
 import { Sparkline } from './Sparkline';
-import s from '@/routes/lab.module.css';
+import s from '@/features/lab/lab.module.css';
 
 /**
  * Compact drift indicator for the user profile page. Shows a sparkline of the

@@ -9,7 +9,7 @@ import pytest
 from swil_agent.api.auth import ApiKeyAuth
 from swil_agent.api.client import ApiClient, ApiError
 from swil_agent.api.dto import LabEvent
-from swil_agent.api.resources import Resources, WriteNotVerifiedError
+from swil_agent.api.resources import Resources, VectorFiling, WriteNotVerifiedError
 
 
 def _resources(handler) -> Resources:
@@ -820,7 +820,7 @@ def test_create_behavior_snapshot_sends_the_payload_unchanged() -> None:
 
 def test_create_behavior_snapshot_reports_a_null_fidelity_as_none() -> None:
     """`fidelity` is null until the account has a personality snapshot to
-    compare against (agents.drift.ts:236-237) — the normal state before an
+    compare against (persona/drift.ts) — the normal state before an
     account's first accepted dream. `0.0` would read as total infidelity."""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -864,7 +864,7 @@ def test_create_behavior_snapshot_raises_write_not_verified_without_id() -> None
 
 def test_record_population_metric_posts_to_the_global_route_with_no_body() -> None:
     """`/agents/population-metric` is registered BEFORE the `/:username/*`
-    routes (agents.routes.ts:41), so it is a literal path and not a username.
+    routes (population/population.routes.ts), so it is a literal path and not a username.
     `curl -X POST` with no `-d` sends no body at all — `json=None`, not
     `json={}`."""
     seen: list[httpx.Request] = []
@@ -1002,3 +1002,229 @@ def test_mark_notifications_read_never_raises_on_an_api_error() -> None:
         return httpx.Response(500, json={"error": {"code": "INTERNAL"}})
 
     _resources(handler).mark_notifications_read(["a" * 24])  # must not raise
+
+
+# ── post_vector (S2 §4/§5) ───────────────────────────────────────────────
+
+
+def _post_vector(resources: Resources, **overrides: object) -> bool:
+    kwargs: dict[str, object] = {
+        "post_id": "p" * 24,
+        "round_id": "20261014T091500Z-r",
+        "embedding": [0.25, 0.5],
+        "card_sim": 0.31,
+        "max_sim": None,
+    }
+    kwargs.update(overrides)
+    return resources.post_vector("zenith", **kwargs)  # type: ignore[arg-type]
+
+
+def test_post_vector_posts_the_wire_body_to_the_accounts_route() -> None:
+    seen: list[tuple[str, str, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, _json.loads(request.content)))
+        return httpx.Response(201, json={"data": {"id": "pv-1"}})
+
+    assert _post_vector(_resources(handler)) is True
+    assert seen == [
+        (
+            "POST",
+            "/api/v1/agents/zenith/post-vectors",
+            {
+                "postId": "p" * 24,
+                "roundId": "20261014T091500Z-r",
+                "embedding": [0.25, 0.5],
+                "cardSim": 0.31,
+                "maxSim": None,
+            },
+        )
+    ]
+
+
+def test_post_vector_sends_a_null_round_id_explicitly() -> None:
+    bodies: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(_json.loads(request.content))
+        return httpx.Response(200, json={"data": {"id": "pv-existing"}})
+
+    assert _post_vector(_resources(handler), round_id=None, card_sim=None) is True
+    assert bodies[0]["roundId"] is None
+    assert bodies[0]["cardSim"] is None
+
+
+def test_post_vector_swallows_and_logs_an_api_error(caplog: pytest.LogCaptureFixture) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, json={"error": {"code": "CONFLICT", "message": "round"}})
+
+    with caplog.at_level(logging.WARNING, logger="swil_agent.api.resources"):
+        assert _post_vector(_resources(handler)) is False
+    assert "post-vector" in caplog.text
+    assert "zenith" in caplog.text
+
+
+def test_post_vector_without_an_id_is_not_filed(caplog: pytest.LogCaptureFixture) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {}})
+
+    with caplog.at_level(logging.WARNING, logger="swil_agent.api.resources"):
+        assert _post_vector(_resources(handler)) is False
+    assert "post-vector" in caplog.text
+
+
+def test_post_vector_survives_a_transport_failure() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("down")
+
+    assert _post_vector(_resources(handler)) is False
+
+
+# ── file_post_vector: the backfill's outcome-carrying twin ───────────────
+
+
+def _file(resources: Resources) -> VectorFiling:
+    return resources.file_post_vector(
+        "zenith",
+        post_id="p" * 24,
+        round_id=None,
+        embedding=[0.25, 0.5],
+        card_sim=None,
+        max_sim=None,
+    )
+
+
+def test_file_post_vector_answers_filed_on_a_2xx_with_an_id() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"id": "pv-1"}})
+
+    assert _file(_resources(handler)) == VectorFiling("filed")
+
+
+def test_file_post_vector_reads_retry_after_on_a_429() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429,
+            headers={"Retry-After": "17", "RateLimit": "limit=20, remaining=0, reset=17"},
+            json={"error": {"code": "RATE_LIMITED", "message": "Too many requests"}},
+        )
+
+    assert _file(_resources(handler)) == VectorFiling("rate_limited", retry_after=17.0)
+
+
+def test_file_post_vector_falls_back_to_the_ratelimit_reset_headers() -> None:
+    def draft6(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={"RateLimit-Reset": "9"}, json={})
+
+    def draft7(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={"RateLimit": "limit=20, remaining=0, reset=4"}, json={})
+
+    def bare(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, json={})
+
+    assert _file(_resources(draft6)).retry_after == 9.0
+    assert _file(_resources(draft7)).retry_after == 4.0
+    assert _file(_resources(bare)) == VectorFiling("rate_limited", retry_after=None)
+
+
+def test_file_post_vector_names_the_servers_echo_refusal() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={
+                "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "This post is an echo; an echo is not a post",
+                    "fields": {"postId": "ECHO"},
+                }
+            },
+        )
+
+    assert _file(_resources(handler)) == VectorFiling("echo")
+
+
+def test_file_post_vector_answers_failed_on_any_other_rejection() -> None:
+    def conflict(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, json={"error": {"code": "CONFLICT"}})
+
+    def down(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("down")
+
+    assert _file(_resources(conflict)) == VectorFiling("failed")
+    assert _file(_resources(down)) == VectorFiling("failed")
+
+
+def test_retry_after_reads_an_http_date_relative_to_now() -> None:
+    from datetime import UTC, datetime
+
+    from swil_agent.api.resources import retry_after_seconds
+
+    now = datetime(2026, 10, 14, 6, 0, 0, tzinfo=UTC)
+    assert retry_after_seconds(
+        {"retry-after": "Wed, 14 Oct 2026 06:00:30 GMT"}, now=now
+    ) == pytest.approx(30.0)
+    assert retry_after_seconds({"retry-after": "Wed, 14 Oct 2026 05:59:00 GMT"}, now=now) == 0.0
+    # Unparseable or negative values fall through to the next header.
+    assert retry_after_seconds({"retry-after": "soon", "ratelimit-reset": "3"}) == 3.0
+    assert retry_after_seconds({"retry-after": "-5"}) is None
+    assert retry_after_seconds({"ratelimit": "limit=20, remaining=0"}) is None
+
+
+def test_a_400_that_is_not_the_echo_refusal_is_a_plain_failure() -> None:
+    def text(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, text="not json")
+
+    def other(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": {"fields": {"embedding": "too_small"}}})
+
+    def listed(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json=["x"])
+
+    for handler in (text, other, listed):
+        assert _file(_resources(handler)) == VectorFiling("failed")
+
+
+def test_post_vector_is_false_on_a_429_and_an_echo_refusal() -> None:
+    def limited(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, json={})
+
+    def echo(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": {"fields": {"postId": "ECHO"}}})
+
+    assert _post_vector(_resources(limited)) is False
+    assert _post_vector(_resources(echo)) is False
+
+
+# ── user_posts_page: the backfill's paged own-posts read ─────────────────
+
+
+def test_user_posts_page_sends_limit_since_and_cursor_and_returns_the_next_cursor() -> None:
+    seen: list[dict[str, list[str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/users/zenith/posts"
+        seen.append(parse_qs(urlsplit(str(request.url)).query))
+        return httpx.Response(
+            200, json={"data": {"items": [{"id": "a"}, "junk"], "nextCursor": "c2"}}
+        )
+
+    items, cursor = _resources(handler).user_posts_page(
+        "zenith", limit=100, since="2026-10-14T00:00:00+00:00", cursor="c1"
+    )
+
+    assert items == [{"id": "a"}]
+    assert cursor == "c2"
+    assert seen == [{"limit": ["100"], "since": ["2026-10-14T00:00:00+00:00"], "cursor": ["c1"]}]
+
+
+def test_user_posts_page_omits_an_absent_cursor_and_reads_a_missing_one_as_the_end() -> None:
+    seen: list[dict[str, list[str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(parse_qs(urlsplit(str(request.url)).query))
+        return httpx.Response(200, json={"data": {"items": [], "nextCursor": None}})
+
+    items, cursor = _resources(handler).user_posts_page("zenith", limit=5)
+
+    assert (items, cursor) == ([], None)
+    assert seen == [{"limit": ["5"]}]

@@ -1,24 +1,27 @@
 /**
- * `AgentGrid` — extracted verbatim from routes/lab.tsx, which had reached 1406
- * lines across 12 components. Its siblings already lived here; the route file
- * is now just the composition root. No logic was changed in the move.
+ * `AgentGrid` — extracted verbatim from the former `routes/lab.tsx`, which had
+ * reached 1406 lines across 12 components. No logic was changed in the move.
+ * The lab's composition root is now `features/lab/LabPage.tsx`.
  */
 import { useTranslation } from 'react-i18next';
-import { Avatar, Card, EmptyState, Skeleton } from '@/components/primitives';
-import { listLabAgents } from '@/api/agents';
+import { AccountBadge, Avatar, Card, EmptyState, Skeleton } from '@/components/primitives';
+import { listLabAgents } from '@/features/lab/api';
 import { Sparkline } from '@/features/lab/Sparkline';
-import s from '@/routes/lab.module.css';
+import s from '@/features/lab/lab.module.css';
 
 export function AgentGrid({
   agents,
   loading,
   focusedUsername,
   onFocus,
+  familyBadge = false,
 }: {
   agents: Awaited<ReturnType<typeof listLabAgents>>;
   loading: boolean;
   focusedUsername: string | null;
   onFocus: (u: string) => void;
+  /** Era 3: show the model-family badge instead of the AI / human tag. */
+  familyBadge?: boolean;
 }) {
   const { t } = useTranslation();
   if (loading) {
@@ -43,6 +46,7 @@ export function AgentGrid({
           agent={a}
           isFocused={focusedUsername === a.username}
           onFocus={() => onFocus(a.username)}
+          familyBadge={familyBadge}
         />
       ))}
     </div>
@@ -53,10 +57,12 @@ function AgentCard({
   agent,
   isFocused,
   onFocus,
+  familyBadge,
 }: {
   agent: Awaited<ReturnType<typeof listLabAgents>>[number];
   isFocused: boolean;
   onFocus: () => void;
+  familyBadge: boolean;
 }) {
   const { t } = useTranslation();
   const sparkData = agent.driftSparkline.map((v) => ({ v }));
@@ -83,9 +89,17 @@ function AgentCard({
           <div>{agent.displayName || agent.username}</div>
           <div className={s.cardHandle}>@{agent.username}</div>
         </div>
-        <span className={`${s.tag} ${agent.isAgent ? s.tagAi : ''}`}>
-          {agent.isAgent ? t('lab.card.ai') : t('lab.card.human')}
-        </span>
+        {familyBadge ? (
+          <AccountBadge
+            isAgent={agent.isAgent}
+            agentBackend={agent.agentBackend}
+            archivedAt={agent.archivedAt}
+          />
+        ) : (
+          <span className={`${s.tag} ${agent.isAgent ? s.tagAi : ''}`}>
+            {agent.isAgent ? t('lab.card.ai') : t('lab.card.human')}
+          </span>
+        )}
         {agent.cohort === 'community' && (
           <span className={`${s.tag} ${s.tagCommunity}`}>{t('lab.cohort.community')}</span>
         )}

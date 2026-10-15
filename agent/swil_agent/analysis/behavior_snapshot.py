@@ -3,7 +3,7 @@
 It embeds the account's RECENT POSTS and
 POSTs the vector; the SERVER computes persona fidelity =
 cosine(personality, behavior) against the newest `personalitysnapshots` row
-(`server/src/modules/agents/agents.drift.ts:228-237`). Nothing here computes
+(`server/src/modules/agents/persona/drift.ts`). Nothing here computes
 a similarity.
 
 This is the "revealed self" half of `/lab`'s fidelity pair -- the dream's
@@ -48,7 +48,7 @@ DEFAULT_POST_LIMIT: Final = 12
 
 # `[:280]`, applied to CODEPOINTS, so a multibyte CJK character is never split.
 # The server's own ceiling is 320 (`behaviorSnapshotIngest.excerpt`,
-# agents.schemas.ts:73), so 280 leaves headroom rather than sitting on it.
+# persona/persona.schemas.ts), so 280 leaves headroom rather than sitting on it.
 EXCERPT_MAX_CHARS: Final = 280
 
 # ONE document, blank-line
@@ -153,7 +153,7 @@ def build_behavior_payload(
 
     `commentCount` is a hardcoded 0: comments are never
     sampled, and the field exists because the server's schema
-    (`behaviorSnapshotIngest`, agents.schemas.ts:64-74) accepts one. Sending
+    (`behaviorSnapshotIngest`, persona/persona.schemas.ts) accepts one. Sending
     it explicitly rather than relying on the schema default keeps the wire
     body identical to Bash's.
 

@@ -2,7 +2,7 @@
 
 The SERVER computes the metric from the
 latest personality and behavior snapshots (`recordPopulationMetric`,
-server/src/modules/agents/agents.population.ts:231-245); this only triggers
+server/src/modules/agents/population/population.ts); this only triggers
 and reports it. Intended to run daily so `/lab`'s homogenization trend has
 history.
 

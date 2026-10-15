@@ -45,6 +45,7 @@ import pytest
 from swil_agent.act import round as act_round
 from swil_agent.api.client import ApiError, TransportError
 from swil_agent.config import Settings
+from swil_agent.graph import cycle as cycle_module
 from swil_agent.graph import nodes as nodes_module
 from swil_agent.graph.checkpoint import open_checkpointer
 from swil_agent.graph.cycle import (
@@ -200,6 +201,8 @@ def _deps(tmp_path: Path, **overrides: Any) -> CycleDeps:
         "agent_root": _agent_root(tmp_path),
         "health_check": lambda: True,
         "memory_text": "",
+        "llm_backend": "claude",
+        "llm_model": "opus",
         "rng": random.Random(0),
         "now": NOW,
         "captured_at": CAPTURED_AT,
@@ -686,12 +689,17 @@ def test_loop_three_reruns_the_act_phase_against_rebuilt_deps(
     """
     root = _agent_root(tmp_path)
     persona = _persona(root)
-    # Round 2's deps carry a DIFFERENT `now` as well, so the one read
+    # Round 2's deps carry a DIFFERENT moment as well, so the one read
     # `run_cycle` makes for itself -- `provider(0)`, for the round id and the
     # dry-run flag -- is distinguishable from a read of any later round's.
     per_round = {
         0: _deps(tmp_path, memory_text="round-one-memory"),
-        1: _deps(tmp_path, memory_text="round-two-memory", now=NOW + timedelta(hours=3)),
+        1: _deps(
+            tmp_path,
+            memory_text="round-two-memory",
+            now=NOW + timedelta(hours=3),
+            captured_at=CAPTURED_AT + timedelta(hours=3),
+        ),
     }
     seen: list[str] = []
     real_context = nodes_module.context_step
@@ -708,7 +716,7 @@ def test_loop_three_reruns_the_act_phase_against_rebuilt_deps(
         config=CycleConfig(max_rounds=2),
     )
     assert seen == ["round-one-memory", "round-two-memory"]
-    assert final["thread_id"] == f"builtin:{DIR_NAME}:{NOW.strftime('%Y%m%dT%H%M%S')}"
+    assert final["thread_id"] == f"builtin:{DIR_NAME}:20260817T020000Z-m"
 
 
 def test_loop_three_refuses_to_run_against_frozen_deps(tmp_path: Path) -> None:
@@ -1234,11 +1242,61 @@ def test_a_checkpointed_cycle_keeps_its_types(tmp_path: Path) -> None:
     assert isinstance(stored["channel_values"]["persona"], Persona)
 
 
-def test_the_round_id_defaults_to_the_cycles_own_frozen_moment(tmp_path: Path) -> None:
-    """`deps.now` is the cycle's moment; a fresh `datetime.now()` here would
-    make a resumed thread id unreproducible, which is what `--resume` reads."""
+def test_the_round_id_defaults_to_a_manual_id_at_the_cycles_own_frozen_moment(
+    tmp_path: Path,
+) -> None:
+    """`deps.captured_at` is the cycle's UTC moment; a fresh clock read here
+    would make the id unreproducible. The default is a MANUAL id (S2 §3):
+    only the round script mints sweep ids."""
     final = _run(tmp_path)
-    assert final["thread_id"] == f"builtin:{DIR_NAME}:{NOW.strftime('%Y%m%dT%H%M%S')}"
+    assert final["thread_id"] == f"builtin:{DIR_NAME}:20260817T020000Z-m"
+    assert final["round_id"] == "20260817T020000Z-m"
+
+
+def test_the_round_id_is_on_the_state_every_node_sees(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Task 2 stamps `metrics.roundId` from `state["round_id"]`, so every node
+    -- not only the final state -- must see the id the thread is keyed on."""
+    seen: dict[str, str | None] = {}
+    original = nodes_module.make_logout_node
+
+    def spying_logout(deps: CycleDeps) -> Callable[[CycleState], CycleState]:
+        inner = original(deps)
+
+        def node(state: CycleState) -> CycleState:
+            seen["logout"] = state.get("round_id")
+            return inner(state)
+
+        return node
+
+    monkeypatch.setattr(cycle_module, "make_logout_node", spying_logout)
+    final = _run(tmp_path, round_id="20261014T091500Z-r")
+    assert seen == {"logout": "20261014T091500Z-r"}
+    assert final["thread_id"] == f"builtin:{DIR_NAME}:20261014T091500Z-r"
+
+
+def test_a_resumed_cycle_keeps_its_checkpointed_round_id(tmp_path: Path) -> None:
+    """The id lives in the checkpointed state, so a resumed thread reports the
+    id it was started with rather than one derived from the new process."""
+    saver = open_checkpointer(tmp_path / "injected_checkpoints" / "cycle.sqlite")
+    root = _agent_root(tmp_path)
+    _run(
+        tmp_path,
+        persona=_persona(root),
+        deps=_deps(tmp_path),
+        checkpointer=saver,
+        round_id="20261014T091500Z-r",
+    )
+    resumed = _run(
+        tmp_path,
+        persona=_persona(root),
+        deps=_deps(tmp_path, captured_at=CAPTURED_AT + timedelta(hours=5)),
+        checkpointer=saver,
+        round_id="20261014T091500Z-r",
+        resume=True,
+    )
+    assert resumed["round_id"] == "20261014T091500Z-r"
 
 
 def test_the_run_id_reaches_the_lease_row(tmp_path: Path) -> None:

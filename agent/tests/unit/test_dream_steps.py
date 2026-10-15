@@ -503,6 +503,8 @@ def _deps(root: Path, **overrides: object) -> CycleDeps:
         "agent_root": root,
         "health_check": lambda: True,
         "memory_text": "",
+        "llm_backend": "claude",
+        "llm_model": "opus",
         "now": NOW,
         "captured_at": CAPTURED_AT,
     }

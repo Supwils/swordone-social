@@ -18,7 +18,7 @@ from typing import Any, Final
 
 from swil_agent.api.client import ApiError
 from swil_agent.api.dto import LabEvent
-from swil_agent.api.resources import WriteNotVerifiedError
+from swil_agent.api.resources import VectorFiling, WriteNotVerifiedError
 from swil_agent.embedder.client import EmbedderUnavailable
 from swil_agent.llm.base import BackendUnavailableError, CompletionRequest
 from swil_agent.models import Persona
@@ -349,6 +349,7 @@ class FakeResources:
         intervention_raises: ApiError | WriteNotVerifiedError | None = None,
         lab_event_raises: Exception | None = None,
         order: list[str] | None = None,
+        post_vector_ok: bool = True,
     ) -> None:
         self._fail_first_comment = fail_first_comment
         self._comment_returns_no_id = comment_returns_no_id
@@ -359,6 +360,7 @@ class FakeResources:
         self._intervention_raises = intervention_raises
         self._lab_event_raises = lab_event_raises
         self._order = order
+        self._post_vector_ok = post_vector_ok
         self._like_raises = like_raises
         self._dm_raises = dm_raises
         self._follow_raises = follow_raises
@@ -380,6 +382,10 @@ class FakeResources:
         # fire-and-forget observability write from a deliberate human record.
         self.interventions: list[tuple[str, LabEvent]] = []
         self.snapshots: list[tuple[str, dict[str, Any]]] = []
+        # S2 post-vector ingests, as (username, kwargs). Kept out of `calls`
+        # like the other non-executor writes; `post_vector_ok=False` makes
+        # the fake answer the way `Resources.post_vector` does on a rejection.
+        self.post_vectors: list[tuple[str, dict[str, Any]]] = []
 
         # Read surface (act/context.py's build_context) — see class
         # docstring's "Extended for act/round.py" note.
@@ -606,6 +612,51 @@ class FakeResources:
         # (standing constraint §4).
         self.lab_event_usernames.append(username)
         self.lab_events.append(event)
+
+    def post_vector(
+        self,
+        username: str,
+        *,
+        post_id: str,
+        round_id: str | None,
+        embedding: list[float],
+        card_sim: float | None,
+        max_sim: float | None,
+    ) -> bool:
+        self.post_vectors.append(
+            (
+                username,
+                {
+                    "post_id": post_id,
+                    "round_id": round_id,
+                    "embedding": list(embedding),
+                    "card_sim": card_sim,
+                    "max_sim": max_sim,
+                },
+            )
+        )
+        return self._post_vector_ok
+
+    def file_post_vector(
+        self,
+        username: str,
+        *,
+        post_id: str,
+        round_id: str | None,
+        embedding: list[float],
+        card_sim: float | None,
+        max_sim: float | None,
+    ) -> VectorFiling:
+        """The backfill's outcome-carrying twin, over the same recording."""
+        ok = self.post_vector(
+            username,
+            post_id=post_id,
+            round_id=round_id,
+            embedding=embedding,
+            card_sim=card_sim,
+            max_sim=max_sim,
+        )
+        return VectorFiling("filed" if ok else "failed")
 
     def create_snapshot(self, username: str, payload: dict[str, Any]) -> str:
         self.calls.append("create_snapshot")

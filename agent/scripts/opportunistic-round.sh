@@ -78,6 +78,25 @@ log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"; 
 # line every 30 minutes buries the rounds in its own noise.
 quiet() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"; }
 
+# ── round id and sweep order ─────────────────────────────────────────────────
+# Every account in one sweep runs under ONE round id (`SWIL_ROUND_ID`, minted
+# once below), so the server can group a round's data. The roster runs in an
+# order shuffled by a seed derived from that id: position in the sweep (who
+# sees whose posts first) stops being alphabetical, and the order is still
+# reproducible from the logged id alone.
+round_seed() {                      # round_seed <round-id> -> unsigned integer
+  printf '%s' "$1" | cksum | awk '{print $1}'
+}
+shuffle_roster() {                  # shuffle_roster <seed> <name>... -> one per line
+  # Python's Mersenne Twister, not awk's rand(): its sequence for a given int
+  # seed is the same on every machine, so the logged seed reproduces the order.
+  # Input is sorted first, so the order depends on the set and the seed only.
+  python3 -c 'import random, sys
+names = sorted(sys.argv[2:])
+random.Random(int(sys.argv[1])).shuffle(names)
+print("\n".join(names))' "$@"
+}
+
 # ── 1. interval gate ─────────────────────────────────────────────────────────
 now_epoch=$(date +%s)
 last_epoch=0
@@ -214,6 +233,22 @@ done
 discover_roster
 [[ "${#ACCOUNTS[@]}" -gt 0 ]] || fail_precondition "no Era 3 accounts found"
 
+# One id for the whole sweep, exported to every worker; `cycle` falls back to a
+# manual id if this account already has a thread under it.
+export SWIL_ROUND_ID="$(date -u +%Y%m%dT%H%M%SZ)-r"
+round_seed_value=$(round_seed "$SWIL_ROUND_ID")
+shuffled=()
+while IFS= read -r n; do
+  [[ -n "$n" ]] && shuffled+=( "$n" )
+done < <(shuffle_roster "$round_seed_value" "${ACCOUNTS[@]}" 2>/dev/null)
+if [[ "${#shuffled[@]}" -eq "${#ACCOUNTS[@]}" ]]; then
+  ACCOUNTS=( "${shuffled[@]}" )
+else
+  # A label never stops a round: run in directory order and say so.
+  log "WARN roster shuffle failed — running in directory order"
+fi
+log "round $SWIL_ROUND_ID — seed $round_seed_value, order: ${ACCOUNTS[*]}"
+
 if [[ "$MODE" == "dry" ]]; then
   log "dry-run — every gate passed; would run ${#ACCOUNTS[@]} accounts ${PARALLEL}-way"
   exit 0
@@ -261,7 +296,7 @@ if ! curl -s -m 3 -o /dev/null "${EMBEDDER_URL:-http://127.0.0.1:7777}/health" 2
     owns_embedder=1
     log "embedder started by this round"
   else
-    log "WARN embedder would not start — the drift gate fails open this round"
+    log "WARN embedder would not start — the duplicate guard fails open and post vectors will be missing this round; recover them afterwards with: uv run --project agent swil-agent backfill-post-vectors"
   fi
 fi
 

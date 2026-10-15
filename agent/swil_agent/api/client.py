@@ -19,6 +19,7 @@ Properties that are the point of this module:
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from http.cookiejar import eff_request_host  # type: ignore[attr-defined]
 from types import TracebackType
 from typing import Any
@@ -66,14 +67,24 @@ class ApiError(RuntimeError):
 
     `status`, `body`, and `code` are always populated so a caller (or a log
     line) can show exactly what the server said — the detail a bare
-    status code would lose.
+    status code would lose. `headers` (lowercased names) carries the
+    response's headers when there was one -- the backfill reads a 429's
+    `Retry-After` from it.
     """
 
-    def __init__(self, status: int, body: str, code: str | None) -> None:
+    def __init__(
+        self,
+        status: int,
+        body: str,
+        code: str | None,
+        *,
+        headers: Mapping[str, str] | None = None,
+    ) -> None:
         super().__init__(f"HTTP {status}: {body[:300]}")
         self.status = status
         self.body = body
         self.code = code
+        self.headers: dict[str, str] = {k.lower(): v for k, v in (headers or {}).items()}
 
 
 class TransportError(ApiError):
@@ -230,7 +241,7 @@ class ApiClient:
             raise TransportError(exc) from exc
         if response.status_code >= 400:
             body = response.text
-            raise ApiError(response.status_code, body, _error_code(body))
+            raise ApiError(response.status_code, body, _error_code(body), headers=response.headers)
         return response
 
     @staticmethod

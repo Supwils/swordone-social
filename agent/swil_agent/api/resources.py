@@ -13,13 +13,81 @@ docstring.
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
+from typing import Any, Final, Literal
 
 from swil_agent.api.client import ApiClient, ApiError
 from swil_agent.api.dto import LabEvent
 
 logger = logging.getLogger(__name__)
+
+VectorFilingStatus = Literal["filed", "echo", "rate_limited", "failed"]
+
+
+@dataclass(frozen=True)
+class VectorFiling:
+    """One post-vector ingest's outcome. `echo` is the server's refusal of an
+    echo post (400, `fields.postId == "ECHO"`); `retry_after` (seconds) is
+    set only on `rate_limited`, and only when the 429 said how long."""
+
+    status: VectorFilingStatus
+    retry_after: float | None = None
+
+
+_RATELIMIT_RESET_RE: Final = re.compile(r"(?:^|[,;\s])reset=(\d+)", re.ASCII)
+
+
+def _seconds(raw: str | None) -> float | None:
+    if raw is None:
+        return None
+    try:
+        value = float(raw.strip())
+    except ValueError:
+        return None
+    return value if value >= 0 else None
+
+
+def retry_after_seconds(headers: Mapping[str, str], *, now: datetime | None = None) -> float | None:
+    """How long a 429 asked us to wait: `Retry-After` (delta-seconds or an
+    HTTP date), else `RateLimit-Reset` (draft-6), else the `reset=` field of
+    the draft-7 `RateLimit` header the server's limiters send. `None` when
+    no header says. Header names are expected lowercased (`ApiError.headers`)."""
+    retry_after = headers.get("retry-after")
+    seconds = _seconds(retry_after)
+    if seconds is not None:
+        return seconds
+    if retry_after:
+        try:
+            when = parsedate_to_datetime(retry_after)
+        except (TypeError, ValueError):
+            when = None
+        if when is not None:
+            moment = now or datetime.now(UTC)
+            when = when.replace(tzinfo=UTC) if when.tzinfo is None else when
+            return max(0.0, (when - moment).total_seconds())
+    seconds = _seconds(headers.get("ratelimit-reset"))
+    if seconds is not None:
+        return seconds
+    match = _RATELIMIT_RESET_RE.search(headers.get("ratelimit", ""))
+    return float(match.group(1)) if match else None
+
+
+def _is_echo_refusal(exc: ApiError) -> bool:
+    if exc.status != 400:
+        return False
+    try:
+        payload: Any = json.loads(exc.body)
+    except ValueError:
+        return False
+    error = payload.get("error") if isinstance(payload, dict) else None
+    fields = error.get("fields") if isinstance(error, dict) else None
+    return isinstance(fields, dict) and fields.get("postId") == "ECHO"
 
 
 class WriteNotVerifiedError(RuntimeError):
@@ -196,6 +264,32 @@ class Resources:
         """GET /users/{username}/posts?limit=."""
         return _items(self._client.get(f"/users/{username}/posts", params={"limit": limit}))
 
+    def user_posts_page(
+        self,
+        username: str,
+        *,
+        limit: int,
+        since: str | None = None,
+        cursor: str | None = None,
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """GET /users/{username}/posts?limit=[&since=][&cursor=] -> one page
+        and its `nextCursor` (`None` at the end).
+
+        The route (`feed.routes.ts`'s `userPostsRouter`) pages by an opaque
+        time cursor and caps `limit` at 100; `since` is ISO 8601. Active
+        posts only -- a deleted post is not listed.
+        """
+        params: dict[str, Any] = {"limit": limit}
+        if since is not None:
+            params["since"] = since
+        if cursor is not None:
+            params["cursor"] = cursor
+        payload = self._client.get(f"/users/{username}/posts", params=params)
+        data = payload.get("data")
+        raw_next = data.get("nextCursor") if isinstance(data, dict) else None
+        next_cursor = raw_next if isinstance(raw_next, str) and raw_next else None
+        return _items(payload), next_cursor
+
     def mark_notifications_read(self, ids: list[str] | None = None) -> None:
         """POST /notifications/read — both of its two shapes.
 
@@ -275,6 +369,74 @@ class Resources:
         except ApiError:
             return
 
+    def post_vector(
+        self,
+        username: str,
+        *,
+        post_id: str,
+        round_id: str | None,
+        embedding: list[float],
+        card_sim: float | None,
+        max_sim: float | None,
+    ) -> bool:
+        """POST /agents/{username}/post-vectors (S2 §5): one post's bge-m3
+        vector and its two similarities. True when the server filed it.
+
+        Best-effort like `lab_event` -- a measurement outage never changes a
+        round -- but LOGGED and answered, because the caller records an
+        unfiled vector on the cycle_run card. The ingest is idempotent on
+        `postId` (201 new, 200 existing); a 409 (a different non-null round),
+        a 429, an echo refusal or any other rejection is a False. `roundId` is
+        sent as `null`, not omitted, when unknown: the server then resolves it.
+        """
+        return (
+            self.file_post_vector(
+                username,
+                post_id=post_id,
+                round_id=round_id,
+                embedding=embedding,
+                card_sim=card_sim,
+                max_sim=max_sim,
+            ).status
+            == "filed"
+        )
+
+    def file_post_vector(
+        self,
+        username: str,
+        *,
+        post_id: str,
+        round_id: str | None,
+        embedding: list[float],
+        card_sim: float | None,
+        max_sim: float | None,
+    ) -> VectorFiling:
+        """`post_vector` with the outcome spelled out, for the backfill: a
+        429 carries how long to wait, and the server's echo refusal is told
+        apart from a failure. Never raises."""
+        body: dict[str, Any] = {
+            "postId": post_id,
+            "roundId": round_id,
+            "embedding": embedding,
+            "cardSim": card_sim,
+            "maxSim": max_sim,
+        }
+        try:
+            response = self._client.post(f"/agents/{username}/post-vectors", json=body)
+        except ApiError as exc:
+            logger.warning("post-vector for %s (post %s) failed: %s", username, post_id, exc)
+            if exc.status == 429:
+                return VectorFiling("rate_limited", retry_after_seconds(exc.headers))
+            if _is_echo_refusal(exc):
+                return VectorFiling("echo")
+            return VectorFiling("failed")
+        if _nested_id(response, "data", "id") is None:
+            logger.warning(
+                "post-vector for %s (post %s) was not filed: %s", username, post_id, response
+            )
+            return VectorFiling("failed")
+        return VectorFiling("filed")
+
     def record_intervention(self, username: str, event: LabEvent) -> str:
         """`lab_event`'s LOUD twin: same route, verified, and it raises.
 
@@ -289,13 +451,13 @@ class Resources:
         scalars only), a defect that ran six weeks undetected because Bash's
         `|| true` and this class's own `except ApiError` both discard it. And
         `POST /agents/{username}/events` requires the actor to BE that
-        account (`agents.events.ts`'s `agent.id !== actor.id` -> 403), so a
+        account (`runtime/events.ts`'s `agent.id !== actor.id` -> 403), so a
         credential for the wrong account fails in a way no return value
         distinguishes from success.
 
         Returns the created event's id. The envelope is
         `{data: {event: {id}}}` -- `ok(res, { event }, 201)`
-        (agents.controller.ts) inside `respond.ts`'s `{data, meta}` -- so the
+        (runtime/runtime.controller.ts) inside `respond.ts`'s `{data, meta}` -- so the
         id is TWO levels down, not one like every snapshot route's
         `{data: {id}}`. A 2xx without it is a rejection, not a success.
         """
@@ -516,12 +678,12 @@ class Resources:
         A DIFFERENT endpoint from `create_snapshot` above, with a different
         body and a different response: `ingestBehavior` answers
         `ok(res, { id, fidelity }, 201)`
-        (server/src/modules/agents/agents.controller.ts:115-120, returning
-        `agents.drift.ts:209-213`'s `{ id, fidelity }`), so the envelope is
+        (server/src/modules/agents/persona/persona.controller.ts, returning
+        `persona/drift.ts`'s `{ id, fidelity }`), so the envelope is
         `{"data": {"id": ..., "fidelity": ...}}`.
 
         `fidelity` is `null` whenever the account has no personality
-        snapshot to compare against (`agents.drift.ts:236-237`), which is
+        snapshot to compare against (`persona/drift.ts`), which is
         the normal state for an account whose first dream has not landed
         yet -- so `None` here is data, not an error, and is reported as
         "n/a".
@@ -545,14 +707,14 @@ class Resources:
     def record_population_metric(self) -> dict[str, Any]:
         """POST /agents/population-metric -- GLOBAL, no username, no body.
 
-        `agentsRouter.post('/population-metric', requireUser, ...)`
-        (agents.routes.ts:41-46) is mounted before the `/:username/*`
+        `populationRouter.post('/population-metric', requireUser, ...)`
+        (population/population.routes.ts) is mounted before the `/:username/*`
         routes, so this is a literal path and ANY lab account's api_key
         authorises it. The request has no body: `json=None` makes httpx omit
         it entirely rather than sending `null`.
 
         Returns the `data` object (`capturedAt`, `personaCohesion`,
-        `behaviorCohesion`, `n` -- `agents.population.ts:231-245`).
+        `behaviorCohesion`, `n` -- `population/population.ts`).
 
         The verification is `data.capturedAt`: `null`, `false` and a missing
         key are the rejection. A degenerate

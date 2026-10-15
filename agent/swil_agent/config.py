@@ -8,6 +8,7 @@ This is the opposite of pydantic-settings' default, hence the explicit
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -51,6 +52,12 @@ class Settings(BaseSettings):
 
     # How many recent posts `behavior-snapshot` embeds.
     behavior_post_limit: int = 12
+
+    # The sweep's shared round id, exported once per sweep by
+    # `opportunistic-round.sh`. PROCESS ENV ONLY -- `load_settings` drops any
+    # value from the `.env` file (see there). Validated where it is used
+    # (`round_id.py`): an invalid value falls back to a manual id, never fails.
+    swil_round_id: str | None = None
 
     # ── LLM backend selection ────────────────────────────────────────────
     #
@@ -98,6 +105,7 @@ class Settings(BaseSettings):
         "swil_llm_base_url",
         "swil_llm_api_key",
         "swil_agent_setup_token",
+        "swil_round_id",
         mode="before",
     )
     @classmethod
@@ -135,4 +143,10 @@ class Settings(BaseSettings):
 
 def load_settings(env_file: Path | None = None) -> Settings:
     path = env_file if env_file is not None else _AGENT_ROOT / ".env"
-    return Settings(_env_file=path)
+    settings = Settings(_env_file=path)
+    # `SWIL_ROUND_ID` is per-process: the round script mints one per sweep. In
+    # `.env` it would be permanently stale and, the file winning over process
+    # env, would outrank the sweep's own export -- so it is read from the
+    # process env alone.
+    raw = os.environ.get("SWIL_ROUND_ID", "").strip()
+    return settings.model_copy(update={"swil_round_id": raw or None})

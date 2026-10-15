@@ -9,13 +9,17 @@ the round outcome.
 Era 3 dropped `gateStatus` and `missingRuleCheck` (the drift gate and the
 rule check are gone); the server reads both as optional for older rows.
 
+S2 added `roundId` (the round the cycle ran under; omitted for a thread
+checkpointed before S2) and `missingPostVector` (a post landed but its vector
+was not filed). Neither changes the card's outcome.
+
 This package must not import `graph/` (architecture test). The builder is
 pure: it takes scalars and returns a `LabEvent`.
 """
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Any, Final
 
 from swil_agent.api.dto import LabEvent
 from swil_agent.models import ActOutcome, ActResult
@@ -34,6 +38,8 @@ CYCLE_RUN_METRIC_KEYS: Final = frozenset(
         "durationMs",
         "backend",
         "model",
+        "roundId",
+        "missingPostVector",
     }
 )
 
@@ -83,9 +89,27 @@ def build_cycle_run_event(
     duration_ms: int,
     backend: str,
     model: str,
+    round_id: str | None,
+    missing_post_vector: bool,
 ) -> LabEvent:
-    """One cycle_run card. Metric keys match spec §4 exactly -- no aliases."""
+    """One cycle_run card. Metric keys match spec §4 exactly -- no aliases.
+    `backend`/`model` are the values the cycle's LLM client was built from."""
     act_label = act_outcome.value if act_outcome is not None else "unknown"
+    metrics: dict[str, Any] = {
+        "kind": CYCLE_RUN_KIND,
+        "attempted": attempted,
+        "landed": landed,
+        "actOutcome": act_label,
+        "grantsDream": grants_dream,
+        "dreamAccepted": dream_accepted,
+        "missingBehaviorSnapshot": missing_behavior_snapshot,
+        "durationMs": duration_ms,
+        "backend": backend,
+        "model": model,
+        "missingPostVector": missing_post_vector,
+    }
+    if round_id is not None:
+        metrics["roundId"] = round_id
     return LabEvent(
         type="cycle",
         phase="act",
@@ -94,18 +118,7 @@ def build_cycle_run_event(
             missing_behavior_snapshot=missing_behavior_snapshot,
         ),
         summary=f"cycle_run {username} {act_label}",
-        metrics={
-            "kind": CYCLE_RUN_KIND,
-            "attempted": attempted,
-            "landed": landed,
-            "actOutcome": act_label,
-            "grantsDream": grants_dream,
-            "dreamAccepted": dream_accepted,
-            "missingBehaviorSnapshot": missing_behavior_snapshot,
-            "durationMs": duration_ms,
-            "backend": backend,
-            "model": model,
-        },
+        metrics=metrics,
     )
 
 

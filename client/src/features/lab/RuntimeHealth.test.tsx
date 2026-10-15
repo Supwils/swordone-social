@@ -21,11 +21,11 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@/i18n';
 
-vi.mock('@/api/agents', () => ({ getRuntimeHealth: vi.fn() }));
+vi.mock('@/features/lab/api', () => ({ getRuntimeHealth: vi.fn() }));
 vi.mock('./Sparkline', () => ({ Sparkline: () => null }));
 
-import * as agentsApi from '@/api/agents';
-import type { RuntimeHealthDTO } from '@/api/types';
+import * as agentsApi from '@/features/lab/api';
+import type { RuntimeHealthDTO } from '@/features/lab/types';
 import { RuntimeHealth } from './RuntimeHealth';
 
 function mk(o: Partial<RuntimeHealthDTO> = {}): RuntimeHealthDTO {
@@ -36,21 +36,38 @@ function mk(o: Partial<RuntimeHealthDTO> = {}): RuntimeHealthDTO {
     failOpenGates: 3,
     missingSamples: 0,
     landedActions: 41,
+    missingPostVectors: 0,
     points: [
-      { date: '2026-08-14', rounds: 4, failOpen: 1, missingSamples: 0, landed: 9 },
-      { date: '2026-08-20', rounds: 13, failOpen: 2, missingSamples: 0, landed: 32 },
+      {
+        date: '2026-08-14',
+        rounds: 4,
+        failOpen: 1,
+        missingSamples: 0,
+        landed: 9,
+        missingPostVectors: 0,
+      },
+      {
+        date: '2026-08-20',
+        rounds: 13,
+        failOpen: 2,
+        missingSamples: 0,
+        landed: 32,
+        missingPostVectors: 0,
+      },
     ],
     ...o,
   };
 }
 
+// Era 2 by default: the fail-open tile these suites pin exists only there.
 function renderStrip(
   range: '7d' | '30d' | '90d' = '7d',
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  era: 2 | 3 = 2,
 ) {
   return render(
     <QueryClientProvider client={client}>
-      <RuntimeHealth range={range} />
+      <RuntimeHealth era={era} range={range} />
     </QueryClientProvider>,
   );
 }
@@ -84,13 +101,13 @@ describe('RuntimeHealth — the four numbers come off the wire', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     renderStrip('7d', client);
     await screen.findByText('Rounds');
-    expect(vi.mocked(agentsApi.getRuntimeHealth).mock.calls[0]).toEqual(['7d']);
+    expect(vi.mocked(agentsApi.getRuntimeHealth).mock.calls[0]).toEqual([2, '7d']);
 
     cleanup();
     renderStrip('90d', client);
     await screen.findAllByText('Rounds');
     expect(vi.mocked(agentsApi.getRuntimeHealth).mock.calls).toHaveLength(2);
-    expect(vi.mocked(agentsApi.getRuntimeHealth).mock.calls[1]).toEqual(['90d']);
+    expect(vi.mocked(agentsApi.getRuntimeHealth).mock.calls[1]).toEqual([2, '90d']);
   });
 });
 
@@ -134,8 +151,22 @@ describe('RuntimeHealth — status tint', () => {
         missingSamples: 0,
         landedActions: 0,
         points: [
-          { date: '2026-08-14', rounds: 0, failOpen: 0, missingSamples: 0, landed: 0 },
-          { date: '2026-08-20', rounds: 0, failOpen: 0, missingSamples: 0, landed: 0 },
+          {
+            date: '2026-08-14',
+            rounds: 0,
+            failOpen: 0,
+            missingSamples: 0,
+            landed: 0,
+            missingPostVectors: 0,
+          },
+          {
+            date: '2026-08-20',
+            rounds: 0,
+            failOpen: 0,
+            missingSamples: 0,
+            landed: 0,
+            missingPostVectors: 0,
+          },
         ],
       }),
     );
@@ -158,5 +189,59 @@ describe('RuntimeHealth — status tint', () => {
       .getByText('Runtime health unavailable right now.')
       .closest('[data-runtime-status]');
     expect(strip?.getAttribute('data-runtime-status')).toBe('warn');
+  });
+});
+
+/**
+ * Era 3 has no drift gate, so a "fail-open gates" tile would be a permanent 0
+ * that reads as good news. It is replaced by the act path's own gap: posts that
+ * landed without a post vector (7 — distinct from every other fixture number).
+ */
+describe('RuntimeHealth — Era 3 tiles', () => {
+  it('drops the fail-open tile and shows post vectors missing', async () => {
+    vi.mocked(agentsApi.getRuntimeHealth).mockResolvedValue(
+      mk({ failOpenGates: 0, missingPostVectors: 7 }),
+    );
+    renderStrip('90d', undefined, 3);
+
+    expect(await screen.findByText('Rounds')).toBeTruthy();
+    expect(screen.queryByText('Fail-open gates')).toBeNull();
+    expect(card('Post vectors missing').textContent).toContain('7');
+    expect(card('Post vectors missing').getAttribute('data-status')).toBe('warn');
+    expect(screen.getByText('Runtime needs watching')).toBeTruthy();
+    expect(vi.mocked(agentsApi.getRuntimeHealth).mock.calls[0]).toEqual([3, '90d']);
+  });
+
+  it('is healthy in Era 3 when no post vector is missing', async () => {
+    vi.mocked(agentsApi.getRuntimeHealth).mockResolvedValue(
+      mk({ failOpenGates: 0, missingPostVectors: 0 }),
+    );
+    renderStrip('7d', undefined, 3);
+
+    expect(await screen.findByText('Runtime healthy')).toBeTruthy();
+    expect(card('Post vectors missing').getAttribute('data-status')).toBe('good');
+    expect(card('Landed actions').textContent).toContain('41');
+  });
+
+  it('keeps Era 2 free of the post-vector tile', async () => {
+    vi.mocked(agentsApi.getRuntimeHealth).mockResolvedValue(mk({ missingPostVectors: 7 }));
+    renderStrip('7d', undefined, 2);
+
+    expect(await screen.findByText('Fail-open gates')).toBeTruthy();
+    expect(screen.queryByText('Post vectors missing')).toBeNull();
+  });
+
+  it('keys the cache on era, so one era never serves the other', async () => {
+    vi.mocked(agentsApi.getRuntimeHealth).mockResolvedValue(mk());
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderStrip('7d', client, 2);
+    await screen.findByText('Rounds');
+    cleanup();
+    renderStrip('7d', client, 3);
+    await screen.findByText('Rounds');
+    expect(vi.mocked(agentsApi.getRuntimeHealth).mock.calls).toEqual([
+      [2, '7d'],
+      [3, '7d'],
+    ]);
   });
 });

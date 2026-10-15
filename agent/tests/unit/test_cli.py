@@ -3235,11 +3235,15 @@ def test_doctor_missing_launchctl_is_not_a_fail(
 def test_measure_status_builds_a_summary_from_a_fake_runtime_payload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Spec §11: prints rounds / fail-open / missing samples. Default since
-    is the 2026-07-25 design date. Roster is counted from the local tree."""
+    """Prints rounds / missing samples. Without ERA_START the default since
+    is the 2026-07-25 design date. Roster is counted from the local tree.
+    Era 3 has no gates, so "fail-open gates" is gone; a payload without
+    `missingPostVectors` (a server before S2) prints no such line."""
     _write_zenith(tmp_path)
     monkeypatch.setattr(
-        cli, "load_settings", lambda: Settings(agent_root=tmp_path, swil_url="https://example.test")
+        cli,
+        "load_settings",
+        lambda: Settings(agent_root=tmp_path, swil_url="https://example.test", era_start=None),
     )
     payload = {
         "range": "30d",
@@ -3261,12 +3265,96 @@ def test_measure_status_builds_a_summary_from_a_fake_runtime_payload(
     output = result.stdout
     assert "2026-07-25" in output
     assert "rounds: 4" in output
-    assert "fail-open" in output and "1" in output
+    assert "fail-open" not in output
+    assert "post vectors missing" not in output
     assert "missing samples: 2" in output
     # The 2026-07-20 point is before the default since and must not inflate
     # the printed totals (9 would mean the filter never ran).
     assert "rounds: 9" not in output
     assert "roster: 1" in output
+
+
+def test_measure_status_defaults_since_to_the_era_start_date(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "load_settings",
+        lambda: Settings(
+            agent_root=tmp_path,
+            swil_url="https://example.test",
+            era_start=_real_datetime.fromisoformat("2026-10-14T20:30:00-07:00"),
+        ),
+    )
+    seen: list[object] = []
+
+    def _fetch(settings: Settings, *, since: object) -> dict[str, object]:
+        seen.append(since)
+        return {
+            "points": [{"date": "2026-10-14", "rounds": 5}, {"date": "2026-10-15", "rounds": 2}]
+        }
+
+    monkeypatch.setattr(cli, "_fetch_runtime_health", _fetch)
+
+    result = runner.invoke(cli.app, ["measure-status"])
+
+    assert result.exit_code == 0, result.output
+    # 20:30 at -07:00 is 03:30 UTC the next day: the server's days are UTC.
+    assert "since=2026-10-15" in result.stdout
+    assert "rounds: 2" in result.stdout
+    assert [str(d) for d in seen] == ["2026-10-15"]
+
+
+def test_measure_status_an_explicit_since_wins_over_era_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        cli, "load_settings", lambda: Settings(agent_root=tmp_path, swil_url="https://example.test")
+    )
+    monkeypatch.setattr(cli, "_fetch_runtime_health", lambda settings, *, since: {"points": []})
+
+    result = runner.invoke(cli.app, ["measure-status", "--since", "2026-10-20"])
+
+    assert "since=2026-10-20" in result.stdout
+
+
+def test_measure_status_prints_post_vectors_missing_when_the_server_reports_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "load_settings",
+        lambda: Settings(agent_root=tmp_path, swil_url="https://example.test", era_start=None),
+    )
+    payload = {
+        "missingPostVectors": 9,
+        "points": [
+            {"date": "2026-07-20", "rounds": 1, "missingPostVectors": 5},
+            {"date": "2026-08-01", "rounds": 1, "missingPostVectors": 3},
+            {"date": "2026-08-02", "rounds": 1},
+        ],
+    }
+    monkeypatch.setattr(cli, "_fetch_runtime_health", lambda settings, *, since: payload)
+
+    result = runner.invoke(cli.app, ["measure-status"])
+
+    assert result.exit_code == 0
+    assert "post vectors missing: 3" in result.stdout
+
+
+def test_measure_status_reads_the_total_when_there_are_no_points(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        cli, "load_settings", lambda: Settings(agent_root=tmp_path, swil_url="https://example.test")
+    )
+    payload = {"rounds": 4, "missingPostVectors": 2}
+    monkeypatch.setattr(cli, "_fetch_runtime_health", lambda settings, *, since: payload)
+
+    result = runner.invoke(cli.app, ["measure-status"])
+
+    assert "rounds: 4" in result.stdout
+    assert "post vectors missing: 2" in result.stdout
 
 
 def test_measure_status_exits_75_on_api_fail(
@@ -3556,3 +3644,498 @@ def test_register_command_refuses_an_existing_user_without_adopt(
     result = runner.invoke(cli.app, ["register", "aa"])
     assert result.exit_code == 75
     assert "--adopt" in result.stdout
+
+
+# ── round id: shared per sweep, manual otherwise (S2 §3) ──────────────────
+
+_SWEEP_ID = "20261014T091500Z-r"
+_MANUAL_ID = re.compile(r"^\d{8}T\d{6}Z-m$")
+
+
+def _set_round_env(monkeypatch: pytest.MonkeyPatch, value: str | None) -> None:
+    """Re-patch `load_settings` with `swil_round_id` set, keeping whatever
+    settings the fixture installed (`load_settings` is patched, so the env
+    var itself is never read)."""
+    base = cli.load_settings()
+    patched = base.model_copy(update={"swil_round_id": value})
+    monkeypatch.setattr(cli, "load_settings", lambda: patched)
+
+
+def _checkpointed_rounds(agent_root: Path) -> list[str]:
+    import sqlite3
+
+    db = agent_root / ".agent-state" / "cycle_checkpoints.sqlite"
+    con = sqlite3.connect(db)
+    try:
+        threads = [r[0] for r in con.execute("SELECT DISTINCT thread_id FROM checkpoints")]
+    finally:
+        con.close()
+    return sorted(t.rpartition(":")[2] for t in threads)
+
+
+def test_cycle_uses_a_valid_sweep_id_from_the_env(
+    tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_round_env(monkeypatch, _SWEEP_ID)
+    result = runner.invoke(cli.app, ["cycle", "zenith"])
+
+    assert result.exit_code == 0, result.stdout
+    assert _checkpointed_rounds(tmp_cycle) == [_SWEEP_ID]
+
+
+def test_cycle_without_an_env_id_runs_as_a_manual_round(
+    tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_round_env(monkeypatch, None)
+    result = runner.invoke(cli.app, ["cycle", "zenith"])
+
+    assert result.exit_code == 0, result.stdout
+    [round_id] = _checkpointed_rounds(tmp_cycle)
+    assert _MANUAL_ID.match(round_id)
+
+
+def test_cycle_with_an_invalid_env_id_warns_and_runs_as_manual(
+    tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _set_round_env(monkeypatch, "20261013T070600")
+    with caplog.at_level(logging.WARNING, logger="swil_agent"):
+        result = runner.invoke(cli.app, ["cycle", "zenith"])
+
+    assert result.exit_code == 0, result.stdout
+    [round_id] = _checkpointed_rounds(tmp_cycle)
+    assert _MANUAL_ID.match(round_id)
+    assert "not a valid round id" in caplog.text
+
+
+def test_a_stale_env_id_never_re_enters_the_finished_thread(
+    tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Review Focus 1: the sweep ran this account under `_SWEEP_ID`; the id is
+    still exported in the operator's shell and they run a manual `cycle`. It
+    must run as a NEW manual round, with a warning -- re-entering the finished
+    thread would run no nodes and report the old round's state as this one."""
+    _set_round_env(monkeypatch, _SWEEP_ID)
+    first = runner.invoke(cli.app, ["cycle", "zenith"])
+    assert first.exit_code == 0, first.stdout
+
+    with caplog.at_level(logging.WARNING, logger="swil_agent"):
+        second = runner.invoke(cli.app, ["cycle", "zenith"])
+
+    assert second.exit_code == 0, second.stdout
+    rounds = _checkpointed_rounds(tmp_cycle)
+    assert len(rounds) == 2
+    assert _SWEEP_ID in rounds
+    [manual] = [r for r in rounds if r != _SWEEP_ID]
+    assert _MANUAL_ID.match(manual)
+    assert "already has a checkpointed thread" in caplog.text
+    # The second cycle really ran: it planned and landed its own post.
+    assert "landed_all" in second.stdout
+
+
+def _interrupt_a_cycle(
+    tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch, *, env: str | None
+) -> None:
+    """Run `zenith` under `env` until the `write` node blows up, leaving a
+    checkpointed thread to resume, then reinstall the fixture's seams."""
+    from swil_agent.graph import nodes as nodes_module
+
+    _set_round_env(monkeypatch, env)
+
+    def _explode(**_kwargs: object) -> object:
+        raise _InjectedBugError("interrupted mid-cycle")
+
+    monkeypatch.setattr(nodes_module, "write_step", _explode)
+    assert runner.invoke(cli.app, ["cycle", "zenith"]).exit_code == 75
+
+    monkeypatch.undo()
+    monkeypatch.setenv("ERA_START", _ERA_START)
+    _patch_cycle_seams(monkeypatch, tmp_cycle)
+
+
+def test_only_the_sweep_itself_may_resume_its_thread(
+    tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sweep thread resumes when `SWIL_ROUND_ID` IS that sweep's id: the
+    sweep re-launching its own interrupted account."""
+    _interrupt_a_cycle(tmp_cycle, monkeypatch, env=_SWEEP_ID)
+    _set_round_env(monkeypatch, _SWEEP_ID)
+
+    second = runner.invoke(cli.app, ["cycle", "zenith", "--resume"])
+
+    assert second.exit_code == 0, second.stdout
+    assert _checkpointed_rounds(tmp_cycle) == [_SWEEP_ID]
+
+
+@pytest.mark.parametrize("env", [None, "20261020T000000Z-r", "20261020T000000Z-m"])
+def test_a_late_resume_of_a_sweep_thread_is_refused_with_64(
+    tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch, env: str | None
+) -> None:
+    """Resuming a sweep thread from anywhere but that sweep would file the
+    late cycle's data under the sweep's round id. Refused with 64 (usage)
+    and the remedy -- a fresh manual `cycle` -- and nothing runs."""
+    _interrupt_a_cycle(tmp_cycle, monkeypatch, env=_SWEEP_ID)
+    _set_round_env(monkeypatch, env)
+    posts: list[FakeResources] = []
+
+    def _recording_resources(persona: Persona, settings: Settings) -> FakeResources:
+        resources = FakeResources()
+        posts.append(resources)
+        return resources
+
+    monkeypatch.setattr(cli, "_resources_for", _recording_resources)
+
+    result = runner.invoke(cli.app, ["cycle", "zenith", "--resume"])
+
+    assert result.exit_code == 64, result.output
+    assert _SWEEP_ID in result.output
+    assert "sweep" in result.output
+    assert "swil-agent cycle zenith" in result.output
+    assert all(not r.created_posts for r in posts)
+    assert _checkpointed_rounds(tmp_cycle) == [_SWEEP_ID]
+
+
+def test_a_manual_thread_resumes_whatever_the_env_says(
+    tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _interrupt_a_cycle(tmp_cycle, monkeypatch, env=None)
+    [manual] = _checkpointed_rounds(tmp_cycle)
+    assert _MANUAL_ID.match(manual)
+    _set_round_env(monkeypatch, _SWEEP_ID)
+
+    second = runner.invoke(cli.app, ["cycle", "zenith", "--resume"])
+
+    assert second.exit_code == 0, second.stdout
+    assert _checkpointed_rounds(tmp_cycle) == [manual]
+
+
+def test_a_dry_cycle_with_an_env_id_opens_no_checkpoint_db(
+    tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A shadow round has no checkpoint DB to ask, so the guard answers "no
+    thread" -- and asking must not create one."""
+    _set_round_env(monkeypatch, _SWEEP_ID)
+    result = runner.invoke(cli.app, ["cycle", "zenith", "--dry-run"])
+
+    assert result.exit_code == 0, result.stdout
+    assert not (tmp_cycle / ".agent-state" / "cycle_checkpoints.sqlite").exists()
+
+
+def test_act_logs_the_round_id_it_runs_under(
+    tmp_agent: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _set_round_env(monkeypatch, _SWEEP_ID)
+    with caplog.at_level(logging.INFO, logger="swil_agent"):
+        result = runner.invoke(cli.app, ["act", "zenith"])
+
+    assert result.exit_code == 0, result.stdout
+    assert f"round {_SWEEP_ID}" in caplog.text
+    # `act` keeps no checkpoint of its own and must not create the DB to ask.
+    assert not (tmp_agent / ".agent-state" / "cycle_checkpoints.sqlite").exists()
+
+
+def test_act_with_a_stale_env_id_falls_back_to_manual(
+    tmp_agent: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The sweep's cycle left a thread for this account under `_SWEEP_ID`; a
+    hand-run `act` with that id still exported must not stamp its events with
+    the finished sweep's label."""
+    from swil_agent.graph.checkpoint import open_checkpointer
+
+    saver = open_checkpointer(tmp_agent / ".agent-state" / "cycle_checkpoints.sqlite")
+    saver.put(
+        {"configurable": {"thread_id": f"builtin:zenith:{_SWEEP_ID}", "checkpoint_ns": ""}},
+        {
+            "v": 1,
+            "id": "1ef00000-0000-6000-8000-000000000000",
+            "ts": "2026-10-14T09:15:00+00:00",
+            "channel_values": {},
+            "channel_versions": {},
+            "versions_seen": {},
+        },
+        {},
+        {},
+    )
+    saver.conn.close()
+    _set_round_env(monkeypatch, _SWEEP_ID)
+
+    with caplog.at_level(logging.INFO, logger="swil_agent"):
+        result = runner.invoke(cli.app, ["act", "zenith"])
+
+    assert result.exit_code == 0, result.stdout
+    assert "already has a checkpointed thread" in caplog.text
+    assert f"round {_SWEEP_ID}" not in caplog.text
+    assert re.search(r"round \d{8}T\d{6}Z-m", caplog.text)
+
+
+def test_a_dry_act_never_opens_the_checkpoint_db(
+    tmp_agent: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _set_round_env(monkeypatch, _SWEEP_ID)
+    with caplog.at_level(logging.INFO, logger="swil_agent"):
+        result = runner.invoke(cli.app, ["act", "zenith", "--dry-run"])
+
+    assert result.exit_code == 0, result.stdout
+    assert f"round {_SWEEP_ID}" in caplog.text
+    assert not (tmp_agent / ".agent-state" / "cycle_checkpoints.sqlite").exists()
+
+
+def test_act_with_an_unreadable_checkpoint_db_still_runs(
+    tmp_agent: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A round never dies on its label: a corrupt checkpoint DB costs the
+    stale-id guard, not the act."""
+    state = tmp_agent / ".agent-state"
+    state.mkdir(exist_ok=True)
+    (state / "cycle_checkpoints.sqlite").write_bytes(b"not a database" * 100)
+    _set_round_env(monkeypatch, _SWEEP_ID)
+
+    with caplog.at_level(logging.INFO, logger="swil_agent"):
+        result = runner.invoke(cli.app, ["act", "zenith"])
+
+    assert result.exit_code == 0, result.stdout
+    assert "round-id guard" in caplog.text
+    assert f"round {_SWEEP_ID}" in caplog.text
+
+
+def test_act_files_the_post_vector_under_the_round_id_it_runs_under(
+    tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # One prior post: below the comparison floor, so the fake embedder's
+    # all-1.0 vectors cannot drop the candidate as a duplicate.
+    resources = FakeResources()
+    resources.user_post_items = [{"text": "第一条"}]
+    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: resources)
+    _set_round_env(monkeypatch, _SWEEP_ID)
+
+    result = runner.invoke(cli.app, ["act", "zenith"])
+
+    assert result.exit_code == 0, result.stdout
+    assert [body["round_id"] for _, body in resources.post_vectors] == [_SWEEP_ID]
+    measured = [e for e in resources.lab_events if e.summary.startswith("act self-similarity")]
+    assert measured[0].metrics["roundId"] == _SWEEP_ID
+
+
+def test_a_cycle_card_reports_the_resolved_model_and_the_round_id(
+    tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The file says `claude:opus`; `--model haiku` is what the client ran."""
+    resources = FakeResources()
+    monkeypatch.setattr(cli, "_resources_for", lambda persona, settings: resources)
+    _set_round_env(monkeypatch, _SWEEP_ID)
+
+    result = runner.invoke(cli.app, ["cycle", "zenith", "--model", "haiku"])
+
+    assert result.exit_code == 0, result.stdout
+    [card] = [e for e in resources.lab_events if e.metrics.get("kind") == "cycle_run"]
+    assert card.metrics["backend"] == "claude"
+    assert card.metrics["model"] == "haiku"
+    assert card.metrics["roundId"] == _SWEEP_ID
+    assert card.metrics["missingPostVector"] is False
+    assert [body["round_id"] for _, body in resources.post_vectors] == [_SWEEP_ID]
+
+
+# ── backfill-post-vectors (S2 §4) ─────────────────────────────────────────
+
+
+class _BackfillResources(FakeResources):
+    """`FakeResources` plus the paged own-posts read the backfill uses."""
+
+    def __init__(self, posts: list[dict[str, object]]) -> None:
+        super().__init__()
+        self.era_posts = posts
+        self.page_reads: list[tuple[str, str | None]] = []
+
+    def user_posts_page(
+        self,
+        username: str,
+        *,
+        limit: int,
+        since: str | None = None,
+        cursor: str | None = None,
+    ) -> tuple[list[dict[str, object]], str | None]:
+        self.page_reads.append((username, since))
+        return list(self.era_posts), None
+
+
+def _era_post(n: int) -> dict[str, object]:
+    return {"id": f"{n:024x}", "text": f"帖子 {n}", "createdAt": "2026-10-15T00:00:00.000Z"}
+
+
+@pytest.fixture
+def tmp_backfill(tmp_agent: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, _BackfillResources]:
+    """Two keyed accounts, `zenith` and `nova`, each with its own fake."""
+    nova = tmp_agent / "agents" / "nova"
+    nova.mkdir(parents=True)
+    (nova / "personality.md").write_text(_personality("nova"), encoding="utf-8")
+    (nova / "memory.md").write_text(_INITIAL_MEMORY, encoding="utf-8")
+    for name in ("zenith", "nova"):
+        (tmp_agent / "agents" / name / "api_key.txt").write_text("k\n", encoding="utf-8")
+    fakes = {
+        "zenith": _BackfillResources([_era_post(1), _era_post(2)]),
+        "nova": _BackfillResources([_era_post(3)]),
+    }
+    monkeypatch.setattr(
+        cli, "_resources_for_key", lambda directory, settings: fakes[directory.name]
+    )
+    return fakes
+
+
+def test_backfill_files_every_roster_account_by_default(
+    tmp_backfill: dict[str, _BackfillResources],
+) -> None:
+    result = runner.invoke(cli.app, ["backfill-post-vectors"])
+
+    assert result.exit_code == 0, result.output
+    zenith, nova = tmp_backfill["zenith"], tmp_backfill["nova"]
+    assert [body["post_id"] for _, body in zenith.post_vectors] == [
+        f"{1:024x}",
+        f"{2:024x}",
+    ]
+    assert all(body["round_id"] is None for _, body in zenith.post_vectors)
+    assert all(body["max_sim"] is None for _, body in zenith.post_vectors)
+    assert [name for name, _ in nova.post_vectors] == ["nova"]
+    assert zenith.page_reads == [("zenith", "2000-01-01T00:00:00+00:00")]
+    assert "zenith -- posts=2 filed=2 failed=0" in result.stdout
+    assert "nova -- posts=1 filed=1 failed=0 echoes=0" in result.stdout
+
+
+def test_backfill_named_accounts_only(tmp_backfill: dict[str, _BackfillResources]) -> None:
+    result = runner.invoke(cli.app, ["backfill-post-vectors", "nova"])
+
+    assert result.exit_code == 0, result.output
+    assert tmp_backfill["zenith"].page_reads == []
+    assert len(tmp_backfill["nova"].post_vectors) == 1
+
+
+def test_backfill_dry_run_counts_and_files_nothing(
+    tmp_backfill: dict[str, _BackfillResources], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _no_embedder(settings: Settings) -> object:
+        raise AssertionError("a dry run needs no embedder")
+
+    monkeypatch.setattr(cli, "_embedder_for", _no_embedder)
+
+    result = runner.invoke(cli.app, ["backfill-post-vectors", "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert tmp_backfill["zenith"].post_vectors == []
+    assert tmp_backfill["nova"].post_vectors == []
+    assert "zenith -- dry-run posts=2" in result.stdout
+
+
+def test_backfill_without_era_start_exits_75(
+    tmp_backfill: dict[str, _BackfillResources], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _close_the_era(monkeypatch)
+
+    result = runner.invoke(cli.app, ["backfill-post-vectors"])
+
+    assert result.exit_code == 75
+    assert cli.ERA_START_REMEDY in result.output
+    assert tmp_backfill["zenith"].page_reads == []
+
+
+def test_backfill_an_unknown_account_exits_66_before_touching_any(
+    tmp_backfill: dict[str, _BackfillResources],
+) -> None:
+    result = runner.invoke(cli.app, ["backfill-post-vectors", "nova", "ghost"])
+
+    assert result.exit_code == 66
+    assert "no such account: ghost" in result.output
+    assert tmp_backfill["nova"].page_reads == []
+
+
+def test_backfill_skips_an_account_without_a_key_and_exits_75(
+    tmp_backfill: dict[str, _BackfillResources], tmp_agent: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_agent / "agents" / "zenith" / "api_key.txt").unlink()
+
+    def _key_only(directory: Path, settings: Settings) -> _BackfillResources:
+        if not (directory / "api_key.txt").is_file():
+            raise cli.AccountSetupError(f"{directory.name}: no usable api_key.txt")
+        return tmp_backfill[directory.name]
+
+    monkeypatch.setattr(cli, "_resources_for_key", _key_only)
+
+    result = runner.invoke(cli.app, ["backfill-post-vectors"])
+
+    assert result.exit_code == 75
+    assert "zenith -- skipped" in result.stdout
+    assert len(tmp_backfill["nova"].post_vectors) == 1
+
+
+def test_backfill_reports_failed_ingests_with_exit_75(
+    tmp_backfill: dict[str, _BackfillResources],
+) -> None:
+    tmp_backfill["nova"]._post_vector_ok = False
+
+    result = runner.invoke(cli.app, ["backfill-post-vectors", "nova"])
+
+    assert result.exit_code == 75
+    assert "nova -- posts=1 filed=0 failed=1" in result.stdout
+
+
+def test_backfill_reports_a_failed_read(
+    tmp_backfill: dict[str, _BackfillResources], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _boom(*_args: object, **_kwargs: object) -> object:
+        raise ApiError(500, "boom", None)
+
+    monkeypatch.setattr(tmp_backfill["nova"], "user_posts_page", _boom)
+
+    result = runner.invoke(cli.app, ["backfill-post-vectors", "nova"])
+
+    assert result.exit_code == 75
+    assert "nova -- skipped (could not list posts)" in result.stdout
+
+
+def test_backfill_a_broken_persona_is_a_skip_not_a_crash(
+    tmp_backfill: dict[str, _BackfillResources], tmp_agent: Path
+) -> None:
+    (tmp_agent / "agents" / "nova" / "personality.md").write_text("no frontmatter", "utf-8")
+
+    result = runner.invoke(cli.app, ["backfill-post-vectors"])
+
+    assert result.exit_code == 75
+    assert "nova -- skipped" in result.stdout
+    assert len(tmp_backfill["zenith"].post_vectors) == 2
+
+
+def test_backfill_brackets_the_embedder_guard_on_a_real_run(
+    tmp_backfill: dict[str, _BackfillResources], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    guard = _FakeGuard()
+    monkeypatch.setattr(cli, "_guard_for", lambda settings: guard)
+
+    result = runner.invoke(cli.app, ["backfill-post-vectors"])
+
+    assert result.exit_code == 0, result.output
+    assert (guard.up_calls, guard.down_calls) == (1, 1)
+
+
+def test_backfill_dry_run_takes_no_guard(
+    tmp_backfill: dict[str, _BackfillResources], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _no_guard(settings: Settings) -> object:
+        raise AssertionError("a dry run must not start the embedder")
+
+    monkeypatch.setattr(cli, "_guard_for", _no_guard)
+
+    result = runner.invoke(cli.app, ["backfill-post-vectors", "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_backfill_exits_75_with_a_remedy_when_the_embedder_stays_down(
+    tmp_backfill: dict[str, _BackfillResources], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    guard = _FakeGuard()
+    monkeypatch.setattr(cli, "_guard_for", lambda settings: guard)
+    monkeypatch.setattr(cli, "_embedder_for", lambda settings: _FakeEmbedderClient(healthy=False))
+
+    result = runner.invoke(cli.app, ["backfill-post-vectors"])
+
+    assert result.exit_code == 75
+    assert "embedder" in result.output and "start.sh" in result.output
+    assert tmp_backfill["zenith"].page_reads == []
+    assert guard.down_calls == 1

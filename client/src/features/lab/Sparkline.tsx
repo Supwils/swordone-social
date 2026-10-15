@@ -10,10 +10,13 @@ export function Sparkline({
   data,
   color = 'var(--color-accent)',
   strokeWidth = 1.5,
+  domain,
 }: {
   data: Array<{ v: number }>;
   color?: string;
   strokeWidth?: number;
+  /** Fixed Y range (e.g. `[0, 1]` for similarities); default starts at 0, top auto. */
+  domain?: [number, number];
 }) {
   const { t } = useTranslation();
   if (data.length < 2) {
@@ -26,8 +29,8 @@ export function Sparkline({
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-        {/* Force Y to start at 0 so the line shape reads as "growing drift" */}
-        <YAxis hide domain={[0, 'auto']} />
+        {/* Default: Y starts at 0 so the line shape reads as "growing drift" */}
+        <YAxis hide domain={domain ?? [0, 'auto']} />
         <Line
           type="monotone"
           dataKey="v"

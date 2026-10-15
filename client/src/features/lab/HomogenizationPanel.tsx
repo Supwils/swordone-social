@@ -1,21 +1,22 @@
 /**
- * `HomogenizationPanel` — extracted verbatim from routes/lab.tsx, which had reached 1406
- * lines across 12 components. Its siblings already lived here; the route file
- * is now just the composition root. No logic was changed in the move.
+ * `HomogenizationPanel` — extracted verbatim from the former `routes/lab.tsx`, which had
+ * reached 1406 lines across 12 components. No logic was changed in the move.
+ * The lab's composition root is now `features/lab/LabPage.tsx`.
  */
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card } from '@/components/primitives';
-import { getHomogenization } from '@/api/agents';
-import s from '@/routes/lab.module.css';
+import { getHomogenization } from '@/features/lab/api';
+import type { LabEra } from '@/features/lab/types';
+import s from '@/features/lab/lab.module.css';
 
-export function HomogenizationPanel({ range }: { range: '7d' | '30d' | '90d' }) {
+export function HomogenizationPanel({ era, range }: { era: LabEra; range: '7d' | '30d' | '90d' }) {
   const { t } = useTranslation();
   const q = useQuery({
-    queryKey: ['lab-homogenization', range],
-    queryFn: () => getHomogenization(range),
+    queryKey: ['lab-homogenization', era, range],
+    queryFn: () => getHomogenization(era, range),
     staleTime: 60_000,
   });
   const series = useMemo(

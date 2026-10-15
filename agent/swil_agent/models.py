@@ -231,6 +231,11 @@ class ActSimilarity(BaseModel):
     embed attempted for this measurement failed. `compared_against` is the
     number of prior posts actually in the corpus. `dropped` is true only for
     a computed `max_sim` at or above the threshold.
+
+    `card_sim` is cosine(candidate, card) (S2 §4), `None` when not computed.
+    `vector` is the candidate's own embedding, kept so a landed post's vector
+    can be filed without a second embed; it is excluded from dumps and the
+    repr because it is 1024 floats meant for one endpoint only.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -239,3 +244,5 @@ class ActSimilarity(BaseModel):
     compared_against: int = 0
     embedder_ok: bool = True
     dropped: bool = False
+    card_sim: float | None = None
+    vector: list[float] | None = Field(default=None, exclude=True, repr=False)

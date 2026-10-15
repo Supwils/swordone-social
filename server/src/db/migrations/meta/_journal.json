@@ -36,6 +36,13 @@
       "when": 1791968500050,
       "tag": "0004_user_archived_at",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791986113632,
+      "tag": "0005_post_vectors",
+      "breakpoints": true
     }
   ]
 }

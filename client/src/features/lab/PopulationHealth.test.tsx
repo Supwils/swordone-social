@@ -3,15 +3,15 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@/i18n';
 
-vi.mock('@/api/agents', () => ({
+vi.mock('@/features/lab/api', () => ({
   getPopulationPulse: vi.fn(),
   getHomogenization: vi.fn(),
   listLabAgents: vi.fn(),
 }));
 vi.mock('./Sparkline', () => ({ Sparkline: () => null }));
 
-import * as agentsApi from '@/api/agents';
-import type { HomogenizationDTO, PulseDTO } from '@/api/types';
+import * as agentsApi from '@/features/lab/api';
+import type { HomogenizationDTO, PulseDTO } from '@/features/lab/types';
 import { PopulationHealth } from './PopulationHealth';
 
 type Agents = Awaited<ReturnType<typeof agentsApi.listLabAgents>>;
@@ -67,7 +67,7 @@ function renderPanel(range: '7d' | '30d' | '90d' = '90d') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <PopulationHealth range={range} agents={agents} />
+      <PopulationHealth era={2} range={range} agents={agents} />
     </QueryClientProvider>,
   );
 }
@@ -100,8 +100,8 @@ describe('PopulationHealth', () => {
     expect(screen.getByText('Diversity')).toBeTruthy();
     expect(screen.getByText('Stability')).toBeTruthy();
 
-    expect(agentsApi.getPopulationPulse).toHaveBeenCalledWith('90d');
-    expect(agentsApi.getHomogenization).toHaveBeenCalledWith('90d');
+    expect(agentsApi.getPopulationPulse).toHaveBeenCalledWith(2, '90d');
+    expect(agentsApi.getHomogenization).toHaveBeenCalledWith(2, '90d');
   });
 
   it('rolls the worst health signal up into the composite verdict (warn)', async () => {

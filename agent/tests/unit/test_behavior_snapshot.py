@@ -513,7 +513,7 @@ def test_the_post_count_sent_is_the_api_item_count(tmp_path: Path) -> None:
 
 def test_a_null_fidelity_is_reported_as_none_not_zero(tmp_path: Path) -> None:
     """`fidelity` is null until the account's first personality snapshot
-    lands (`agents.drift.ts:236-237`). Coercing that to 0.0 would plot a
+    lands (`persona/drift.ts`). Coercing that to 0.0 would plot a
     brand-new account as maximally unfaithful."""
     seen: list[httpx.Request] = []
 

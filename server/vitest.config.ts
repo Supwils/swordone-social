@@ -18,6 +18,7 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: [
         'src/**/*.test.ts',
+        'src/**/*.testSeeds.ts', // test-only seed helpers
         'src/server.ts', // bootstrap, hard to unit-test in isolation
         'src/test/**',   // vitest setup helpers
         'src/types/**',

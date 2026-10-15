@@ -95,6 +95,13 @@ NEAR_VECTOR = [0.9]
 FAR_VECTOR = [0.8]
 FEED_VECTOR = [0.2]
 FEED_TWO_VECTOR = [0.3]
+CARD = "CARD"
+"""`make_persona`'s default card: no `# ` heading, so `card_text` is itself."""
+# 0.5 * 1.0 = 0.5: ABOVE every prior's similarity, so a card that leaked into
+# the `max_sim` reduction would read 0.5 instead of 0.45.
+CARD_VECTOR = [1.0]
+EXPECTED_CARD_SIM = 0.5
+ROUND_ID = "20261014T091500Z-r"
 EXPECTED_MAX_SIM = 0.45
 MEAN_SIM = 0.425
 MIN_SIM = 0.40
@@ -105,6 +112,7 @@ VECTORS: dict[str, list[float]] = {
     FAR: FAR_VECTOR,
     FEED: FEED_VECTOR,
     FEED_TWO: FEED_TWO_VECTOR,
+    CARD: CARD_VECTOR,
 }
 
 
@@ -210,6 +218,7 @@ def _run_execute(
     window: int = DEFAULT_POST_DUPLICATE_WINDOW,
     threshold: float = DEFAULT_POST_DUPLICATE_THRESHOLD,
     dry_run: bool = False,
+    round_id: str | None = ROUND_ID,
 ) -> Any:
     return execute_step(
         resources=resources,
@@ -221,6 +230,7 @@ def _run_execute(
         duplicate_window=window,
         duplicate_threshold=threshold,
         dry_run=dry_run,
+        round_id=round_id,
     )
 
 
@@ -253,7 +263,7 @@ def test_similarity_is_computed_against_the_accounts_own_recent_posts(tmp_path: 
 
     _run_execute(tmp_path, resources=resources, embedder=embedder)
 
-    assert embedder.embedded == [[CANDIDATE, NEAR, FAR]]
+    assert embedder.embedded == [[CANDIDATE, CARD, NEAR, FAR]]
     assert FEED not in embedder.embedded[0]
     assert FEED_TWO not in embedder.embedded[0]
     assert resources.user_posts_calls == [(USERNAME, DEFAULT_POST_DUPLICATE_WINDOW)]
@@ -264,11 +274,12 @@ def test_similarity_is_computed_against_the_accounts_own_recent_posts(tmp_path: 
 
 # ── the guard ────────────────────────────────────────────────────────────
 
-DUPLICATE = {CANDIDATE: [1.0], NEAR: [0.95], FAR: [0.3]}
+DUPLICATE = {CANDIDATE: [1.0], NEAR: [0.95], FAR: [0.3], CARD: [0.1]}
 """max_sim 0.95: above the 0.92 default."""
 
-DISTINCT = {CANDIDATE: [1.0], NEAR: [0.80], FAR: [0.3]}
-"""max_sim 0.80: below the 0.92 default."""
+DISTINCT = {CANDIDATE: [1.0], NEAR: [0.80], FAR: [0.3], CARD: [1.0]}
+"""max_sim 0.80: below the 0.92 default. The card sits at 1.0 -- a card that
+leaked into the duplicate reduction would drop this post."""
 
 
 def test_a_near_duplicate_post_is_dropped_and_its_event_says_so(tmp_path: Path) -> None:
@@ -441,25 +452,26 @@ def test_fewer_than_two_prior_posts_yields_max_sim_none_not_zero(tmp_path: Path)
     corpus size on both, so "nothing to compare against" stays distinguishable
     from "the measurement failed".
 
-    `embedder_ok` is True on both: no embed was attempted, so no outage was
-    observed -- `embedder_ok is False` means "embedder outage" and nothing
-    else.
+    The candidate and the card ARE still embedded (S2 §4): cosine(post, card)
+    is measured on every candidate, a new account's included, and the vector
+    is what the post-vector ingest files. The too-small corpus is left OUT of
+    the batch, so `max_sim` cannot be computed from it by accident.
 
     Kills: returning `0.0` (or `max_sim` omitted from a corpus-too-small
     branch that then computes a similarity anyway).
     """
-    embedder = RecordingEmbedder()
-
     for corpus in ([], [NEAR]):
+        embedder = RecordingEmbedder()
         sim = measure_act_similarity(
-            candidate_text=CANDIDATE, prior_texts=corpus, embedder=embedder
+            candidate_text=CANDIDATE, card_text=CARD, prior_texts=corpus, embedder=embedder
         )
         assert sim.max_sim is None
         assert sim.max_sim != 0.0
         assert sim.compared_against == len(corpus)
         assert sim.embedder_ok is True
-
-    assert embedder.embedded == [], "a corpus too small to compare must cost no embed call"
+        assert sim.card_sim == pytest.approx(EXPECTED_CARD_SIM)
+        assert sim.vector == CANDIDATE_VECTOR
+        assert embedder.embedded == [[CANDIDATE, CARD]]
 
 
 def test_a_new_account_still_files_a_row_saying_why_it_has_no_number(tmp_path: Path) -> None:
@@ -482,6 +494,7 @@ def test_a_new_account_still_files_a_row_saying_why_it_has_no_number(tmp_path: P
     assert event.metrics["maxSim"] is None
     assert event.metrics["comparedAgainst"] == 1
     assert event.metrics["embedderOk"] is True
+    assert event.metrics["cardSim"] == pytest.approx(EXPECTED_CARD_SIM)
 
 
 # ── the measurement itself ───────────────────────────────────────────────
@@ -497,7 +510,10 @@ def test_max_sim_is_the_maximum_not_the_mean_or_the_minimum() -> None:
     a 1.0/0.9/0.3 fixture would not.
     """
     sim = measure_act_similarity(
-        candidate_text=CANDIDATE, prior_texts=[NEAR, FAR], embedder=RecordingEmbedder()
+        candidate_text=CANDIDATE,
+        card_text=CARD,
+        prior_texts=[NEAR, FAR],
+        embedder=RecordingEmbedder(),
     )
     assert sim.max_sim == pytest.approx(EXPECTED_MAX_SIM)
     assert sim.max_sim != pytest.approx(MEAN_SIM)
@@ -517,8 +533,10 @@ def test_one_embed_call_carries_the_candidate_and_the_whole_corpus() -> None:
     of `1 + n` texts -- a stated property rather than an accident.
     """
     embedder = RecordingEmbedder()
-    measure_act_similarity(candidate_text=CANDIDATE, prior_texts=[NEAR, FAR], embedder=embedder)
-    assert embedder.embedded == [[CANDIDATE, NEAR, FAR]]
+    measure_act_similarity(
+        candidate_text=CANDIDATE, card_text=CARD, prior_texts=[NEAR, FAR], embedder=embedder
+    )
+    assert embedder.embedded == [[CANDIDATE, CARD, NEAR, FAR]]
 
 
 def test_the_candidate_is_not_compared_against_its_own_vector() -> None:
@@ -535,11 +553,13 @@ def test_the_candidate_is_not_compared_against_its_own_vector() -> None:
     """
     sim = measure_act_similarity(
         candidate_text=CANDIDATE,
+        card_text=CARD,
         prior_texts=[NEAR, FAR],
-        embedder=RecordingEmbedder({CANDIDATE: [1.0], NEAR: [0.9], FAR: [0.8]}),
+        embedder=RecordingEmbedder({CANDIDATE: [1.0], NEAR: [0.9], FAR: [0.8], CARD: [1.0]}),
     )
     assert sim.max_sim == pytest.approx(0.9)
     assert sim.max_sim != pytest.approx(1.0)
+    assert sim.card_sim == pytest.approx(1.0), "the card is measured, just not as a prior"
 
 
 def test_an_unreachable_embedder_records_no_number_and_says_so() -> None:
@@ -553,12 +573,15 @@ def test_an_unreachable_embedder_records_no_number_and_says_so() -> None:
     """
     sim = measure_act_similarity(
         candidate_text=CANDIDATE,
+        card_text=CARD,
         prior_texts=[NEAR, FAR],
         embedder=RecordingEmbedder(fails=True),
     )
     assert sim.max_sim is None
     assert sim.embedder_ok is False
     assert sim.compared_against == 2
+    assert sim.card_sim is None
+    assert sim.vector is None
 
 
 def test_an_oversized_window_degrades_instead_of_aborting_the_round() -> None:
@@ -572,7 +595,10 @@ def test_an_oversized_window_degrades_instead_of_aborting_the_round() -> None:
             raise ValueError("embed() takes at most 64 texts, got 65")
 
     sim = measure_act_similarity(
-        candidate_text=CANDIDATE, prior_texts=[NEAR, FAR], embedder=OversizedBatchEmbedder()
+        candidate_text=CANDIDATE,
+        card_text=CARD,
+        prior_texts=[NEAR, FAR],
+        embedder=OversizedBatchEmbedder(),
     )
     assert sim.max_sim is None
     assert sim.embedder_ok is False
@@ -593,14 +619,16 @@ def test_a_short_or_ragged_embedder_response_is_an_outage_not_a_partial_answer()
 
     class RaggedEmbedder:
         def embed(self, texts: list[str]) -> list[list[float]]:
-            return [[0.5], [0.9, 0.1], [0.8]]
+            return [[0.5], [1.0], [0.9, 0.1], [0.8]]
 
     for embedder in (ShortEmbedder(), RaggedEmbedder()):
         sim = measure_act_similarity(
-            candidate_text=CANDIDATE, prior_texts=[NEAR, FAR], embedder=embedder
+            candidate_text=CANDIDATE, card_text=CARD, prior_texts=[NEAR, FAR], embedder=embedder
         )
         assert sim.max_sim is None, embedder
         assert sim.embedder_ok is False, embedder
+        assert sim.card_sim is None, embedder
+        assert sim.vector is None, embedder
 
 
 # ── what counts as the candidate, and as a prior ─────────────────────────
@@ -689,7 +717,7 @@ def test_prior_posts_prefer_the_original_language_body_with_jq_semantics() -> No
 def test_the_lab_events_metrics_are_flat_scalars(tmp_path: Path) -> None:
     """`agentEventIngest.metrics` is `z.record(z.union([z.string(),
     z.number(), z.boolean(), z.null()]))`
-    (`server/src/modules/agents/agents.schemas.ts:59`). A nested object or an
+    (`server/src/modules/agents/runtime/runtime.schemas.ts`). A nested object or an
     array fails that union and zod 400s the WHOLE event -- silently, since a
     lab event's failure may never change what a round did. That exact defect
     ran for six weeks on the dream side (`dream/round.py`'s
@@ -716,7 +744,10 @@ def test_the_lab_events_metrics_are_flat_scalars(tmp_path: Path) -> None:
         "window",
         "threshold",
         "dropped",
+        "cardSim",
+        "roundId",
     }
+    assert event.metrics["roundId"] == ROUND_ID
     for key, value in event.metrics.items():
         assert isinstance(value, str | int | float | bool) or value is None, key
         assert not isinstance(value, dict | list), key
@@ -762,6 +793,7 @@ def test_an_embedder_outage_is_recorded_as_an_outage_not_as_a_quiet_account(
     assert event.outcome == "skip"
     assert event.reason == "embedder unreachable"
     assert event.metrics["maxSim"] is None
+    assert event.metrics["cardSim"] is None
     assert event.metrics["embedderOk"] is False
     assert event.metrics["comparedAgainst"] == 2
     assert "embedder unreachable" in caplog.text
@@ -785,7 +817,10 @@ def test_a_corpus_fetch_failure_is_its_own_reason_not_an_empty_corpus(tmp_path: 
     assert event.reason == "could not fetch prior posts"
     assert event.metrics["maxSim"] is None
     assert event.metrics["comparedAgainst"] == 0
-    assert embedder.embedded == []
+    # S2 §4: the fetch failing costs the corpus, not the card measurement.
+    assert embedder.embedded == [[CANDIDATE, CARD]]
+    assert event.metrics["cardSim"] == pytest.approx(EXPECTED_CARD_SIM)
+    assert event.metrics["embedderOk"] is True
     assert [p.text for p in resources.created_posts] == [CANDIDATE]
 
 
@@ -811,7 +846,7 @@ def test_the_sample_precedes_the_write_so_the_candidate_is_never_its_own_prior(
     _run_execute(tmp_path, resources=resources, embedder=embedder)
 
     assert resources.trace.index("user_posts") < resources.trace.index("create_post")
-    assert embedder.embedded == [[CANDIDATE, NEAR, FAR]]
+    assert embedder.embedded == [[CANDIDATE, CARD, NEAR, FAR]]
     assert embedder.embedded[0].count(CANDIDATE) == 1
     assert _similarity_events(resources)[0].metrics["comparedAgainst"] == 2
 
@@ -889,7 +924,7 @@ def test_run_act_with_an_embedder_takes_the_sample(tmp_path: Path) -> None:
     )
 
     assert resources.user_posts_calls == [(USERNAME, 3)]
-    assert embedder.embedded == [[CANDIDATE, NEAR, FAR]]
+    assert embedder.embedded == [[CANDIDATE, CARD, NEAR, FAR]]
     assert resources.created_posts == []
     assert _similarity_events(resources)[0].metrics["threshold"] == 0.4
 
@@ -921,6 +956,8 @@ def test_the_graph_execute_node_takes_the_sample_too(tmp_path: Path) -> None:
         agent_root=tmp_path,
         health_check=lambda: True,
         memory_text="",
+        llm_backend="claude",
+        llm_model=None,
         now=NOW,
         captured_at=CAPTURED_AT,
     )
@@ -930,7 +967,7 @@ def test_the_graph_execute_node_takes_the_sample_too(tmp_path: Path) -> None:
     )
 
     assert resources.user_posts_calls == [(USERNAME, 5)]
-    assert embedder.embedded == [[CANDIDATE, NEAR, FAR]]
+    assert embedder.embedded == [[CANDIDATE, CARD, NEAR, FAR]]
     assert _similarity_events(resources)[0].metrics["window"] == 5
     assert resources.created_posts == []
     assert update["outcome"] is ActOutcome.VETOED_EMPTY
@@ -1027,6 +1064,8 @@ def test_act_similarity_is_a_frozen_record_with_a_none_default() -> None:
     assert sim.compared_against == 0
     assert sim.embedder_ok is True
     assert sim.dropped is False
+    assert sim.card_sim is None
+    assert sim.vector is None
     with pytest.raises(Exception, match="frozen"):
         sim.max_sim = 0.9  # type: ignore[misc]
 
@@ -1041,7 +1080,7 @@ def test_the_plan_type_still_carries_no_similarity(tmp_path: Path) -> None:
 # ── the two-language contract ───────────────────────────────────────────────
 #
 # The measured sample's summary is prose built inline in `_similarity_event`,
-# and one consumer has to key on it: `server/src/modules/agents/agents.collapse.ts`
+# and one consumer has to key on it: `server/src/modules/agents/persona/collapse.ts`
 # narrows its SQL on `summary = 'act self-similarity measured'` because nothing
 # else in `agent_events` distinguishes these rows from the executor's own
 # `cycle`/`act` events.  Rewording it here reddens THIS suite loudly -- which is
@@ -1050,9 +1089,9 @@ def test_the_plan_type_still_carries_no_similarity(tmp_path: Path) -> None:
 # starts answering `basis: 'length-only'` for every account, a result
 # indistinguishable from a window that predates the sampler.  So the pin below
 # reaches across the language boundary, and its mirror in
-# `server/src/modules/agents/agents.collapse.test.ts` reaches back.
+# `server/src/modules/agents/persona/collapse.test.ts` reaches back.
 
-_COLLAPSE_TS = Path(__file__).resolve().parents[3] / "server/src/modules/agents/agents.collapse.ts"
+_COLLAPSE_TS = Path(__file__).resolve().parents[3] / "server/src/modules/agents/persona/collapse.ts"
 
 
 def _executable_ts(source: str) -> str:
@@ -1105,3 +1144,249 @@ def test_a_dropped_candidate_keeps_the_summary_the_server_queries_on(tmp_path: P
     event = _similarity_events(resources)[0]
     assert event.metrics["dropped"] is True
     assert event.summary == "act self-similarity measured"
+
+
+# ── S2 §4: the candidate's vector, cosine(post, card), the post-vector ingest ─
+
+
+def test_the_vector_never_appears_in_a_dump_or_a_repr() -> None:
+    """1024 floats are a wire payload for ONE endpoint, not a field every log
+    line, checkpoint and lab event should carry."""
+    sim = ActSimilarity(max_sim=0.4, card_sim=0.3, vector=[0.25, 0.5])
+
+    assert sim.vector == [0.25, 0.5]
+    assert "vector" not in sim.model_dump()
+    assert "vector" not in sim.model_dump(mode="json")
+    assert "0.25" not in repr(sim)
+    assert sim.model_dump()["card_sim"] == 0.3
+
+
+def test_card_sim_is_the_candidate_against_the_card_and_never_a_prior() -> None:
+    embedder = RecordingEmbedder()
+
+    sim = measure_act_similarity(
+        candidate_text=CANDIDATE, card_text=CARD, prior_texts=[NEAR, FAR], embedder=embedder
+    )
+
+    assert embedder.embedded == [[CANDIDATE, CARD, NEAR, FAR]]
+    assert sim.card_sim == pytest.approx(EXPECTED_CARD_SIM)
+    assert sim.max_sim == pytest.approx(EXPECTED_MAX_SIM)
+    assert sim.vector == CANDIDATE_VECTOR
+
+
+def test_an_empty_card_is_not_embedded_and_has_no_card_sim() -> None:
+    """A heading-only card strips to "" -- nothing to embed, and an empty
+    string must not reach the daemon."""
+    embedder = RecordingEmbedder()
+
+    sim = measure_act_similarity(
+        candidate_text=CANDIDATE, card_text="", prior_texts=[NEAR, FAR], embedder=embedder
+    )
+
+    assert embedder.embedded == [[CANDIDATE, NEAR, FAR]]
+    assert sim.card_sim is None
+    assert sim.max_sim == pytest.approx(EXPECTED_MAX_SIM)
+    assert sim.vector == CANDIDATE_VECTOR
+
+
+def test_the_similarity_step_embeds_the_card_without_its_heading(tmp_path: Path) -> None:
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+    persona = make_persona(
+        username=USERNAME,
+        directory=tmp_path / "agents" / DIR_NAME,
+        card=f"# 名字\n\n{CARD}",
+    )
+    embedder = RecordingEmbedder()
+
+    similarity_step(
+        resources=resources,
+        persona=persona,
+        actions=[Action(kind="post", text=CANDIDATE)],
+        embedder=embedder,
+        round_id=ROUND_ID,
+    )
+
+    assert embedder.embedded == [[CANDIDATE, CARD, NEAR, FAR]]
+
+
+def test_a_landed_post_files_the_vector_the_guard_measured(tmp_path: Path) -> None:
+    """One ingest, no second embed: the vector, the post id the executor got
+    back, the cycle's round id and both similarities."""
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+    embedder = RecordingEmbedder()
+
+    step = _run_execute(tmp_path, resources=resources, embedder=embedder)
+
+    assert len(embedder.embedded) == 1
+    post_id = step.results[0].resource_id
+    assert post_id
+    assert resources.post_vectors == [
+        (
+            USERNAME,
+            {
+                "post_id": post_id,
+                "round_id": ROUND_ID,
+                "embedding": CANDIDATE_VECTOR,
+                "card_sim": pytest.approx(EXPECTED_CARD_SIM),
+                "max_sim": pytest.approx(EXPECTED_MAX_SIM),
+            },
+        )
+    ]
+    assert step.missing_post_vector is False
+
+
+def test_a_new_accounts_post_files_its_vector_with_a_null_max_sim(tmp_path: Path) -> None:
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR)
+
+    step = _run_execute(tmp_path, resources=resources, embedder=RecordingEmbedder())
+
+    assert len(resources.post_vectors) == 1
+    body = resources.post_vectors[0][1]
+    assert body["max_sim"] is None
+    assert body["card_sim"] == pytest.approx(EXPECTED_CARD_SIM)
+    assert step.missing_post_vector is False
+
+
+def test_a_fetch_failure_still_files_the_vector(tmp_path: Path) -> None:
+    resources = TracingResources()
+    resources.fail("user_posts")
+
+    step = _run_execute(tmp_path, resources=resources, embedder=RecordingEmbedder())
+
+    assert len(resources.post_vectors) == 1
+    assert resources.post_vectors[0][1]["max_sim"] is None
+    assert step.missing_post_vector is False
+
+
+def test_an_embedder_outage_files_no_vector_and_flags_the_round(tmp_path: Path) -> None:
+    """Review focus 2: the round proceeds, the post lands, no ingest without a
+    vector -- and the cycle_run card learns a post went unfiled."""
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+
+    step = _run_execute(tmp_path, resources=resources, embedder=RecordingEmbedder(fails=True))
+
+    assert [p.text for p in resources.created_posts] == [CANDIDATE]
+    assert resources.post_vectors == []
+    assert step.missing_post_vector is True
+
+
+def test_no_embedder_at_all_also_flags_a_landed_post(tmp_path: Path) -> None:
+    resources = TracingResources()
+
+    step = _run_execute(tmp_path, resources=resources, embedder=None)
+
+    assert len(resources.created_posts) == 1
+    assert resources.post_vectors == []
+    assert step.missing_post_vector is True
+
+
+def test_a_rejected_ingest_flags_the_round_and_never_fails_it(tmp_path: Path) -> None:
+    resources = TracingResources(post_vector_ok=False)
+    resources.user_post_items = _own_posts(NEAR, FAR)
+
+    step = _run_execute(tmp_path, resources=resources, embedder=RecordingEmbedder())
+
+    assert len(resources.post_vectors) == 1
+    assert step.missing_post_vector is True
+    assert step.landed == 1
+
+
+def test_a_dropped_candidate_files_no_vector(tmp_path: Path) -> None:
+    """Nothing landed, so there is no post to attach a vector to -- and no
+    post went unfiled either."""
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+
+    step = _run_execute(tmp_path, resources=resources, embedder=RecordingEmbedder(DUPLICATE))
+
+    assert resources.created_posts == []
+    assert resources.post_vectors == []
+    assert step.missing_post_vector is False
+
+
+def test_a_post_that_failed_to_land_files_no_vector(tmp_path: Path) -> None:
+    resources = TracingResources(post_raises=ApiError(500, "boom", None))
+    resources.user_post_items = _own_posts(NEAR, FAR)
+
+    step = _run_execute(tmp_path, resources=resources, embedder=RecordingEmbedder())
+
+    assert step.landed == 0
+    assert resources.post_vectors == []
+    assert step.missing_post_vector is False
+
+
+def test_an_echo_or_a_comment_never_files_a_vector(tmp_path: Path) -> None:
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+    embedder = RecordingEmbedder()
+
+    step = _run_execute(
+        tmp_path,
+        resources=resources,
+        embedder=embedder,
+        actions=[
+            Action(kind="echo", text=CANDIDATE, post_id="a" * 24),
+            Action(kind="comment", text=FAR, post_id="b" * 24),
+        ],
+    )
+
+    assert step.landed == 2
+    assert embedder.embedded == []
+    assert resources.post_vectors == []
+    assert step.missing_post_vector is False
+
+
+def test_without_a_round_id_the_ingest_sends_null_and_the_event_omits_it(
+    tmp_path: Path,
+) -> None:
+    """A resumed legacy thread has no `round_id` in its state: the server
+    resolves a null one; a lab event simply carries none."""
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+
+    _run_execute(tmp_path, resources=resources, embedder=RecordingEmbedder(), round_id=None)
+
+    assert resources.post_vectors[0][1]["round_id"] is None
+    assert "roundId" not in _similarity_events(resources)[0].metrics
+
+
+def test_run_act_threads_its_round_id_to_the_ingest_and_the_event(tmp_path: Path) -> None:
+    resources = TracingResources()
+    resources.user_post_items = _own_posts(NEAR, FAR)
+
+    run_act(
+        persona=_persona(tmp_path),
+        resources=resources,
+        backend=StubBackend('{"plan":[{"action":"post","text":"' + CANDIDATE + '"}]}'),
+        memory_text="",
+        agent_root=tmp_path,
+        now=NOW,
+        rng=random.Random(0),
+        health_check=lambda: True,
+        embedder=RecordingEmbedder(),
+        round_id="20261014T100000Z-m",
+    )
+
+    assert resources.post_vectors[0][1]["round_id"] == "20261014T100000Z-m"
+    assert _similarity_events(resources)[0].metrics["roundId"] == "20261014T100000Z-m"
+
+
+def test_a_fetch_failure_with_the_embedder_down_warns_about_the_embedder_too(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    resources = TracingResources()
+    resources.fail("user_posts")
+
+    with caplog.at_level(logging.WARNING, logger="swil_agent.act.round"):
+        step = _run_execute(tmp_path, resources=resources, embedder=RecordingEmbedder(fails=True))
+
+    assert "could not fetch prior posts" in caplog.text
+    assert "embedder unreachable" in caplog.text
+    event = _similarity_events(resources)[0]
+    assert event.reason == "could not fetch prior posts"
+    assert event.metrics["embedderOk"] is False
+    assert step.missing_post_vector is True

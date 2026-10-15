@@ -63,6 +63,7 @@ era: 3
 """
 
 DREAM_REPLY = '{"recent": ["一件新事"]}'
+CYCLE_ROUND_ID = "20261015T060000Z-r"
 INITIAL_MEMORY = "2026-08-01 | act | did a thing\n"
 
 
@@ -78,6 +79,8 @@ def _card(**overrides: Any) -> dict[str, Any]:
         "duration_ms": 1200,
         "backend": "claude",
         "model": "opus",
+        "round_id": "20261014T091500Z-r",
+        "missing_post_vector": False,
     }
     kwargs.update(overrides)
     return build_cycle_run_event(**kwargs).to_wire()
@@ -113,7 +116,26 @@ def test_the_card_metrics_use_the_spec_keys_and_no_aliases() -> None:
         "durationMs",
         "backend",
         "model",
+        "roundId",
+        "missingPostVector",
     }
+    assert metrics["roundId"] == "20261014T091500Z-r"
+    assert metrics["missingPostVector"] is False
+
+
+def test_a_card_without_a_round_id_omits_the_key() -> None:
+    """A thread checkpointed before S2 carries no `round_id`; the card then
+    files no `roundId` rather than a made-up one."""
+    metrics = _card(round_id=None)["metrics"]
+    assert "roundId" not in metrics
+    assert set(metrics) == CYCLE_RUN_METRIC_KEYS - {"roundId"}
+
+
+def test_a_missing_post_vector_is_recorded_without_changing_the_outcome() -> None:
+    """The card says the vector went unfiled; the round still succeeded."""
+    wire = _card(missing_post_vector=True)
+    assert wire["metrics"]["missingPostVector"] is True
+    assert wire["outcome"] == "success"
 
 
 def test_the_card_metrics_are_flat_scalars() -> None:
@@ -229,6 +251,8 @@ def _deps(root: Path, **overrides: Any) -> CycleDeps:
         "agent_root": root,
         "health_check": lambda: True,
         "memory_text": INITIAL_MEMORY,
+        "llm_backend": "claude",
+        "llm_model": "opus",
         "rng": random.Random(7),
         "now": NOW,
         "captured_at": CAPTURED_AT,
@@ -245,7 +269,7 @@ def _run(root: Path, deps: CycleDeps, persona: Persona | None = None) -> dict[st
                 persona=persona or _persona(root),
                 deps=deps,
                 lease_db=lease_db,
-                round_id="cycle-run",
+                round_id=CYCLE_ROUND_ID,
                 run_id="run-1",
             )
         )
@@ -522,3 +546,73 @@ def test_a_full_cycle_rotates_after_the_round_wrote_its_lines(tmp_path: Path) ->
     assert len(live) == 200
     assert live[-1].endswith("| dream | 最近已更新")
     assert _lines(persona.directory / "memory.archive.md")[0] == "2026-08-01 | old 0"
+
+
+# ── S2 §4: roundId, missingPostVector, the resolved backend/model ───────────
+
+
+class _PerTextEmbedder:
+    """One unit vector per text -- the act path's `[candidate, card]` batch
+    measures cleanly, so the landed post's vector is filed."""
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0] for _ in texts]
+
+
+def test_the_card_carries_the_cycles_round_id_and_a_filed_post_vector(tmp_path: Path) -> None:
+    root = tmp_path / "agent_root"
+    resources = FakeResources()
+
+    _run(root, _deps(root, resources=resources, embedder=_PerTextEmbedder()))
+
+    assert [body["round_id"] for _, body in resources.post_vectors] == [CYCLE_ROUND_ID]
+    cards = _cycle_run_events(resources)
+    assert cards[0].metrics["roundId"] == CYCLE_ROUND_ID
+    assert cards[0].metrics["missingPostVector"] is False
+    similarity = [e for e in resources.lab_events if e.summary.startswith("act self-similarity")]
+    assert similarity[0].metrics["roundId"] == CYCLE_ROUND_ID
+
+
+def test_a_post_landed_without_a_vector_is_flagged_on_the_card(tmp_path: Path) -> None:
+    """Review focus 2: the embedder is down, the post still lands, nothing is
+    ingested, and the card says a vector is missing."""
+    root = tmp_path / "agent_root"
+    resources = FakeResources()
+
+    _run(root, _deps(root, resources=resources, embedder=FakeEmbedder(fail_always=True)))
+
+    assert len(resources.created_posts) == 1
+    assert resources.post_vectors == []
+    cards = _cycle_run_events(resources)
+    assert cards[0].metrics["missingPostVector"] is True
+    assert cards[0].metrics["landed"] == 1
+
+
+def test_the_card_names_the_resolved_backend_not_the_persona_file(tmp_path: Path) -> None:
+    """The persona file says `claude:opus`; the client this cycle was built
+    from is what the card reports."""
+    root = tmp_path / "agent_root"
+    resources = FakeResources()
+    deps = _deps(root, resources=resources, llm_backend="codex", llm_model="gpt-5.6-luna")
+    node = make_logout_node(deps)
+
+    node({"persona": _persona(root), "round_id": "20261014T091500Z-r", "missing_post_vector": True})
+
+    card = _cycle_run_events(resources)[0]
+    assert card.metrics["backend"] == "codex"
+    assert card.metrics["model"] == "gpt-5.6-luna"
+    assert card.metrics["roundId"] == "20261014T091500Z-r"
+    assert card.metrics["missingPostVector"] is True
+
+
+def test_a_backend_with_no_model_reports_an_empty_model(tmp_path: Path) -> None:
+    root = tmp_path / "agent_root"
+    resources = FakeResources()
+    node = make_logout_node(_deps(root, resources=resources, llm_model=None))
+
+    node({"persona": _persona(root)})
+
+    card = _cycle_run_events(resources)[0]
+    assert card.metrics["model"] == ""
+    assert "roundId" not in card.metrics
+    assert card.metrics["missingPostVector"] is False

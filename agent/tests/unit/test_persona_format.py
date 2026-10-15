@@ -18,6 +18,7 @@ from swil_agent.persona.format import (
     RECENT_HEADING,
     PersonaDoc,
     PersonaFormatError,
+    card_text,
     clamp_recent,
     parse_persona,
     prompt_text,
@@ -333,3 +334,36 @@ def test_resolve_no_longer_searches_humans(tmp_path: Path) -> None:
     (humans / "personality.md").write_text(VALID, encoding="utf-8")
     with pytest.raises(FileNotFoundError):
         resolve_agent_dir(tmp_path, "xiaoman")
+
+
+# ── card_text: what the act path embeds as the card (S2 §4) ────────────────
+
+_ROSTER = Path(__file__).resolve().parents[2] / "agents"
+
+
+def test_card_text_on_a_real_roster_file_drops_the_name_heading() -> None:
+    """Pinned on the live file, not a fixture: the cosine(post, card) series
+    is pre-registered, so what the card vector covers must not drift."""
+    persona = load_persona(_ROSTER / "xiaoman")
+
+    text = card_text(persona.card)
+
+    assert persona.card.startswith("# 小满")
+    assert text.startswith("成都")
+    assert not any(line.startswith("#") for line in text.splitlines())
+    assert text == persona.card.split("\n", 2)[2].lstrip("\n")
+
+
+def test_card_text_strips_exactly_one_heading_and_the_blank_lines_after_it() -> None:
+    assert card_text("# 小满\n\n\n夜班护士。\n\n# 不是标题") == "夜班护士。\n\n# 不是标题"
+
+
+def test_card_text_leaves_a_card_without_a_heading_alone() -> None:
+    assert card_text("夜班护士。\n# 第二行") == "夜班护士。\n# 第二行"
+    assert card_text("#小满\n夜班护士。") == "#小满\n夜班护士。"
+    assert card_text("## 小满\n夜班护士。") == "## 小满\n夜班护士。"
+
+
+def test_card_text_of_a_heading_only_card_is_empty() -> None:
+    assert card_text("# 小满") == ""
+    assert card_text("# 小满\n\n") == ""

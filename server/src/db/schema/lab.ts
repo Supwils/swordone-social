@@ -2,6 +2,7 @@ import {
   pgTable,
   text,
   integer,
+  smallint,
   doublePrecision,
   timestamp,
   jsonb,
@@ -134,10 +135,38 @@ export const populationMetrics = pgTable(
     personaCohesion: doublePrecision('persona_cohesion').notNull(),
     behaviorCohesion: doublePrecision('behavior_cohesion').notNull(),
     n: integer('n').notNull().default(0),
+    // Which era's population the sample covers. Rows before S2 are Era 2.
+    era: smallint('era').notNull().default(2),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('popmetric_captured_idx').on(t.capturedAt)],
+);
+
+/**
+ * One bge-m3 vector per posted text (S2 §5), filed by the act path or by the
+ * backfill. `roundId` is the sweep/manual round the post belongs to, or null
+ * when it could not be resolved (such rows stay out of per-round series).
+ * No FKs, like the other lab tables.
+ */
+export const postVectors = pgTable(
+  'post_vectors',
+  {
+    id: text('id').primaryKey().$defaultFn(newId),
+    postId: text('post_id').notNull().unique(),
+    userId: text('user_id').notNull(),
+    roundId: text('round_id'),
+    embedding: vector('embedding', { dimensions: 1024 }).notNull(),
+    cardSim: doublePrecision('card_sim'),
+    maxSim: doublePrecision('max_sim'),
+    source: text('source').$type<'act' | 'backfill'>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('pvec_round_idx').on(t.roundId),
+    index('pvec_user_created_idx').on(t.userId, t.createdAt),
+  ],
 );
 
 export const events = pgTable(

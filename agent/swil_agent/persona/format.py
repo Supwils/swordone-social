@@ -113,6 +113,20 @@ def clamp_recent(items: Iterable[str]) -> tuple[str, ...]:
     return tuple(out)
 
 
+def card_text(card: str) -> str:
+    """The card as the act path embeds it (S2 §4): one leading `# ` heading
+    line -- the display name -- and the blank lines after it removed, nothing
+    else. The name is not who the account is, and it would pull every post
+    that mentions it toward the card."""
+    lines = card.split("\n")
+    if not lines[0].startswith("# "):
+        return card
+    rest = lines[1:]
+    while rest and not rest[0].strip():
+        rest.pop(0)
+    return "\n".join(rest)
+
+
 def prompt_text(doc: PersonaDoc) -> str:
     """The persona as the model sees it: card + 最近, never the frontmatter."""
     bullets = _bullets(doc.recent).rstrip("\n") or _EMPTY_RECENT

@@ -118,6 +118,7 @@ from swil_agent.graph.nodes import (
 )
 from swil_agent.graph.state import BUILTIN_TENANT, CycleState, thread_id
 from swil_agent.models import ActResult, Persona
+from swil_agent.round_id import manual_round_id
 
 # Node names, spelled once. They are also the `CycleState` thread's public
 # vocabulary: a checkpoint records which node it stopped at, and `--resume`
@@ -238,10 +239,6 @@ DEFAULT_MAX_ROUNDS: Final = 1
 # derived limit only ever exceeds this for a configuration that turns loop 3
 # on.
 _DEFAULT_RECURSION_LIMIT: Final = 25
-
-# `%Y%m%dT%H%M%S` and not `isoformat()`: `thread_id` splits on `":"`, and an
-# ISO timestamp carries two of them.
-_ROUND_ID_FORMAT: Final = "%Y%m%dT%H%M%S"
 
 # Both halves of what Bash locks, in a fixed order so two cycles racing for
 # the same account cannot deadlock against each other.
@@ -514,9 +511,12 @@ def run_cycle(
 
     Identity: the lease, the log lines and `CycleState["agent"]` all use the
     persona DIRECTORY name (`agent_dir_name`), never the `Username` bullet --
-    the `Username` bullet and the directory name can differ. `round_id`
-    defaults to `deps.now` formatted, so a resumed thread id is reproducible
-    from the same moment; `run_id` defaults to a fresh uuid, because
+    the `Username` bullet and the directory name can differ. `round_id` is
+    chosen by the caller (`round_id.py`: resume, then `SWIL_ROUND_ID`, then
+    manual) and defaults to a MANUAL id at `deps.captured_at`, so it is
+    reproducible from the cycle's frozen moment and never mistaken for a
+    sweep. It keys the thread and is seeded into `CycleState["round_id"]`,
+    where every node reads it. `run_id` defaults to a fresh uuid, because
     `RunLease`'s release is identity-scoped and a successor must never be
     mistakable for the holder it replaced.
 
@@ -528,7 +528,8 @@ def run_cycle(
     requires a `checkpointer` -- there is nothing to continue from without one
     -- and the caller must supply the ORIGINAL `round_id`, because the thread
     id is the checkpoint's only key and the default derives it from
-    `deps.now`, which is a different moment in the resuming process.
+    `deps.captured_at`, which is a different moment in the resuming process.
+    The resumed state keeps the `round_id` it was checkpointed with.
 
     Two consequences of resuming worth knowing: a thread whose previous run
     completed runs no nodes at all and returns its stored final state, and a
@@ -540,7 +541,7 @@ def run_cycle(
     provider = _deps_provider(deps, cfg)
     first = provider(0)
     name = agent_dir_name(persona)
-    round_key = round_id if round_id is not None else first.now.strftime(_ROUND_ID_FORMAT)
+    round_key = round_id if round_id is not None else manual_round_id(first.captured_at)
     run_key = run_id if run_id is not None else uuid.uuid4().hex
     thread = thread_id(tenant, name, round_key)
 
@@ -558,6 +559,7 @@ def run_cycle(
         "agent": name,
         "persona": persona,
         "thread_id": thread,
+        "round_id": round_key,
         "run_id": run_key,
         "round_index": 0,
         # Read off the ROUND-0 deps, the same instance `_acquire` asks about

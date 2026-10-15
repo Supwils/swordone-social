@@ -36,9 +36,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Skeleton } from '@/components/primitives';
-import { getCollapseWatch } from '@/api/agents';
-import type { CollapseSeries, CollapseWatchDTO } from '@/api/types';
-import s from '@/routes/lab.module.css';
+import { getCollapseWatch } from '@/features/lab/api';
+import type { CollapseSeries, CollapseWatchDTO } from '@/features/lab/types';
+import s from '@/features/lab/lab.module.css';
 
 function fmt(value: number | null, digits: number): string {
   return value === null ? '—' : value.toFixed(digits);
@@ -132,8 +132,9 @@ function CollapseRow({ series, data }: { series: CollapseSeries; data: CollapseW
  * The verdict sentence — and `insufficient-data` needs a branch of its own,
  * because ONE verdict stands for TWO different refusals.
  *
- * `agents.collapse.ts:347` sets `basis: 'none'` whenever the length half is not
- * `'fitted'`, and `basis: 'none'` forces `verdict: 'insufficient-data'`. So a
+ * The server's collapse watch (`server/src/modules/agents/persona/collapse.ts`)
+ * sets `basis: 'none'` whenever the length half is not `'fitted'`, and
+ * `basis: 'none'` forces `verdict: 'insufficient-data'`. So a
  * window whose posts all share one timestamp arrives here alongside a window
  * that simply holds too few posts. Reading the count sentence over the first
  * one produced "Only 5 posts with text in this window; a length trend needs at
@@ -142,7 +143,7 @@ function CollapseRow({ series, data }: { series: CollapseSeries; data: CollapseW
  *
  * §7 CONDITION. `predates-instrument` falls through to the count branch, and
  * that is sound only because the length half can never carry it: the service
- * passes `preempted` for the self-similarity series alone (`agents.collapse.ts`
+ * passes `preempted` for the self-similarity series alone (`persona/collapse.ts`
  * `seriesOf('length', …, null)`). Pass one for the length half and this needs
  * its own case, or the same wrong-reason bug returns under a new name.
  */

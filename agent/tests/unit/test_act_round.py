@@ -1381,7 +1381,7 @@ def test_memory_event_summary_is_uncapped() -> None:
     equally uncapped `${IMAGE_TOPIC:+[img:$IMAGE_TOPIC] }`), so a long enough
     planner-supplied topic pushes the note past the server's
     `summary: z.string().trim().min(1).max(500)`
-    (`agents.schemas.ts:55`) and the event 400s. Deliberately NOT capped here
+    (`runtime/runtime.schemas.ts`) and the event 400s. Deliberately NOT capped here
     (ruling R22): Bash is uncapped too and both runtimes swallow that 400
     identically (`|| true` at swil.sh:246, `Resources.lab_event`'s
     `except ApiError`), so capping would be a Python-only divergence that

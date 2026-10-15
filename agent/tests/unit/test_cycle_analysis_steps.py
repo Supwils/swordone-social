@@ -147,6 +147,8 @@ def _deps(root: Path, **overrides: Any) -> CycleDeps:
         "agent_root": root,
         "health_check": lambda: True,
         "memory_text": INITIAL_MEMORY,
+        "llm_backend": "claude",
+        "llm_model": "opus",
         "rng": random.Random(SEED),
         "now": NOW,
         "captured_at": CAPTURED_AT,
@@ -533,7 +535,7 @@ def test_the_cycle_tail_records_exactly_one_population_cohesion_sample(
     four months, each from a human remembering to run the command.
 
     ONE, not two: `record_population_metric` inserts a row on every call
-    (`agents.population.ts`), so a second call per cycle silently doubles the
+    (`population/population.ts`), so a second call per cycle silently doubles the
     series' sampling rate -- which is a change to what the trend MEANS, made
     by a duplicated line.
     """

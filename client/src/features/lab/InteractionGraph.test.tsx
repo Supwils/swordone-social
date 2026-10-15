@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@/i18n';
-import type { GraphEdge, GraphNode, InteractionGraphDTO } from '@/api/types';
+import type { GraphEdge, GraphNode, InteractionGraphDTO } from '@/features/lab/types';
 import { InteractionGraph } from './InteractionGraph';
 
 /**

@@ -77,6 +77,24 @@ export default tseslint.config(
   },
   prettier,
   {
+    // Lab boundary: outside src/features/lab, import only the index (`@/features/lab`).
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/features/lab/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/features/lab/*'],
+              message: 'Import the lab only through its index: "@/features/lab".',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['**/*.test.{ts,tsx}'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',

@@ -2,7 +2,8 @@
 """Drop old LangGraph cycle checkpoints, keeping the last N rounds per account.
 
 Every round opens a NEW thread per account -- `thread_id` is
-`builtin:<account>:<YYYYMMDDTHHMMSS>` -- so nothing ever reuses an old thread
+`builtin:<account>:<round id>`, the round id `<UTC YYYYMMDDTHHMMSS>Z-r|m`
+(Era 2 keys had no suffix) -- so nothing ever reuses an old thread
 and nothing in the tree deleted them. Measured 2026-08-20: 70 MB for 56 threads,
 roughly 35 MB per round, in a gitignored file on one laptop. At the 48h cadence
 that is ~500 MB/month and it only goes up.
@@ -23,10 +24,24 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import re
 import sqlite3
 import sys
 
 DEFAULT_DB = pathlib.Path(__file__).resolve().parent.parent / ".agent-state" / "cycle_checkpoints.sqlite"
+
+
+# `swil_agent/round_id.py`'s `ROUND_ID_RE`, copied: this script runs under a
+# bare `python3`, outside the package's environment.
+ROUND_ID_RE = re.compile(r"^\d{8}T\d{6}Z-[rm]$", re.ASCII)
+
+
+def round_sort_key(thread_id: str) -> tuple[bool, str]:
+    """Order by the round id: its UTC stamp leads, so string order is time
+    order. Keys that are not S2 ids (Era 2's suffixless stamps) rank below
+    every S2 id -- the same rule as `round_id.round_sort_key`."""
+    round_id = thread_id.rpartition(":")[2]
+    return (ROUND_ID_RE.fullmatch(round_id) is not None, round_id)
 
 
 def account_of(thread_id: str) -> str:
@@ -61,12 +76,11 @@ def main() -> int:
         for t in threads:
             by_account.setdefault(account_of(t), []).append(t)
 
-        # The suffix is a fixed-width UTC-ish stamp, so lexicographic ordering IS
-        # chronological ordering. Sorting the whole thread_id would order by
-        # account first and silently keep the wrong ones.
+        # Sort on the round id alone: sorting the whole thread_id would order
+        # by account first and silently keep the wrong ones.
         doomed: list[str] = []
         for _account, ts in by_account.items():
-            ts.sort(key=lambda t: t.rpartition(":")[2])
+            ts.sort(key=round_sort_key)
             doomed.extend(ts[: max(0, len(ts) - args.keep)])
 
         if not doomed:

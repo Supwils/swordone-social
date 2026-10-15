@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { getRuntimeHealth } from '@/api/agents';
-import type { RuntimeHealthDTO } from '@/api/types';
+import { getRuntimeHealth } from '@/features/lab/api';
+import type { LabEra, RuntimeHealthDTO } from '@/features/lab/types';
 import { Skeleton } from '@/components/primitives';
 import { Sparkline } from './Sparkline';
 import { periodDelta } from './stats';
-import s from '@/routes/lab.module.css';
+import s from '@/features/lab/lab.module.css';
 
 type Status = 'good' | 'warn' | 'bad' | 'neutral';
 type Range = '7d' | '30d' | '90d';
@@ -26,10 +26,12 @@ interface Signal {
 /**
  * Strip status (spec §13): fail-open or missing-samples > 0 → warn;
  * rounds = 0 → neutral; otherwise good. Per-card tints follow the same
- * rule on the card that owns the number.
+ * rule on the card that owns the number. Era 3 has no drift gate, so its
+ * strip warns on missing post vectors instead of fail-open gates.
  */
-export function runtimeStripStatus(dto: RuntimeHealthDTO): Status {
-  if (dto.failOpenGates > 0 || dto.missingSamples > 0) return 'warn';
+export function runtimeStripStatus(dto: RuntimeHealthDTO, era: LabEra): Status {
+  const gap = era === 3 ? dto.missingPostVectors : dto.failOpenGates;
+  if (gap > 0 || dto.missingSamples > 0) return 'warn';
   if (dto.rounds === 0) return 'neutral';
   return 'good';
 }
@@ -41,14 +43,15 @@ function cardStatus(warnCount: number | null, rounds: number): Status {
 
 /**
  * Runtime Health — a sibling golden-signal strip above PopulationHealth.
- * Four cycle-engine vitals (Rounds, Fail-open gates, Missing samples,
- * Landed actions) backed by `GET /agents/runtime`. No new view, no new route.
+ * Four cycle-engine vitals backed by `GET /agents/runtime`: Rounds, Missing
+ * samples, Landed actions, plus Fail-open gates (Era 2) or Post vectors
+ * missing (Era 3 — there is no gate to fail open).
  */
-export function RuntimeHealth({ range }: { range: Range }) {
+export function RuntimeHealth({ era, range }: { era: LabEra; range: Range }) {
   const { t } = useTranslation();
   const runtimeQ = useQuery({
-    queryKey: ['lab-runtime', range],
-    queryFn: () => getRuntimeHealth(range),
+    queryKey: ['lab-runtime', era, range],
+    queryFn: () => getRuntimeHealth(era, range),
     staleTime: 60_000,
   });
 
@@ -59,11 +62,38 @@ export function RuntimeHealth({ range }: { range: Range }) {
     const failOpen = dto?.failOpenGates ?? 0;
     const missing = dto?.missingSamples ?? 0;
     const landed = dto?.landedActions ?? 0;
+    const missingVectors = dto?.missingPostVectors ?? 0;
 
     const roundSeries = pts.map((p) => p.rounds);
     const failSeries = pts.map((p) => p.failOpen);
     const missSeries = pts.map((p) => p.missingSamples);
     const landSeries = pts.map((p) => p.landed);
+    const vectorSeries = pts.map((p) => p.missingPostVectors);
+
+    const gapSignal: Signal =
+      era === 3
+        ? {
+            key: 'missingVectors',
+            label: t('lab.runtime.missingVectors'),
+            hint: t('lab.runtime.missingVectorsHint'),
+            value: String(missingVectors),
+            status: cardStatus(missingVectors, rounds),
+            higherIsBetter: false,
+            pct: periodDelta(vectorSeries).pct,
+            spark: vectorSeries.map((v) => ({ v })),
+            sparkColor: 'var(--color-warning)',
+          }
+        : {
+            key: 'failOpen',
+            label: t('lab.runtime.failOpen'),
+            hint: t('lab.runtime.failOpenHint'),
+            value: String(failOpen),
+            status: cardStatus(failOpen, rounds),
+            higherIsBetter: false,
+            pct: periodDelta(failSeries).pct,
+            spark: failSeries.map((v) => ({ v })),
+            sparkColor: 'var(--color-warning)',
+          };
 
     return [
       {
@@ -77,17 +107,7 @@ export function RuntimeHealth({ range }: { range: Range }) {
         spark: roundSeries.map((v) => ({ v })),
         sparkColor: 'var(--color-border-strong)',
       },
-      {
-        key: 'failOpen',
-        label: t('lab.runtime.failOpen'),
-        hint: t('lab.runtime.failOpenHint'),
-        value: String(failOpen),
-        status: cardStatus(failOpen, rounds),
-        higherIsBetter: false,
-        pct: periodDelta(failSeries).pct,
-        spark: failSeries.map((v) => ({ v })),
-        sparkColor: 'var(--color-warning)',
-      },
+      gapSignal,
       {
         key: 'missing',
         label: t('lab.runtime.missing'),
@@ -111,7 +131,7 @@ export function RuntimeHealth({ range }: { range: Range }) {
         sparkColor: 'var(--color-border-strong)',
       },
     ];
-  }, [runtimeQ.data, t]);
+  }, [runtimeQ.data, era, t]);
 
   if (runtimeQ.isLoading) return <Skeleton height={150} width="100%" />;
 
@@ -129,7 +149,7 @@ export function RuntimeHealth({ range }: { range: Range }) {
     );
   }
 
-  const composite = runtimeQ.data ? runtimeStripStatus(runtimeQ.data) : 'neutral';
+  const composite = runtimeQ.data ? runtimeStripStatus(runtimeQ.data, era) : 'neutral';
 
   const verdictLabel =
     composite === 'warn'

@@ -3,14 +3,14 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@/i18n';
 
-vi.mock('@/api/agents', () => ({
+vi.mock('@/features/lab/api', () => ({
   getBenchmarkLeaderboard: vi.fn(),
   getBenchmarkMatrix: vi.fn(),
   getBenchmarkCompare: vi.fn(),
 }));
 
-import * as agentsApi from '@/api/agents';
-import type { BenchmarkCompare, BenchmarkLeaderboard, BenchmarkMatrix } from '@/api/types';
+import * as agentsApi from '@/features/lab/api';
+import type { BenchmarkCompare, BenchmarkLeaderboard, BenchmarkMatrix } from '@/features/lab/types';
 import { BenchmarkView } from './BenchmarkView';
 
 /** Fixture values are all mutually distinguishable after formatting:

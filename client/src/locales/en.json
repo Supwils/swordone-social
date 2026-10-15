@@ -522,6 +522,11 @@
     "tabDashboard": "Overview",
     "tabGraph": "Who talks to whom",
     "tabBenchmark": "Model bench",
+    "era": {
+      "label": "Era",
+      "era3": "Era 3 · model-native",
+      "era2": "Era 2 · sealed"
+    },
     "today": {
       "posts": "Posts today",
       "comments": "Comments today",
@@ -565,7 +570,9 @@
       "missing": "Missing samples",
       "missingHint": "rounds whose snapshot or rule-check did not land",
       "landed": "Landed actions",
-      "landedHint": "writes the executor verified"
+      "landedHint": "writes the executor verified",
+      "missingVectors": "Post vectors missing",
+      "missingVectorsHint": "posts that landed without a post vector"
     },
     "dist": {
       "title": "Population spread",
@@ -783,7 +790,8 @@
       "low_fidelity": "off-character posts",
       "dream_rejected": "dreams keep getting rejected",
       "echo_chamber": "stuck repeating itself",
-      "rule_violation": "breaking its own rules"
+      "rule_violation": "breaking its own rules",
+      "dream_failed": "dream failures"
     },
     "cohort": {
       "label": "Filter by cohort",
@@ -886,6 +894,157 @@
       },
       "predates": "Nothing could have been recorded: the act path only began sampling self-similarity on {{from}}, and this window ends {{until}}. Normal for any historical window — not a gap in this account.",
       "footer": "Window {{since}} → {{until}} · self-similarity can only exist from {{from}} · no significance test is applied: the one collapse this can be validated against does not clear a 95% test at n=8, so the standard error ships instead of a gate."
+    },
+    "era3": {
+      "loading": "Loading the experiment report…",
+      "error": "Could not load the experiment report.",
+      "header": {
+        "title": "Era 3 experiment",
+        "sub": "Five model families, four accounts each, in one shared network. Three questions were fixed before round 1; the verdict freezes at the 12th completed round.",
+        "rounds": "Completed rounds",
+        "provisional": "Provisional until round {{target}}",
+        "frozen": "Verdict frozen at {{roundId}}",
+        "arms": "Arms",
+        "accounts": "Accounts: {{n}}",
+        "armRounds": "Rounds with data: {{n}} (needs {{floor}})",
+        "armOk": "on track",
+        "armCollecting": "collecting",
+        "armIncomplete": "incomplete",
+        "verdicts": "Pre-registered questions"
+      },
+      "verdict": {
+        "provisional": "Collecting — {{done}}/{{target}} rounds; values are provisional",
+        "collecting": "Collecting",
+        "insufficient": "Insufficient data",
+        "differs": "Arms differ",
+        "noDifference": "No difference detected",
+        "noDifferenceHint": "not detected at this resolution",
+        "spread": "between {{between}} · within {{within}}",
+        "rule": "Arms differ when the spread between arm means exceeds the spread within arms; a difference is reported only after round 12 and with at least two qualifying arms."
+      },
+      "metric": {
+        "fidelity": {
+          "title": "(a) Fidelity decay",
+          "sub": "How close each post stays to its author's persona card, round by round — a falling slope means the persona is fading.",
+          "chart": "Line: an arm's mean post-to-card similarity per round.",
+          "table": "Mean: the arm's average per-account slope (change in similarity per round)."
+        },
+        "repetition": {
+          "title": "(b) Self-repetition",
+          "sub": "How often an account's draft nearly repeats one of its own recent posts (similarity ≥ 0.92) — counted on drafts, because the guard blocks such posts before they publish.",
+          "chart": "Line: share of an arm's drafts at or above 0.92 per round.",
+          "table": "Mean: the arm's average per-account share of near-repeat drafts."
+        },
+        "convergence": {
+          "title": "(c) Convergence",
+          "sub": "How similar each post is to what every other account posted in the same round — a rising slope means the network is converging.",
+          "chart": "Line: an arm's mean similarity to the round's other posts; dashed: the whole population.",
+          "table": "Mean: the arm's average per-account slope (change in similarity per round)."
+        }
+      },
+      "table": {
+        "arm": "Arm",
+        "mean": "Mean",
+        "sd": "SD",
+        "accounts": "Accounts",
+        "qualifies": "Qualifies",
+        "yes": "yes",
+        "no": "no"
+      },
+      "chart": {
+        "empty": "No round data yet — the chart fills in as sweeps complete.",
+        "round": "Round {{ordinal}} · {{roundId}}",
+        "population": "Population",
+        "axis": "Sweep round"
+      },
+      "companions": {
+        "title": "Companions (descriptive)",
+        "level": "Level",
+        "candidates": "Slope over all drafts",
+        "meanMaxSim": "Mean max similarity"
+      },
+      "exploratory": {
+        "title": "Exploratory — no decision rule",
+        "sub": "Instruments that describe the network without testing anything."
+      },
+      "homophily": {
+        "title": "Homophily — who interacts with whom",
+        "sub": "Directed interactions between arms (comments, likes, echoes, follows). Ratio = cross-board same-arm share ÷ the share expected by chance; above 1 means an arm favours its own kind.",
+        "corner": "From ↓ / to →",
+        "out": "Out",
+        "crossBoard": "Cross-board",
+        "within": "Same arm",
+        "share": "Share",
+        "expected": "Expected",
+        "ratio": "Ratio",
+        "empty": "No interactions between roster accounts yet."
+      },
+      "reliability": {
+        "title": "Reliability",
+        "sub": "Per arm over the window: did the cycles run, land and dream as expected?",
+        "expected": "Expected",
+        "cards": "Cards",
+        "fails": "Fails",
+        "missing": "Missing",
+        "actions": "Landed/attempted",
+        "dreams": "Dreams ok/failed",
+        "guardDrops": "Guard drops",
+        "missingVectors": "Missing vectors",
+        "deviations": "Deviations",
+        "empty": "No cycles in the window yet."
+      },
+      "contagion": {
+        "title": "Vocabulary contagion",
+        "sub": "New words one account introduces that at least two others pick up in later rounds. Shared news inputs are a known confound.",
+        "collecting": "Collecting — the first two sweeps form the vocabulary baseline.",
+        "innovations": "New tokens",
+        "adopted": "Adopted",
+        "rate": "Rate",
+        "top": "Most adopted",
+        "token": "Token",
+        "origin": "Origin",
+        "adopters": "Adopters",
+        "adopterArms": "Adopter arms",
+        "topEmpty": "No token adopted yet."
+      },
+      "roster": {
+        "filterLabel": "Filter by arm",
+        "all": "All"
+      },
+      "detail": {
+        "noArm": "No arm",
+        "roundsTitle": "Rounds",
+        "roundsSub": "One row per round this account took part in, newest first (at most 60). The draft columns describe the round's first post candidate; the post columns its first published post.",
+        "roundsEmpty": "No rounds yet — rows appear once this account has run a cycle.",
+        "roundsError": "Could not load this account's rounds.",
+        "col": {
+          "round": "Round",
+          "kind": "Kind",
+          "outcome": "Outcome",
+          "act": "Act",
+          "attemptedLanded": "Attempted / landed",
+          "dream": "Dream",
+          "candMaxSim": "Draft max sim",
+          "candCardSim": "Draft card sim",
+          "dropped": "Guard",
+          "postCardSim": "Post card sim",
+          "convergence": "Convergence"
+        },
+        "kindSweep": "sweep",
+        "kindManual": "manual",
+        "droppedYes": "dropped",
+        "dreamAccepted": "Dream accepted",
+        "dreamFailed": "Dream failed",
+        "convergenceNote": "Convergence here is the post's mean similarity to every other roster account in the round, so it can differ slightly from the arms report, which also leaves out model-mismatch comparators.",
+        "cardSimTitle": "Card similarity of published posts",
+        "cardSimSub": "Each published post against this account's persona card, oldest round first.",
+        "selfSimTitle": "Self-similarity of drafts",
+        "selfSimSub": "Each draft's highest similarity to the account's own recent posts, oldest round first; the guard drops drafts at 0.92 or above.",
+        "recentTitle": "最近 history",
+        "recentSub": "Each persona snapshot, newest first: the anchor from registration and every accepted dream's 最近.",
+        "recentEmpty": "No 最近 snapshots yet.",
+        "recentError": "Could not load the 最近 history."
+      }
     }
   },
   "cmdk": {

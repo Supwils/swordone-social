@@ -176,6 +176,11 @@ class CycleDeps:
         `memory_text` would hide round 1's own posts from
         `ActContext.today_post_count`, and the rhythm gate would let the
         account post again over its ceiling.
+
+    `llm_backend` / `llm_model` are the resolved values `backend` was built
+    from (`llm/selection.py`: flag > frontmatter > env > default), which the
+    cycle_run card reports. Required, so a composition root cannot fall back
+    to the persona file's declaration by forgetting them.
     """
 
     resources: Resources
@@ -187,6 +192,8 @@ class CycleDeps:
     agent_root: Path
     health_check: Callable[[], bool]
     memory_text: str
+    llm_backend: str
+    llm_model: str | None
     context_now: str = "(no context file)"
     feed_context: str = ""
     budget: int = 5
@@ -326,6 +333,10 @@ def make_execute_node(deps: CycleDeps) -> NodeFn:
     function, not in `run_act`'s body -- which is what lets this node get it
     without a copy. The guard's vetoes are appended to the state's `vetoed`.
 
+    `state["round_id"]` labels the similarity event and the post-vector
+    ingest; a thread checkpointed before S2 has none and sends `null`. A post
+    that landed without its vector filed sets `missing_post_vector`.
+
     An empty `actions` list returns an empty partial instead of running the
     steps. That mirrors `run_act`'s item 7 -- an empty plan is an early
     return, not a step -- and in the graph the equivalent is an edge that
@@ -354,6 +365,7 @@ def make_execute_node(deps: CycleDeps) -> NodeFn:
             embedder=deps.embedder,
             duplicate_window=deps.settings.post_duplicate_window,
             duplicate_threshold=deps.settings.post_duplicate_threshold,
+            round_id=state.get("round_id"),
         )
         outcome = finalize_step(
             resources=deps.resources,
@@ -365,7 +377,7 @@ def make_execute_node(deps: CycleDeps) -> NodeFn:
             dry_run=deps.dry_run,
             emptied=step.emptied,
         )
-        return {
+        update: CycleState = {
             "actions": step.actions,
             "results": step.results,
             "attempted": step.attempted,
@@ -373,6 +385,9 @@ def make_execute_node(deps: CycleDeps) -> NodeFn:
             "outcome": outcome,
             "vetoed": [*(state.get("vetoed") or []), *step.vetoed],
         }
+        if step.missing_post_vector:
+            update["missing_post_vector"] = True
+        return update
 
     return execute
 
@@ -517,7 +532,7 @@ def make_population_metric_node(deps: CycleDeps) -> NodeFn:
     **Why here, and what it costs.** The route is `POST
     /agents/population-metric`: GLOBAL, no username, no body, and the SERVER
     does all of the arithmetic from vectors it already stores
-    (`recordPopulationMetric` -> `computeCohesion`, `agents.population.ts`).
+    (`recordPopulationMetric` -> `computeCohesion`, `population/population.ts`).
     So this adds exactly one HTTP round-trip per cycle and NO second embedder
     call -- the embeddings it summarises were shipped earlier in this same
     round by `behavior_snapshot` and, on an accepted dream, `snapshot_step`.
@@ -692,7 +707,10 @@ def make_logout_node(deps: CycleDeps) -> NodeFn:
 
 
 def _emit_cycle_run_card(deps: CycleDeps, state: CycleState) -> None:
-    """One cycle_run card per finished cycle, including early logout."""
+    """One cycle_run card per finished cycle, including early logout.
+
+    `backend`/`model` come from `deps` -- what the LLM client was built from
+    -- not from the persona file."""
     persona = state["persona"]
     outcome = state.get("outcome")
     proceeded = state.get("proceeded", False)
@@ -714,7 +732,9 @@ def _emit_cycle_run_card(deps: CycleDeps, state: CycleState) -> None:
         dream_accepted=dream_accepted,
         missing_behavior_snapshot=state.get("missing_behavior_snapshot", False),
         duration_ms=duration_ms,
-        backend=persona.backend,
-        model=persona.model or "",
+        backend=deps.llm_backend,
+        model=deps.llm_model or "",
+        round_id=state.get("round_id"),
+        missing_post_vector=state.get("missing_post_vector", False),
     )
     _emit_lab(deps.resources, persona.username, event)

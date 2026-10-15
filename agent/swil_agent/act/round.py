@@ -46,6 +46,7 @@ from swil_agent.models import (
     RhythmDecision,
     VetoedAction,
 )
+from swil_agent.persona.format import card_text
 from swil_agent.persona.rhythm import decide_rhythm
 
 logger = logging.getLogger(__name__)
@@ -762,36 +763,52 @@ def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
 def measure_act_similarity(
     *,
     candidate_text: str,
+    # Shadows the imported `card_text()` helper inside this function; the
+    # caller passes its already-stripped result.
+    card_text: str,
     prior_texts: Sequence[str],
     embedder: Embedder,
 ) -> ActSimilarity:
-    """How close `candidate_text` sits to the closest of `prior_texts`.
+    """How close `candidate_text` sits to the closest of `prior_texts`, and to
+    the account's card.
 
-    One embed call, candidate first. Any embedder failure, short or
-    mismatched batch, or unusable vector yields `max_sim=None` with
+    One embed call: `[candidate, card, *prior]`, or `[candidate, card]` when
+    the corpus is below `MIN_COMPARISON_CORPUS` (S2 §4) -- the card is
+    measured on every candidate, a new account's included, and the candidate
+    vector is kept for the post-vector ingest. The card is never a prior: it
+    enters `card_sim`, never `max_sim`. An empty card is left out of the
+    batch and has no `card_sim`.
+
+    Any embedder failure, short or mismatched batch, or unusable vector
+    yields `max_sim`, `card_sim` and `vector` all `None` with
     `embedder_ok=False`. `ValueError` is caught too: `EmbedderClient.embed`
     raises it for a batch above `MAX_BATCH`.
     """
     corpus = list(prior_texts)
-    if len(corpus) < MIN_COMPARISON_CORPUS:
-        return ActSimilarity(max_sim=None, compared_against=len(corpus), embedder_ok=True)
-
-    batch = [candidate_text, *corpus]
+    compared = corpus if len(corpus) >= MIN_COMPARISON_CORPUS else []
+    card = [card_text] if card_text else []
+    batch = [candidate_text, *card, *compared]
+    failed = ActSimilarity(max_sim=None, compared_against=len(corpus), embedder_ok=False)
     try:
         vectors = embedder.embed(batch)
     except (EmbedderUnavailable, ValueError):
-        return ActSimilarity(max_sim=None, compared_against=len(corpus), embedder_ok=False)
+        return failed
 
     if len(vectors) != len(batch):
-        return ActSimilarity(max_sim=None, compared_against=len(corpus), embedder_ok=False)
-    candidate_vector, *prior_vectors = vectors
-    if not candidate_vector or any(len(v) != len(candidate_vector) for v in prior_vectors):
-        return ActSimilarity(max_sim=None, compared_against=len(corpus), embedder_ok=False)
+        return failed
+    candidate_vector, *rest = vectors
+    if not candidate_vector or any(len(v) != len(candidate_vector) for v in rest):
+        return failed
+    card_vectors, prior_vectors = rest[: len(card)], rest[len(card) :]
 
     return ActSimilarity(
-        max_sim=max(_cosine(candidate_vector, v) for v in prior_vectors),
+        max_sim=(
+            max(_cosine(candidate_vector, v) for v in prior_vectors) if prior_vectors else None
+        ),
         compared_against=len(corpus),
         embedder_ok=True,
+        card_sim=_cosine(candidate_vector, card_vectors[0]) if card_vectors else None,
+        vector=list(candidate_vector),
     )
 
 
@@ -801,18 +818,37 @@ _SIMILARITY_CORPUS_TOO_SMALL: Final = f"fewer than {MIN_COMPARISON_CORPUS} prior
 
 
 def _similarity_event(
-    sim: ActSimilarity, *, window: int, threshold: float, reason: str | None
+    sim: ActSimilarity,
+    *,
+    window: int,
+    threshold: float,
+    reason: str | None,
+    round_id: str | None,
 ) -> LabEvent:
     """The `/lab` row for one post candidate, dropped or not.
 
     `cycle`/`act` moves no `/lab` counter. `action` is unset: this row is a
     measurement, the executor files the real `post` event. The measured
-    summary is a contract with `server/src/modules/agents/agents.collapse.ts`,
+    summary is a contract with `server/src/modules/agents/persona/collapse.ts`,
     which selects on it, so a dropped candidate keeps it and says `dropped`
     in `metrics`. `metrics` stays flat (the ingest schema rejects nested
     values), and `maxSim` is `null`, never `0.0`, when it was not computed.
+
+    `cardSim` (S2 §4) is `null` when not computed. `roundId` is omitted when
+    the cycle has none (a resumed thread checkpointed before S2).
     """
     measured = sim.max_sim is not None
+    metrics: dict[str, Any] = {
+        "maxSim": sim.max_sim,
+        "comparedAgainst": sim.compared_against,
+        "embedderOk": sim.embedder_ok,
+        "window": window,
+        "threshold": threshold,
+        "dropped": sim.dropped,
+        "cardSim": sim.card_sim,
+    }
+    if round_id is not None:
+        metrics["roundId"] = round_id
     return LabEvent(
         type="cycle",
         phase="act",
@@ -821,14 +857,7 @@ def _similarity_event(
             "act self-similarity measured" if measured else "act self-similarity not computed"
         ),
         reason=reason,
-        metrics={
-            "maxSim": sim.max_sim,
-            "comparedAgainst": sim.compared_against,
-            "embedderOk": sim.embedder_ok,
-            "window": window,
-            "threshold": threshold,
-            "dropped": sim.dropped,
-        },
+        metrics=metrics,
     )
 
 
@@ -836,6 +865,10 @@ def _similarity_reason(sim: ActSimilarity) -> str | None:
     if sim.max_sim is not None:
         return None
     return _SIMILARITY_EMBEDDER_DOWN if not sim.embedder_ok else _SIMILARITY_CORPUS_TOO_SMALL
+
+
+def _warn_embedder_unreachable(username: str) -> None:
+    logger.warning("act-similarity: %s — embedder unreachable; skipping (fail-open)", username)
 
 
 def similarity_step(
@@ -846,15 +879,18 @@ def similarity_step(
     embedder: Embedder | None,
     window: int = DEFAULT_POST_DUPLICATE_WINDOW,
     threshold: float = DEFAULT_POST_DUPLICATE_THRESHOLD,
+    round_id: str | None = None,
 ) -> ActSimilarity | None:
     """Measure this round's candidate post against the account's OWN recent
-    posts, decide whether it is a near-duplicate, and record one lab event.
+    posts and its card, decide whether it is a near-duplicate, and record one
+    lab event.
 
     Returns `None` when there is nothing to measure (no embedder, no post).
     `dropped` is true only for a computed `max_sim >= threshold`; a failed
     fetch, a down embedder or too small a corpus fails open (`dropped`
-    false). Never raises: any unexpected error is logged and yields `None`,
-    which also fails open.
+    false). A failed fetch still embeds `[candidate, card]` (S2 §4), so the
+    card similarity and the post's vector survive it. Never raises: any
+    unexpected error is logged and yields `None`, which also fails open.
     """
     try:
         if embedder is None:
@@ -862,6 +898,7 @@ def similarity_step(
         candidate = candidate_post_text(actions)
         if candidate is None:
             return None
+        card = card_text(persona.card)
 
         try:
             items = resources.user_posts(persona.username, limit=window)
@@ -871,25 +908,31 @@ def similarity_step(
                 persona.username,
                 exc,
             )
-            sim = ActSimilarity(max_sim=None, compared_against=0, embedder_ok=True)
+            sim = measure_act_similarity(
+                candidate_text=candidate, card_text=card, prior_texts=[], embedder=embedder
+            )
+            if not sim.embedder_ok:
+                _warn_embedder_unreachable(persona.username)
             resources.lab_event(
                 persona.username,
                 _similarity_event(
-                    sim, window=window, threshold=threshold, reason=_SIMILARITY_FETCH_FAILED
+                    sim,
+                    window=window,
+                    threshold=threshold,
+                    reason=_SIMILARITY_FETCH_FAILED,
+                    round_id=round_id,
                 ),
             )
             return sim
 
         sim = measure_act_similarity(
             candidate_text=candidate,
+            card_text=card,
             prior_texts=prior_post_texts(items),
             embedder=embedder,
         )
         if not sim.embedder_ok:
-            logger.warning(
-                "act-similarity: %s — embedder unreachable; skipping (fail-open)",
-                persona.username,
-            )
+            _warn_embedder_unreachable(persona.username)
         if sim.max_sim is not None and sim.max_sim >= threshold:
             sim = sim.model_copy(update={"dropped": True})
             logger.warning(
@@ -901,7 +944,11 @@ def similarity_step(
         resources.lab_event(
             persona.username,
             _similarity_event(
-                sim, window=window, threshold=threshold, reason=_similarity_reason(sim)
+                sim,
+                window=window,
+                threshold=threshold,
+                reason=_similarity_reason(sim),
+                round_id=round_id,
             ),
         )
         return sim
@@ -944,6 +991,8 @@ class ExecuteStep(NamedTuple):
     `actions` is what actually executed (after the duplicate guard), `vetoed`
     what the guard dropped, and `emptied` whether the guard left nothing but
     a `nothing` -- `finalize_step` reports that round as `VETOED_EMPTY`.
+    `missing_post_vector` is true when a post landed but its vector was not
+    filed (no vector, or the ingest failed); the cycle_run card copies it.
     """
 
     results: list[ActionResult]
@@ -952,6 +1001,40 @@ class ExecuteStep(NamedTuple):
     actions: list[Action]
     vetoed: list[VetoedAction]
     emptied: bool = False
+    missing_post_vector: bool = False
+
+
+def _file_post_vector(
+    resources: Resources,
+    persona: Persona,
+    result: ActionResult,
+    sim: ActSimilarity | None,
+    *,
+    candidate: str | None,
+    round_id: str | None,
+) -> bool:
+    """File a landed post's vector (S2 §4). True when it was filed.
+
+    Only the vector the similarity step measured for THIS post's text is
+    filed -- there is no second embed, so no vector means no ingest.
+    `Resources.post_vector` never raises; a rejection is a False, which the
+    caller records as a missing vector rather than a failed round.
+    """
+    if (
+        sim is None
+        or sim.vector is None
+        or not result.resource_id
+        or candidate_post_text([result.action]) != candidate
+    ):
+        return False
+    return resources.post_vector(
+        persona.username,
+        post_id=result.resource_id,
+        round_id=round_id,
+        embedding=sim.vector,
+        card_sim=sim.card_sim,
+        max_sim=sim.max_sim,
+    )
 
 
 def execute_step(
@@ -966,6 +1049,7 @@ def execute_step(
     embedder: Embedder | None = None,
     duplicate_window: int = DEFAULT_POST_DUPLICATE_WINDOW,
     duplicate_threshold: float = DEFAULT_POST_DUPLICATE_THRESHOLD,
+    round_id: str | None = None,
 ) -> ExecuteStep:
     """Step 6 of the act path: duplicate guard, then execute every surviving
     action in order and append its `memory.md` line.
@@ -982,6 +1066,10 @@ def execute_step(
     The memory write is inside the loop, so action N's memory event is sent
     before action N+1's write. Board resolution happens once, only when there
     is something to execute.
+
+    A landed `post` then files its vector (`_file_post_vector`) under
+    `round_id` -- `None` for a thread checkpointed before S2, which the
+    server resolves. An echo or a comment never files one.
     """
     if dry_run:
         return ExecuteStep(results=[], attempted=0, landed=0, actions=list(actions), vetoed=[])
@@ -993,7 +1081,9 @@ def execute_step(
         embedder=embedder,
         window=duplicate_window,
         threshold=duplicate_threshold,
+        round_id=round_id,
     )
+    candidate = candidate_post_text(actions)
     to_run, vetoed = apply_duplicate_guard(actions, sim, threshold=duplicate_threshold)
     emptied = bool(vetoed) and all(action.kind == "nothing" for action in to_run)
 
@@ -1001,6 +1091,7 @@ def execute_step(
 
     results: list[ActionResult] = []
     landed = 0
+    missing_post_vector = False
     for action in to_run:
         result = execute_action(
             resources,
@@ -1021,6 +1112,11 @@ def execute_step(
             resources=resources,
             username=persona.username,
         )
+        if action.kind == "post" and result.landed:
+            filed = _file_post_vector(
+                resources, persona, result, sim, candidate=candidate, round_id=round_id
+            )
+            missing_post_vector = missing_post_vector or not filed
     return ExecuteStep(
         results=results,
         attempted=len(to_run),
@@ -1028,6 +1124,7 @@ def execute_step(
         actions=to_run,
         vetoed=vetoed,
         emptied=emptied,
+        missing_post_vector=missing_post_vector,
     )
 
 
@@ -1119,6 +1216,7 @@ def run_act(
     duplicate_window: int = DEFAULT_POST_DUPLICATE_WINDOW,
     duplicate_threshold: float = DEFAULT_POST_DUPLICATE_THRESHOLD,
     probe_board: str | None = None,
+    round_id: str | None = None,
 ) -> ActResult:
     """One act round: login -> sync -> context + rhythm -> plan -> guardrails
     -> duplicate guard + execute -> finalize.
@@ -1137,7 +1235,7 @@ def run_act(
 
     `agent_name` (lock path, executor, FAIL line) is the directory name, not
     the username. `health_check` and `access_key` come from the composition
-    root.
+    root. `round_id` labels the similarity event and the post-vector ingest.
     """
     if probe_board and not dry_run:
         raise ValueError("--probe-board requires --dry-run")
@@ -1205,6 +1303,7 @@ def run_act(
             embedder=embedder,
             duplicate_window=duplicate_window,
             duplicate_threshold=duplicate_threshold,
+            round_id=round_id,
         )
 
         outcome = finalize_step(

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { GraphEdge, GraphNode, InteractionGraphDTO } from '@/api/types';
-import s from '@/routes/lab.module.css';
+import type { GraphEdge, GraphNode, InteractionGraphDTO } from '@/features/lab/types';
+import s from '@/features/lab/lab.module.css';
 
 /**
  * Dependency-free force-directed interaction graph. We deliberately avoid a

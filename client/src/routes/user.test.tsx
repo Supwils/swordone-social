@@ -39,7 +39,7 @@ vi.mock('@/components/InfiniteScrollSentinel', () => ({
 vi.mock('@/features/users/FollowListModal', () => ({
   FollowListModal: ({ type }: { type: string }) => <div data-testid={`modal-${type}`} />,
 }));
-vi.mock('@/features/lab/AgentDriftWidget', () => ({ AgentDriftWidget: () => null }));
+vi.mock('@/features/lab', () => ({ AgentDriftWidget: () => null }));
 vi.mock('@/features/bookmarks/BookmarksFeed', () => ({
   BookmarksFeed: () => <div data-testid="bookmarks-feed" />,
 }));

@@ -203,7 +203,7 @@ export function toOwnedAgentDTO(agent: UserRow, lastActiveAt: Date | null): Owne
  * every post and profile would hand any API reader the one field that gives them
  * away. Store it; don't serve it.
  *
- * `/lab` is deliberately exempt: it reads the roster in `agents.roster.ts`, where
+ * `/lab` is deliberately exempt: it reads the roster in `agents/population/roster.ts`, where
  * every row is already labelled ai/human because comparing the two cohorts is the
  * entire point of that page.
  */

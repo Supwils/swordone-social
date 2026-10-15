@@ -166,6 +166,8 @@ def _deps(tmp_path: Path, **overrides: Any) -> CycleDeps:
         "agent_root": tmp_path,
         "health_check": lambda: True,
         "memory_text": "",
+        "llm_backend": "claude",
+        "llm_model": "opus",
         "rng": random.Random(0),
         "now": NOW,
         "captured_at": CAPTURED_AT,
@@ -1669,3 +1671,66 @@ def test_the_execute_nodes_lab_events_are_filed_under_the_username_too(
     )
 
     assert set(resources.event_usernames) == {USERNAME}
+
+
+# ── S2 §4: the execute node files post vectors under the cycle's round id ──
+
+
+class _PerTextEmbedder:
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0] for _ in texts]
+
+
+def test_the_execute_node_files_the_post_vector_under_the_states_round_id(
+    tmp_path: Path,
+) -> None:
+    resources = FakeResources()
+    node = make_execute_node(_deps(tmp_path, resources=resources, embedder=_PerTextEmbedder()))
+
+    update = node(
+        {
+            "persona": _persona(tmp_path),
+            "round_id": "20261014T091500Z-r",
+            "actions": [Action(kind="post", text="你好世界")],
+            "solo_nothing": False,
+        }
+    )
+
+    assert [(name, body["round_id"]) for name, body in resources.post_vectors] == [
+        (USERNAME, "20261014T091500Z-r")
+    ]
+    assert "missing_post_vector" not in update
+
+
+def test_the_execute_node_flags_a_landed_post_without_a_vector(tmp_path: Path) -> None:
+    resources = FakeResources()
+    node = make_execute_node(
+        _deps(tmp_path, resources=resources, embedder=FakeEmbedder(fail_always=True))
+    )
+
+    update = node(
+        {
+            "persona": _persona(tmp_path),
+            "actions": [Action(kind="post", text="你好世界")],
+            "solo_nothing": False,
+        }
+    )
+
+    assert update["landed"] == 1
+    assert update["missing_post_vector"] is True
+    assert resources.post_vectors == []
+
+
+def test_a_legacy_state_without_a_round_id_files_a_null_round(tmp_path: Path) -> None:
+    resources = FakeResources()
+    node = make_execute_node(_deps(tmp_path, resources=resources, embedder=_PerTextEmbedder()))
+
+    node(
+        {
+            "persona": _persona(tmp_path),
+            "actions": [Action(kind="post", text="你好世界")],
+            "solo_nothing": False,
+        }
+    )
+
+    assert resources.post_vectors[0][1]["round_id"] is None

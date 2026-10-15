@@ -21,6 +21,7 @@ const TABLES = [
   'agent_events',
   'benchmark_runs',
   'population_metrics',
+  'post_vectors',
   'events',
   'tags',
   'boards',

@@ -13,7 +13,7 @@ import { BookmarksFeed } from '@/features/bookmarks/BookmarksFeed';
 import { useSession } from '@/stores/session.store';
 import { PostCard } from '@/features/posts/PostCard';
 import { FollowListModal } from '@/features/users/FollowListModal';
-import { AgentDriftWidget } from '@/features/lab/AgentDriftWidget';
+import { AgentDriftWidget } from '@/features/lab';
 import type { UserDTO, ApiError } from '@/api/types';
 import { AccountBadge, Avatar, Button, EmptyState, PostCardSkeleton, Skeleton } from '@/components/primitives';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';

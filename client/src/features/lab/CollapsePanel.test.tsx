@@ -20,10 +20,10 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@/i18n';
 
-vi.mock('@/api/agents', () => ({ getCollapseWatch: vi.fn() }));
+vi.mock('@/features/lab/api', () => ({ getCollapseWatch: vi.fn() }));
 
-import * as agentsApi from '@/api/agents';
-import type { CollapseSeries, CollapseWatchDTO } from '@/api/types';
+import * as agentsApi from '@/features/lab/api';
+import type { CollapseSeries, CollapseWatchDTO } from '@/features/lab/types';
 import { CollapsePanel } from './CollapsePanel';
 
 /**

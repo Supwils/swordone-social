@@ -24,6 +24,7 @@ from swil_agent.graph.checkpoint import (
     REGISTERED_TYPES,
     latest_round_id,
     open_checkpointer,
+    thread_exists,
 )
 from swil_agent.graph.state import CycleState
 from swil_agent.models import (
@@ -308,3 +309,87 @@ def test_an_empty_database_has_no_round_to_resume(tmp_path: Path) -> None:
     would read as a bug."""
     saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
     assert latest_round_id(saver, "builtin", "zenith") is None
+
+
+def test_the_latest_round_is_the_newest_of_mixed_sweep_and_manual_ids(tmp_path: Path) -> None:
+    """S2 ids lead with the UTC stamp, so `-r` and `-m` interleave in time
+    order and the suffix never outranks the stamp."""
+    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    for round_id in ("20261014T091500Z-r", "20261016T080000Z-m", "20261015T120000Z-r"):
+        _checkpoint(saver, f"builtin:zenith:{round_id}")
+
+    assert latest_round_id(saver, "builtin", "zenith") == "20261016T080000Z-m"
+
+
+def test_an_era_2_round_key_ranks_below_any_new_round_id(tmp_path: Path) -> None:
+    """A dev checkpoint DB may still hold `%Y%m%dT%H%M%S` keys from before the
+    S2 format. They must not crash the lookup, and a new-format id wins even
+    against an old key with a later stamp."""
+    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    _checkpoint(saver, "builtin:zenith:20991231T235959")
+    _checkpoint(saver, "builtin:zenith:20261014T091500Z-m")
+
+    assert latest_round_id(saver, "builtin", "zenith") == "20261014T091500Z-m"
+
+
+def test_thread_exists_is_true_only_for_a_checkpointed_thread(tmp_path: Path) -> None:
+    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    _checkpoint(saver, "builtin:zenith:20261014T091500Z-r")
+
+    assert thread_exists(saver, "builtin:zenith:20261014T091500Z-r")
+    assert not thread_exists(saver, "builtin:zenith:20261014T091500Z-m")
+    assert not thread_exists(saver, "builtin:other:20261014T091500Z-r")
+
+
+def test_thread_exists_without_a_checkpointer_is_false() -> None:
+    """A dry run opens no checkpoint DB; "unavailable" reads as "no thread"."""
+    assert not thread_exists(None, "builtin:zenith:20261014T091500Z-r")
+
+
+def test_thread_exists_on_a_closed_database_is_false(tmp_path: Path) -> None:
+    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    _checkpoint(saver, "builtin:zenith:20261014T091500Z-r")
+    saver.conn.close()
+
+    assert not thread_exists(saver, "builtin:zenith:20261014T091500Z-r")
+
+
+@pytest.mark.filterwarnings("error::ResourceWarning")
+@pytest.mark.filterwarnings("error::pytest.PytestUnraisableExceptionWarning")
+def test_a_corrupt_database_closes_the_connection_it_opened(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`setup()` raises on a file that is not a database; the connection
+    opened for it must be closed rather than left for the GC to warn about."""
+    import gc
+    import sqlite3
+    import warnings
+
+    from swil_agent.graph import checkpoint as checkpoint_module
+
+    # Earlier tests' savers are not this test's subject: collect them first,
+    # quietly, so the final `gc.collect()` can only report THIS test's leak.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ResourceWarning)
+        gc.collect()
+
+    opened: list[sqlite3.Connection] = []
+    real_connect = sqlite3.connect
+
+    def _recording_connect(*args: object, **kwargs: object) -> sqlite3.Connection:
+        conn = real_connect(*args, **kwargs)  # type: ignore[arg-type]
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(checkpoint_module.sqlite3, "connect", _recording_connect)
+    db = tmp_path / "cycle_checkpoints.sqlite"
+    db.write_bytes(b"not a database" * 100)
+
+    with pytest.raises(sqlite3.DatabaseError):
+        open_checkpointer(db)
+
+    assert len(opened) == 1
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        opened[0].execute("SELECT 1")
+    opened.clear()
+    gc.collect()

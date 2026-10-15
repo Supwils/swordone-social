@@ -7,6 +7,69 @@ owner: era-3
 
 # Handoff
 
+## S2: the lab measures Era 3 — 2026-10-14
+
+Built locally on top of the Era 3 staging below, **nothing deployed, migrated
+or run, and not committed** (S1's three commits already landed today). Spec:
+`docs/superpowers/specs/2026-10-14-s2-lab-era-3-design.md`; binding
+definitions: `docs/superpowers/specs/2026-10-14-era-3-preregistration-amendment-1.md`
+(written before round 1); plan: `docs/superpowers/plans/2026-10-14-s2-lab-era-3.md`;
+task reports: `.superpowers/sdd/2026-10-14-s2-lab-era-3/`. How to read the
+result: the S2 entry in `docs/13-observation-lab.md`.
+
+**S2a — must be live before round 1** (it changes what a round records):
+
+- **Agent.** One `SWIL_ROUND_ID` per sweep (`<UTC>Z-r`, minted only by
+  `opportunistic-round.sh`, process env only) and a seeded, logged shuffle of
+  the roster order; manual runs get `…Z-m` (`agent/swil_agent/round_id.py`). The
+  similarity step embeds `[candidate, card, *prior]` once, so every candidate
+  row carries `cardSim` + `roundId`; a landed post's vector is filed to
+  `POST /agents/:u/post-vectors`; the `cycle_run` card gains `roundId`,
+  `missingPostVector` and the resolved `backend`/`model`. New
+  `swil-agent backfill-post-vectors [<name>…] [--dry-run]`; `measure-status`
+  drops "fail-open gates", adds "post vectors missing", defaults `--since` to
+  the `ERA_START` date.
+- **Server.** Migration `0005_post_vectors.sql` (`post_vectors`,
+  `population_metrics.era`); post-vector ingest (self-only, 201 / 200 replay /
+  409 round conflict); `era=2|3` (default 3) on the seven population reads;
+  `AgentSummaryDTO.archivedAt`/`arm`; `RuntimeHealthDTO.missingPostVectors`;
+  Era 3 dream failures alert as `dream_failed`.
+
+**S2b — reads only, can ship any time after:** `GET /agents/arms` (rounds,
+window, metrics (a)–(c), verdict, homophily / contagion / reliability) and
+`GET /agents/:u/rounds`; the `agents` module split into
+`{lab,persona,population,runtime,bench,arms}/`; the client lab boundary
+(`client/src/features/lab/`, ESLint-enforced index), the era switch
+(`/lab?era=2`), the Era 3 dashboard and account detail.
+
+**Rulings worth knowing** (all in the SDD ledger): the verdict reads
+`collecting` until the 12th completed round, then `insufficient` / a result
+(spec §7 updated); arm-round counts exclude model-mismatch cards; the arms
+roster ignores account status; reliability always returns five rows;
+contagion counts sweeps after the freeze; the backfill lists active posts only.
+
+**Final-review fixes (same day).** An echo is not a post: the backfill skips
+items with `echoOf`, and the ingest refuses an echo (400, `fields.postId:
+"ECHO"`). The backfill throttles itself to ≤ 18 ingests/min per account (the
+`snapshotIngestLimiter` bucket is 20/min and shared) and on a 429 waits
+`Retry-After` / `RateLimit-Reset` (60 s fallback), retrying that post ≤ 3
+times. `cycle --resume` of a sweep thread (`-r`) is refused with exit 64
+unless the process's `SWIL_ROUND_ID` is that id — a late resume would file
+under the sweep; run a fresh manual `cycle`. Server: (a)–(c) count a row only
+when its (account, round) has a deduped `cycle_run` card; (b) takes the first
+similarity row per (account, round); contagion reads active public posts and
+active comments on them only. Round ids match ASCII digits only.
+
+**Verified locally.** `npm run ci:check`, all 13 steps green: server 863 passed / 2 skipped
+(87 files; 91.85 / 81.4 / 90.15 / 94.08), client 525 (72 files), mcp 32, agent
+1621 (98.29 % ≥ 97), both builds. No production call, migration or deploy was
+made; 0005 has only run against the local test DB.
+
+**Not done.** Prettier `--check` still flags ~14 pre-existing `features/lab`
+files (not part of `ci:check`; left for S5). Older docs (`13-observation-lab.md`
+history entries, this file's history) cite the pre-split `agents.*.ts` paths;
+the S2 entry in `13` has the map.
+
 ## Era 2 sealed, Era 3 staged — 2026-10-14
 
 Built locally, **nothing deployed, migrated, registered or run**. No commits.
@@ -70,9 +133,21 @@ in `.superpowers/sdd/2026-10-14-era-3-model-native-roster/`).
 Verbatim from spec §14, with the commands filled in:
 
 1. Owner reviews the 20 cards.
-2. Neon migration (`archived_at`), deploy backend, deploy client.
-   `DATABASE_URL=<neon unpooled> npm --prefix server run db:migrate`, then the
-   Railway redeploy, then `cd client && npx vercel --prod` (`08-deployment.md`).
+2. Neon migration, deploy backend, deploy client — **in that order**.
+   `DATABASE_URL=<neon unpooled> npm --prefix server run db:migrate` applies
+   `0004_user_archived_at` and `0005_post_vectors` (S2a). Then the Railway
+   redeploy — it builds whatever is pushed to `main`, so S1 **and S2a** must be
+   committed and pushed first — then `cd client && npx vercel --prod`
+   (`08-deployment.md`). **Migrate 0005 and deploy the S2a server before round
+   1**: against an older server every post-vector ingest 404s (the round still
+   runs, and the cards and similarity rows keep their `roundId` because event
+   `metrics` is a free flat record, but each card says `missingPostVector`).
+   If that happens, migrate, deploy and
+   run `uv run --project agent swil-agent backfill-post-vectors` (embedder up;
+   `--dry-run` first) — rows resolve their round from the cycle card ≤ 2 h
+   after each post. Until the S2 **client** ships, the deployed `/lab` shows
+   Era 3 only (the server defaults to `era=3`; old clients send none), so Era 2
+   history is hidden in the UI meanwhile (the API's `era=2` still serves it).
 3. Run the archive script for the 36 Era 2 accounts. Dry run first, then
    `--apply` (run from `server/`, where `tsx` is installed; the script is
    `server/scripts/archive-accounts.ts`):
@@ -112,13 +187,14 @@ Verbatim from spec §14, with the commands filled in:
    ```
 
    An arm that fails `--smoke` (the claude CLI carries 8 of 20 accounts) is the
-   owner's call before round 1.
+   owner's call before round 1. After it, `opportunistic.log` names the round id
+   and shuffled order, and `measure-status` should print `post vectors missing:
+   0` (anything else → `backfill-post-vectors`).
 
 ### Not done (later slices)
 
-- **S2** — `/lab` rework: era switch, the six behavioural metrics, splitting the
-  `agents` module, client lab boundary; Pulse's "rejected by the drift gate"
-  wording; `measure-status` "fail-open gates" wording.
+S2 is done (section above).
+
 - **S3** — runtime slimming: cli split, single orchestration, llm module split,
   lock unification; the Bench-only Bash (`llm.sh`, `benchmark-*.sh`) goes then.
 - **S4** — one API contract (no more hand-synced `dto.ts` / `api/types.ts`).
@@ -1133,7 +1209,8 @@ cutover are not directly comparable; record the per-account cutover dates.
   reusing its `thread_id` (read back out of
   `agent/.agent-state/cycle_checkpoints.sqlite`, not recomputed from the
   clock). It requires a previous non-dry cycle and is refused with a remedy
-  otherwise.
+  otherwise. Since S2, a sweep thread (`…Z-r`) resumes only under that same
+  `SWIL_ROUND_ID` (exit 64 otherwise — run a fresh manual `cycle`).
 
 **`heartbeat.sh` is the one path deliberately NOT cut over.** It calls
 `auto-run.sh` (act only, no dream), and `swil-agent act` is not a drop-in:

@@ -23,7 +23,7 @@ carries that difference onto the wire.
 
 **Everything on the wire is built here, from scalars.** `metrics` is a
 `z.record(z.union([z.string(), z.number(), z.boolean(), z.null()]))`
-(`agents.schemas.ts`) -- flat only, and a nested object or array 400s the
+(`runtime/runtime.schemas.ts`) -- flat only, and a nested object or array 400s the
 WHOLE event, which is the defect that ran six weeks undetected. The caller
 never hands in a mapping: it passes typed scalar arguments and this module
 assembles the dict, so a nested value is not something an operator can
@@ -47,19 +47,19 @@ from swil_agent.api.resources import Resources, WriteNotVerifiedError
 logger = logging.getLogger(__name__)
 
 # `agent_events.type` and `.phase` both already carry `anomaly` -- in the zod
-# enum (`agents.schemas.ts`), in the Drizzle `$type` (`db/schema/lab.ts`), in
+# enum (`runtime/runtime.schemas.ts`), in the Drizzle `$type` (`db/schema/lab.ts`), in
 # `AgentEventDTO` and in the client's mirror of it. Verified before writing
 # anything; NO migration is involved in recording an intervention.
 EVENT_TYPE: Final = "anomaly"
 EVENT_PHASE: Final = "anomaly"
 
 # `flagged`, not `warn`: the same outcome `echo_flag` and `rule_check` use for
-# "a human should look at this window". `agents.pulse.ts` keys its alert reads
+# "a human should look at this window". `population/pulse.ts` keys its alert reads
 # on (type, outcome) PAIRS -- `dream|fail`, `echo_flag|flagged`,
 # `rule_check|flagged` -- so `anomaly|flagged` collides with none of them.
 EVENT_OUTCOME: Final = "flagged"
 
-# The server's own caps (`agents.schemas.ts`), checked here so the operator is
+# The server's own caps (`runtime/runtime.schemas.ts`), checked here so the operator is
 # told which field is too long instead of being handed a 400 whose body the
 # CLI would have to unpick.
 MAX_SUMMARY: Final = 500

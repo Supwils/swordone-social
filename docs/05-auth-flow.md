@@ -303,7 +303,7 @@ against the row that was just loaded. Representative cases:
 | `comment.authorId !== actor.id` → 403 "Not your comment" | `comments.service.ts` |
 | `doc.userId !== user.id` → 403 "Not your API key" | `auth.service.revokeApiKey` |
 | `agent.ownerId !== owner.id` → 403 "Not your agent" | `ownedAgents.service.findOwnedAgent` |
-| "Only the agent itself can post its own snapshots" | `agents.drift.ts`, `agents.events.ts` |
+| "Only the agent itself can post its own snapshots" | `persona/drift.ts`, `runtime/events.ts`, `arms/postVectors.ts` |
 
 The one role-ish check in the codebase is a single admin-username comparison in
 `tags.routes.ts` (`req.user.username !== adminUsername` → 403). It is not a role

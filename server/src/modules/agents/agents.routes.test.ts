@@ -6,7 +6,8 @@ import { createApp } from '../../app';
 import { db } from '../../db/client';
 import { resetDb } from '../../test/db-reset';
 import { agentEvents, apiKeys, users } from '../../db/schema';
-import { clearRuntimeHealthCache } from './agents.runtime';
+import { clearRuntimeHealthCache } from './runtime/runtime';
+import { clearAlertsCache } from './population/pulse';
 
 /**
  * The lab router is the one place in the API where reads are deliberately
@@ -20,7 +21,10 @@ import { clearRuntimeHealthCache } from './agents.runtime';
  * rather than trusted to review.
  */
 
-interface RouteLayer {
+interface StackLayer {
+  name: string;
+  handle: { stack?: StackLayer[] };
+  regexp: RegExp & { fast_slash?: boolean };
   route?: {
     path: string;
     methods: Record<string, boolean>;
@@ -28,17 +32,39 @@ interface RouteLayer {
   };
 }
 
-function routes(): Array<{ path: string; method: string; handlers: string[] }> {
-  const stack = (agentsRouter as unknown as { stack: RouteLayer[] }).stack;
-  return stack
-    .filter((layer): layer is Required<RouteLayer> => Boolean(layer.route))
-    .flatMap((layer) =>
-      Object.keys(layer.route.methods).map((method) => ({
-        path: layer.route.path,
+const rootStack = (agentsRouter as unknown as { stack: StackLayer[] }).stack;
+
+/** The sub-routers `agents.routes.ts` mounts (any non-route layer with its own stack). */
+function subRouters(): StackLayer[] {
+  return rootStack.filter((layer) => !layer.route && Array.isArray(layer.handle.stack));
+}
+
+/**
+ * Every route in registration order, recursing into nested routers. Sub-routers
+ * are mounted at the root (asserted below), so a route's own path is its full
+ * path under `/api/v1/agents`.
+ */
+function routes(
+  stack: StackLayer[] = rootStack,
+): Array<{ path: string; method: string; handlers: string[] }> {
+  return stack.flatMap((layer) => {
+    if (layer.route) {
+      const route = layer.route;
+      return Object.keys(route.methods).map((method) => ({
+        path: route.path,
         method,
-        handlers: layer.route.stack.map((h) => h.name),
-      })),
-    );
+        handlers: route.stack.map((h) => h.name),
+      }));
+    }
+    return layer.handle.stack ? routes(layer.handle.stack) : [];
+  });
+}
+
+/** True when an earlier route `a` would capture every request meant for `b`. */
+function shadows(a: string, b: string): boolean {
+  const as = a.split('/');
+  const bs = b.split('/');
+  return as.length === bs.length && as.every((seg, i) => seg === bs[i] || seg.startsWith(':'));
 }
 
 describe('agentsRouter auth boundary', () => {
@@ -70,12 +96,51 @@ describe('agentsRouter auth boundary', () => {
     expect(methods.has('get')).toBe(true);
     expect(methods.has('post')).toBe(true);
   });
+
+  it('recurses into the mounted sub-routers', () => {
+    // Guards the recursion itself: the root holds no routes of its own.
+    expect(subRouters().length).toBeGreaterThanOrEqual(5);
+    expect(rootStack.filter((layer) => layer.route)).toEqual([]);
+  });
+
+  it('mounts every sub-router at the root, so a route path is its full path', () => {
+    const mountedElsewhere = subRouters().filter((layer) => !layer.regexp.fast_slash);
+    expect(mountedElsewhere).toEqual([]);
+  });
+
+  it('gives sub-routers no router-level middleware (per-route only)', () => {
+    const routerLevel = subRouters().flatMap((sub) =>
+      (sub.handle.stack ?? []).filter((layer) => !layer.route).map((layer) => layer.name),
+    );
+    expect(routerLevel).toEqual([]);
+  });
+
+  it('registers each (method, full path) pair exactly once', () => {
+    const seen = new Map<string, number>();
+    for (const r of routes()) {
+      const key = `${r.method.toUpperCase()} ${r.path}`;
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+    }
+    const duplicated = [...seen].filter(([, n]) => n > 1).map(([key]) => key);
+    expect(duplicated).toEqual([]);
+  });
+
+  it('never registers a route after an earlier one of the same method that captures it', () => {
+    const listed = routes();
+    const shadowed = listed.flatMap((r, i) =>
+      listed
+        .slice(0, i)
+        .filter((earlier) => earlier.method === r.method && shadows(earlier.path, r.path))
+        .map((earlier) => `${r.method.toUpperCase()} ${r.path} <- ${earlier.path}`),
+    );
+    expect(shadowed).toEqual([]);
+  });
 });
 
 /**
  * `occurredAt` over the real HTTP stack.
  *
- * The service-level tests in `agents.service.test.ts` hand `ingestAgentEvent` a
+ * The service-level tests in `runtime/events.test.ts` hand `ingestAgentEvent` a
  * `Date` directly, which cannot answer the two questions that decide whether a
  * backfill lands where it belongs:
  *
@@ -379,6 +444,161 @@ describe('GET /agents/runtime — cycle_run aggregate (spec §5)', () => {
     // One card, both flags true → still one missing sample, not two.
     expect(res.body.data.missingSamples).toBe(1);
     expect(res.body.data.landedActions).toBe(5);
+  });
+});
+
+describe('era scoping over HTTP (S2 §6)', () => {
+  async function seedUser(username: string, over: Partial<typeof users.$inferInsert> = {}) {
+    const [user] = await db
+      .insert(users)
+      .values({
+        username,
+        usernameDisplay: username,
+        email: `${username}@example.test`,
+        displayName: username,
+        ...over,
+      })
+      .returning();
+    return user;
+  }
+
+  async function seedCard(userId: string, metrics: Record<string, unknown>) {
+    await db.insert(agentEvents).values({
+      userId,
+      type: 'cycle',
+      phase: 'act',
+      outcome: 'success',
+      summary: 'cycle_run fixture',
+      metrics: { kind: 'cycle_run', ...metrics },
+    });
+  }
+
+  beforeEach(async () => {
+    await resetDb();
+    clearRuntimeHealthCache();
+    clearAlertsCache();
+  });
+
+  it('per-account reads take no era: /:u/stats?era=x is not rejected for it', async () => {
+    await seedUser('agen', { isAgent: true });
+
+    const res = await request(createApp()).get('/api/v1/agents/agen/stats?range=7d&era=x');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ username: 'agen', range: '7d' });
+  });
+
+  it('runtime skips a suspended Era 3 agent’s cards', async () => {
+    const live = await seedUser('agen', { isAgent: true });
+    const suspended = await seedUser('awen', { isAgent: true, status: 'suspended' });
+    await seedCard(live.id, { landed: 1 });
+    await seedCard(suspended.id, { landed: 4, missingPostVector: true });
+
+    const res = await request(createApp()).get('/api/v1/agents/runtime?range=30d');
+
+    expect(res.body.data).toMatchObject({
+      rounds: 1,
+      accountsRun: 1,
+      landedActions: 1,
+      missingPostVectors: 0,
+    });
+  });
+
+  it.each([
+    '/api/v1/agents?era=x',
+    '/api/v1/agents/overview?era=x',
+    '/api/v1/agents/graph?era=4',
+    '/api/v1/agents/homogenization?era=1',
+    '/api/v1/agents/pulse?era=three',
+    '/api/v1/agents/runtime?era=',
+    '/api/v1/agents/alerts?era=x',
+  ])('rejects a bad era value: %s', async (path) => {
+    const res = await request(createApp()).get(path);
+    expect(res.status).toBe(400);
+  });
+
+  it('GET /agents defaults to Era 3 and era=2 returns archived accounts only', async () => {
+    const owner = await seedUser('owner1');
+    await seedUser('agen', { isAgent: true });
+    await seedUser('byoabot', { isAgent: true, ownerId: owner.id });
+    await seedUser('simhum', { isAgent: false, archivedAt: null, agentBackend: 'haiku' });
+    await seedUser('liushang', { isAgent: true, archivedAt: new Date() });
+
+    const def = await request(createApp()).get('/api/v1/agents');
+    const era2 = await request(createApp()).get('/api/v1/agents?era=2');
+
+    expect(def.status).toBe(200);
+    expect(def.body.data.items.map((i: { username: string }) => i.username)).toEqual(['agen']);
+    expect(def.body.data.items[0]).toMatchObject({ arm: 'claude-opus', archivedAt: null });
+    expect(era2.body.data.items.map((i: { username: string }) => i.username)).toEqual(['liushang']);
+  });
+
+  it('runtime counts only the era’s cards and sums missingPostVector', async () => {
+    const live = await seedUser('agen', { isAgent: true });
+    const live2 = await seedUser('awen', { isAgent: true });
+    const sealed = await seedUser('liushang', { isAgent: true, archivedAt: new Date() });
+    const owner = await seedUser('owner1');
+    const byoa = await seedUser('byoabot', { isAgent: true, ownerId: owner.id });
+    await seedCard(live.id, { landed: 1, missingPostVector: true, roundId: '20261014T010203Z-r' });
+    await seedCard(live2.id, { landed: 2, missingPostVector: false });
+    // A string 'true' is not a boolean flag: it must not count.
+    await seedCard(live2.id, { landed: 0, missingPostVector: 'true' });
+    await seedCard(sealed.id, { landed: 5, gateStatus: 'fail_open' });
+    await seedCard(byoa.id, { landed: 7, missingPostVector: true });
+
+    const era3 = await request(createApp()).get('/api/v1/agents/runtime?range=7d');
+    // Same range, other era: a cache keyed on range alone would replay era3.
+    const era2 = await request(createApp()).get('/api/v1/agents/runtime?range=7d&era=2');
+
+    expect(era3.status).toBe(200);
+    expect(era3.body.data).toMatchObject({
+      rounds: 3,
+      accountsRun: 2,
+      landedActions: 3,
+      failOpenGates: 0,
+      missingPostVectors: 1,
+    });
+    const today = new Date().toISOString().slice(0, 10);
+    const point = era3.body.data.points.find((p: { date: string }) => p.date === today);
+    expect(point).toMatchObject({ rounds: 3, missingPostVectors: 1 });
+    expect(
+      era3.body.data.points
+        .filter((p: { date: string }) => p.date !== today)
+        .every((p: { missingPostVectors: number }) => p.missingPostVectors === 0),
+    ).toBe(true);
+
+    expect(era2.body.data).toMatchObject({
+      rounds: 1,
+      accountsRun: 1,
+      landedActions: 5,
+      failOpenGates: 1,
+      missingPostVectors: 0,
+    });
+  });
+
+  it('alerts for the same range differ by era', async () => {
+    const live = await seedUser('agen', { isAgent: true });
+    const sealed = await seedUser('liushang', { isAgent: true, archivedAt: new Date() });
+    for (const userId of [live.id, live.id, sealed.id, sealed.id]) {
+      await db.insert(agentEvents).values({
+        userId,
+        type: 'dream',
+        phase: 'dream',
+        outcome: 'fail',
+        summary: 'dream fail',
+        metrics: {},
+      });
+    }
+
+    const era3 = await request(createApp()).get('/api/v1/agents/alerts?range=7d');
+    const era2 = await request(createApp()).get('/api/v1/agents/alerts?range=7d&era=2');
+
+    expect(era3.body.data.alerts).toEqual([
+      expect.objectContaining({ username: 'agen', kind: 'dream_failed' }),
+    ]);
+    expect(era2.body.data.alerts).toEqual([
+      expect.objectContaining({ username: 'liushang', kind: 'dream_rejected' }),
+    ]);
   });
 });
 

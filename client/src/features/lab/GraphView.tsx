@@ -1,23 +1,24 @@
 /**
- * `GraphView` — extracted verbatim from routes/lab.tsx, which had reached 1406
- * lines across 12 components. Its siblings already lived here; the route file
- * is now just the composition root. No logic was changed in the move.
+ * `GraphView` — extracted verbatim from the former `routes/lab.tsx`, which had
+ * reached 1406 lines across 12 components. No logic was changed in the move.
+ * The lab's composition root is now `features/lab/LabPage.tsx`.
  */
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Skeleton } from '@/components/primitives';
-import { getAlerts, getInteractionGraph } from '@/api/agents';
+import { getAlerts, getInteractionGraph } from '@/features/lab/api';
 import { InteractionGraph } from '@/features/lab/InteractionGraph';
-import s from '@/routes/lab.module.css';
+import type { LabEra } from '@/features/lab/types';
+import s from '@/features/lab/lab.module.css';
 
-export function GraphView({ onSelect }: { onSelect: (u: string) => void }) {
+export function GraphView({ era, onSelect }: { era: LabEra; onSelect: (u: string) => void }) {
   const { t } = useTranslation();
   const [range, setRange] = useState<'7d' | '30d' | '90d'>('30d');
   const [crossOnly, setCrossOnly] = useState(false);
   const graphQ = useQuery({
-    queryKey: ['lab-graph', range],
-    queryFn: () => getInteractionGraph(range),
+    queryKey: ['lab-graph', era, range],
+    queryFn: () => getInteractionGraph(era, range),
     staleTime: 60_000,
   });
 
@@ -56,11 +57,11 @@ export function GraphView({ onSelect }: { onSelect: (u: string) => void }) {
   );
 }
 
-export function AlertsStrip({ onSelect }: { onSelect: (u: string) => void }) {
+export function AlertsStrip({ era, onSelect }: { era: LabEra; onSelect: (u: string) => void }) {
   const { t } = useTranslation();
   const q = useQuery({
-    queryKey: ['lab-alerts', '7d'],
-    queryFn: () => getAlerts('7d'),
+    queryKey: ['lab-alerts', era, '7d'],
+    queryFn: () => getAlerts(era, '7d'),
     staleTime: 60_000,
   });
   const alerts = q.data?.alerts ?? [];

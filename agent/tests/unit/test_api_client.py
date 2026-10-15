@@ -547,3 +547,19 @@ def test_resolve_auth_raises_when_no_key_file_and_no_password(tmp_path: Path) ->
     SWIL_PASS fallback."""
     with pytest.raises(ValueError, match=r"no api_key\.txt"):
         resolve_auth(tmp_path, username="zenith", password=None)
+
+
+def test_error_keeps_the_response_headers_lowercased() -> None:
+    """The backfill reads `Retry-After` off a 429, so the error carries them."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={"Retry-After": "12"}, json={})
+
+    with pytest.raises(ApiError) as excinfo:
+        _client(handler).post("/x", json={})
+    assert excinfo.value.status == 429
+    assert excinfo.value.headers["retry-after"] == "12"
+
+
+def test_an_error_built_without_headers_has_an_empty_mapping() -> None:
+    assert ApiError(500, "boom", None).headers == {}

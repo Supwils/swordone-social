@@ -88,6 +88,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from pydantic import BaseModel
 
 from swil_agent.graph.state import SEPARATOR, CycleState
+from swil_agent.round_id import round_sort_key
 
 CHECKPOINT_DB_NAME: Final = "cycle_checkpoints.sqlite"
 _THREAD_ID_PARTS: Final = 3
@@ -193,10 +194,13 @@ def latest_round_id(saver: BaseCheckpointSaver[Any], tenant: str, agent: str) ->
     whether there is anything to resume.
 
     Ordering is by `round_id` STRING comparison, and that is sound rather than
-    lucky: `graph/cycle.py` formats it `%Y%m%dT%H%M%S`, a fixed-width
-    zero-padded stamp whose lexicographic order IS its chronological order.
-    Taking `max()` therefore does not depend on the saver's own `list()`
-    ordering, which is not part of its documented interface.
+    lucky: an S2 round id LEADS with a fixed-width zero-padded UTC stamp
+    (`round_id.py`), so its lexicographic order IS its chronological order
+    and the `-r`/`-m` suffix only breaks a same-second tie. Era 2's
+    suffixless keys may still sit in a dev database; `round_sort_key` ranks
+    them below every S2 id instead of interleaving them. Taking `max()`
+    therefore does not depend on the saver's own `list()` ordering, which is
+    not part of its documented interface.
 
     A malformed thread id (one that does not split into exactly three
     components) is skipped rather than raising: `thread_id()` refuses to BUILD
@@ -221,7 +225,22 @@ def latest_round_id(saver: BaseCheckpointSaver[Any], tenant: str, agent: str) ->
             continue
         if parts[0] == tenant and parts[1] == agent:
             rounds.append(parts[2])
-    return max(rounds) if rounds else None
+    return max(rounds, key=round_sort_key) if rounds else None
+
+
+def thread_exists(saver: BaseCheckpointSaver[Any] | None, thread: str) -> bool:
+    """Whether `thread` already has a checkpoint -- the guard that keeps a
+    stale `SWIL_ROUND_ID` from re-entering a finished thread.
+
+    No checkpointer (a dry run) or a database that cannot be read answers
+    `False`: a round never dies on its label, it only loses the guard.
+    """
+    if saver is None:
+        return False
+    try:
+        return saver.get_tuple({"configurable": {"thread_id": thread}}) is not None
+    except sqlite3.Error:
+        return False
 
 
 def open_checkpointer(db_path: Path) -> SqliteSaver:
@@ -252,5 +271,11 @@ def open_checkpointer(db_path: Path) -> SqliteSaver:
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
     serde = JsonPlusSerializer(allowed_msgpack_modules=list(REGISTERED_TYPES))
     saver = SqliteSaver(conn, serde=serde)
-    saver.setup()
+    try:
+        saver.setup()
+    except BaseException:
+        # No saver is returned, so no caller can close this connection: a
+        # file that is not a database would otherwise leak it to the GC.
+        conn.close()
+        raise
     return saver
