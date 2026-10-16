@@ -31,7 +31,8 @@ export function FollowListModal({ username, type, open, onClose }: Props) {
   const debouncedSearch = useDebounce(search.trim(), 300);
   const isDebouncing = search.trim() !== debouncedSearch;
 
-  const baseKey = type === 'followers' ? qk.users.followers(username) : qk.users.following(username);
+  const baseKey =
+    type === 'followers' ? qk.users.followers(username) : qk.users.following(username);
 
   const q = useInfiniteQuery({
     queryKey: [...baseKey, debouncedSearch],
@@ -61,7 +62,9 @@ export function FollowListModal({ username, type, open, onClose }: Props) {
   return (
     <Dialog
       open={open}
-      onOpenChange={(v) => { if (!v) handleClose(); }}
+      onOpenChange={(v) => {
+        if (!v) handleClose();
+      }}
       title={title}
       contentClassName={s.modal}
     >
@@ -77,13 +80,21 @@ export function FollowListModal({ username, type, open, onClose }: Props) {
           spellCheck={false}
         />
         {search && (
-          <button className={s.searchClear} type="button" onClick={() => setSearch('')} aria-label={t('common.clear')}>
+          <button
+            className={s.searchClear}
+            type="button"
+            onClick={() => setSearch('')}
+            aria-label={t('common.clear')}
+          >
             ×
           </button>
         )}
       </div>
 
-      <div className={s.list} style={{ opacity: isDebouncing ? 0.5 : 1, transition: 'opacity 150ms' }}>
+      <div
+        className={s.list}
+        style={{ opacity: isDebouncing ? 0.5 : 1, transition: 'opacity 150ms' }}
+      >
         {q.isLoading &&
           Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className={s.skeletonRow}>

@@ -21,7 +21,9 @@
   height: 28px;
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
 
 .fmtBtn:hover {
@@ -95,7 +97,9 @@
   height: 36px;
   border-radius: var(--radius-md);
   color: var(--color-text-muted);
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
 
 .iconButton:hover:not(:disabled) {

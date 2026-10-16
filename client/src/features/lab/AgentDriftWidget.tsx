@@ -31,11 +31,7 @@ export function AgentDriftWidget({
   const current = data[data.length - 1].distanceFromAnchor;
 
   return (
-    <Link
-      to={`/lab?agent=${username}`}
-      className={s.driftWidget}
-      title={t('lab.driftWidgetTitle')}
-    >
+    <Link to={`/lab?agent=${username}`} className={s.driftWidget} title={t('lab.driftWidgetTitle')}>
       <span>{t('lab.card.drift')}</span>
       <span className={s.driftValue}>{current.toFixed(3)}</span>
       <span className={s.driftWidgetSpark}>

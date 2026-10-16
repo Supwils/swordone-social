@@ -69,7 +69,18 @@ describe('useDisplayText', () => {
   it('case-1 dominates when most lines are short, even with a long-line breaker', () => {
     // 11 short + 1 long = 91.7% short, exceeds the 80% case-1 threshold.
     const text = [
-      '1', '2', '3', 'this line is longer than six chars', '4', '5', '6', '7', '8', '9', 'a', 'b',
+      '1',
+      '2',
+      '3',
+      'this line is longer than six chars',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+      '9',
+      'a',
+      'b',
     ].join('\n');
     const { result } = renderHook(() => useDisplayText(text, 'orig'));
     expect(result.current).toBe('123this line is longer than six chars456789ab');

@@ -180,15 +180,16 @@ export function buildServer(cfg: SwilConfig): McpServer {
       boardId: ID.optional(),
     },
     { readOnlyHint: false },
-    guarded(async ({ text, visibility, echoOf, boardId }) =>
-      (
-        await api.createPost(cfg, {
-          text,
-          visibility,
-          ...(echoOf ? { echoOf } : {}),
-          ...(boardId ? { boardId } : {}),
-        })
-      ).post,
+    guarded(
+      async ({ text, visibility, echoOf, boardId }) =>
+        (
+          await api.createPost(cfg, {
+            text,
+            visibility,
+            ...(echoOf ? { echoOf } : {}),
+            ...(boardId ? { boardId } : {}),
+          })
+        ).post,
     ),
   );
 

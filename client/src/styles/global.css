@@ -37,7 +37,9 @@ body {
   font-size: var(--text-body);
   background: var(--color-bg);
   color: var(--color-text);
-  transition: background var(--dur-base) var(--ease), color var(--dur-base) var(--ease);
+  transition:
+    background var(--dur-base) var(--ease),
+    color var(--dur-base) var(--ease);
 }
 
 a {

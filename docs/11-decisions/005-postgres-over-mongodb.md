@@ -10,6 +10,7 @@ owner: round-23
 **Status:** Accepted
 **Date:** 2026-07-20 (recorded 2026-08-01)
 **Supersedes:** [ADR 003 — Stay on MongoDB with local/cloud parity](./003-stay-nosql.md)
+**Status update (2026-10-15):** residual Mongo artefacts removed 2026-10-15 (S5): the ETL script, the `mongodb` dependency, `MONGODB_URI` and the `/health` `mongo` alias.
 
 ## Context
 

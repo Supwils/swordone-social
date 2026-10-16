@@ -16,16 +16,12 @@ export async function create(
   postId: string,
   input: { text: string; parentId?: string | null },
 ): Promise<CommentDTO> {
-  const out = await unwrap<{ comment: CommentDTO }>(
-    http.post(`/posts/${postId}/comments`, input),
-  );
+  const out = await unwrap<{ comment: CommentDTO }>(http.post(`/posts/${postId}/comments`, input));
   return out.comment;
 }
 
 export async function update(id: string, text: string): Promise<CommentDTO> {
-  const out = await unwrap<{ comment: CommentDTO }>(
-    http.patch(`/comments/${id}`, { text }),
-  );
+  const out = await unwrap<{ comment: CommentDTO }>(http.patch(`/comments/${id}`, { text }));
   return out.comment;
 }
 

@@ -1,9 +1,10 @@
 """One persona x model bench run, and the sweep over many.
 
-`run_pair` is `benchmark-run.sh`; `run_sweep` is `benchmark-all.sh`. For every
+`run_pair` runs one persona x model pair; `run_sweep` runs the grid of them
+(ported from the deleted `benchmark-run.sh` / `benchmark-all.sh`). For every
 task of the battery, `k` times: call the model under test with the persona as
 the system prompt and the task as the user prompt, clean the answer, score it,
-archive it, POST it. Field for field with the Bash, so the rows stay one
+archive it, POST it. Field for field with the Bash it replaced, so the rows stay one
 series (S3 §8, §12.18-§12.25):
 
   * an empty answer -- including a model that said nothing

@@ -152,5 +152,3 @@ export const TAG_CATEGORIES: TagCategory[] = Object.entries(RAW).map(([key, val]
 export const ALL_PRESET_TAGS: (TagPreset & { category: string })[] = TAG_CATEGORIES.flatMap((cat) =>
   cat.tags.map((t) => ({ ...t, category: cat.key })),
 );
-
-export const PRESET_SLUG_SET = new Set(ALL_PRESET_TAGS.map((t) => t.slug));

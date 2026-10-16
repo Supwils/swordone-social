@@ -81,7 +81,9 @@ describe('realtime socket server', () => {
   beforeAll(async () => {
     httpServer = createServer();
     ioServer = initRealtime(httpServer, fakeSession);
-    await new Promise<void>((resolve) => httpServer.listen(0, resolve));
+    // Bind the address we dial: a wildcard bind can take a port another
+    // process holds on 127.0.0.1 (macOS), see test/loopback.ts.
+    await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
   });
 
@@ -189,9 +191,7 @@ describe('realtime socket server', () => {
 
     socket.emit('conversation:leave', { conversationId: convo.id });
 
-    await expect
-      .poll(() => inRoom(socket.id as string, conversationRoom(convo.id)))
-      .toBe(false);
+    await expect.poll(() => inRoom(socket.id as string, conversationRoom(convo.id))).toBe(false);
   });
 
   it('drops typing from a socket that never joined the room', async () => {

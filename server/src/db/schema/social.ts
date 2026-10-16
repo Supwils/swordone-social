@@ -8,6 +8,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  foreignKey,
 } from 'drizzle-orm/pg-core';
 import { newId } from '../../lib/id';
 import type { Visibility } from '../../contract/common';
@@ -71,6 +72,7 @@ export const users = pgTable(
     uniqueIndex('users_email_uq').on(t.email),
     index('users_status_lastseen_idx').on(t.status, t.lastSeenAt),
     index('users_owner_idx').on(t.ownerId),
+    foreignKey({ name: 'users_owner_id_fkey', columns: [t.ownerId], foreignColumns: [t.id] }),
   ],
 );
 
@@ -87,6 +89,7 @@ export const apiKeys = pgTable(
   (t) => [
     uniqueIndex('api_keys_keyhash_uq').on(t.keyHash),
     index('api_keys_user_idx').on(t.userId),
+    foreignKey({ name: 'api_keys_user_id_fkey', columns: [t.userId], foreignColumns: [users.id] }),
   ],
 );
 
@@ -124,6 +127,9 @@ export const posts = pgTable(
     index('posts_tagids_gin').using('gin', t.tagIds),
     index('posts_mentionids_gin').using('gin', t.mentionIds),
     index('posts_board_created_idx').on(t.boardId, t.createdAt),
+    foreignKey({ name: 'posts_author_id_fkey', columns: [t.authorId], foreignColumns: [users.id] }),
+    foreignKey({ name: 'posts_board_id_fkey', columns: [t.boardId], foreignColumns: [boards.id] }),
+    foreignKey({ name: 'posts_echo_of_fkey', columns: [t.echoOf], foreignColumns: [t.id] }),
   ],
 );
 
@@ -149,6 +155,13 @@ export const comments = pgTable(
     index('comments_post_status_created_idx').on(t.postId, t.status, t.createdAt),
     index('comments_author_created_idx').on(t.authorId, t.createdAt),
     index('comments_parent_idx').on(t.parentId),
+    foreignKey({ name: 'comments_post_id_fkey', columns: [t.postId], foreignColumns: [posts.id] }),
+    foreignKey({
+      name: 'comments_author_id_fkey',
+      columns: [t.authorId],
+      foreignColumns: [users.id],
+    }),
+    foreignKey({ name: 'comments_parent_id_fkey', columns: [t.parentId], foreignColumns: [t.id] }),
   ],
 );
 
@@ -165,6 +178,7 @@ export const likes = pgTable(
     uniqueIndex('likes_user_target_uq').on(t.userId, t.targetType, t.targetId),
     index('likes_user_type_created_idx').on(t.userId, t.targetType, t.createdAt),
     index('likes_target_created_idx').on(t.targetType, t.targetId, t.createdAt),
+    foreignKey({ name: 'likes_user_id_fkey', columns: [t.userId], foreignColumns: [users.id] }),
   ],
 );
 
@@ -180,6 +194,16 @@ export const follows = pgTable(
     uniqueIndex('follows_pair_uq').on(t.followerId, t.followingId),
     index('follows_following_created_idx').on(t.followingId, t.createdAt),
     index('follows_follower_created_idx').on(t.followerId, t.createdAt),
+    foreignKey({
+      name: 'follows_follower_id_fkey',
+      columns: [t.followerId],
+      foreignColumns: [users.id],
+    }),
+    foreignKey({
+      name: 'follows_following_id_fkey',
+      columns: [t.followingId],
+      foreignColumns: [users.id],
+    }),
   ],
 );
 
@@ -194,6 +218,8 @@ export const bookmarks = pgTable(
   (t) => [
     uniqueIndex('bookmarks_user_post_uq').on(t.userId, t.postId),
     index('bookmarks_user_created_idx').on(t.userId, t.createdAt),
+    foreignKey({ name: 'bookmarks_user_id_fkey', columns: [t.userId], foreignColumns: [users.id] }),
+    foreignKey({ name: 'bookmarks_post_id_fkey', columns: [t.postId], foreignColumns: [posts.id] }),
   ],
 );
 

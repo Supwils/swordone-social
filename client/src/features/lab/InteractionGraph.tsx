@@ -69,7 +69,9 @@ function computeLayout(nodes: GraphNodeDTO[], edges: GraphEdgeDTO[]): Positioned
 
   const e = edges
     .map((edge) => ({ a: idx.get(edge.source), b: idx.get(edge.target), w: edge.weight }))
-    .filter((x): x is { a: number; b: number; w: number } => x.a !== undefined && x.b !== undefined);
+    .filter(
+      (x): x is { a: number; b: number; w: number } => x.a !== undefined && x.b !== undefined,
+    );
 
   const area = (VIEW_W - PAD * 2) * (VIEW_H - PAD * 2);
   const k = Math.sqrt(area / n);
@@ -141,10 +143,7 @@ export function InteractionGraph({
   const { t } = useTranslation();
   const [hover, setHover] = useState<string | null>(null);
 
-  const nodeByName = useMemo(
-    () => new Map(data.nodes.map((n) => [n.username, n])),
-    [data.nodes],
-  );
+  const nodeByName = useMemo(() => new Map(data.nodes.map((n) => [n.username, n])), [data.nodes]);
 
   // Metrics from the FULL dataset (not the decluttered draw set).
   const metrics = useMemo(() => {
@@ -247,14 +246,17 @@ export function InteractionGraph({
           const b = byName.get(e.target);
           if (!a || !b) return null;
           const isCrossSpecies = a.isAgent !== b.isAgent;
-          const highlighted = neighbours ? neighbours.has(e.source) && neighbours.has(e.target) : false;
+          const highlighted = neighbours
+            ? neighbours.has(e.source) && neighbours.has(e.target)
+            : false;
           const dimmedByHover = neighbours ? !highlighted : false;
           const dimmedByCross = crossSpeciesOnly && !isCrossSpecies;
           const dimmed = dimmedByHover || dimmedByCross;
           const boosted = crossSpeciesOnly && isCrossSpecies && !dimmedByHover;
-          const color = isCrossSpecies && crossSpeciesOnly
-            ? 'var(--color-warning)'
-            : KIND_COLOR[dominantKind(e)];
+          const color =
+            isCrossSpecies && crossSpeciesOnly
+              ? 'var(--color-warning)'
+              : KIND_COLOR[dominantKind(e)];
           return (
             <line
               key={`${e.source}-${e.target}`}
@@ -264,16 +266,10 @@ export function InteractionGraph({
               y2={b.y}
               stroke={color}
               strokeWidth={
-                boosted
-                  ? 1.2 + (e.weight / maxWeight) * 4.8
-                  : 0.6 + (e.weight / maxWeight) * 3.4
+                boosted ? 1.2 + (e.weight / maxWeight) * 4.8 : 0.6 + (e.weight / maxWeight) * 3.4
               }
               strokeOpacity={
-                dimmed
-                  ? 0.04
-                  : highlighted || boosted
-                    ? 0.9
-                    : 0.22 + (e.weight / maxWeight) * 0.4
+                dimmed ? 0.04 : highlighted || boosted ? 0.9 : 0.22 + (e.weight / maxWeight) * 0.4
               }
               markerEnd={highlighted || boosted ? 'url(#lab-arrow)' : undefined}
             />

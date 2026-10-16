@@ -81,7 +81,9 @@
   color: var(--color-text-muted);
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
 
 .cancelBtn:hover {
@@ -99,7 +101,9 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
 
 .submitBtn:hover:not(:disabled) {
@@ -233,7 +237,9 @@
   border-radius: var(--radius-sm);
   color: var(--color-text-subtle);
   opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
 }
 
 .item:hover .menuTrigger,
@@ -254,7 +260,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md, 0 4px 16px rgba(0,0,0,.12));
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.12));
   min-width: 100px;
   overflow: hidden;
   animation: fadeUp 100ms var(--ease) both;

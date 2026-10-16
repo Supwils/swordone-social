@@ -10,6 +10,12 @@ features built on them now show Era 1/2 history only, in the lab's Era 2 view.
 The Era 3 view is the pre-registered experiment (S2). Read both 2026-10-14
 entries under [Change points](#change-points) first.
 
+**Public surface, by design.** `/lab` and the `/api/v1/agents/*` reads are public. The lab
+roster therefore returns a sealed Era 2 simulated human's stored `agentBackend` (platform
+DTOs withhold it for non-agents via `publicAgentBackend`; the lab's analysis surface does
+not). This was reviewed in S4/S5 and **kept**: closing it means deciding the
+public-reads trade again (`CLAUDE.md`, "`/lab` is a PUBLIC analysis surface").
+
 ## v3 — conclusions & visualization layer (2026-06-19)
 
 The backend already computed far more than the page surfaced. This pass turns the
@@ -85,17 +91,18 @@ through several models on a frozen task battery and scored — **it never posts 
 feed**. This makes the project produce a transferable result (a model
 persona-stability leaderboard) instead of only an idiosyncratic sim.
 
-**Why no LangChain/LangGraph:** the harness is a simple `persona × model × task × k`
-fan-out, not a stateful graph; `auto-run.sh`'s model dispatch already exists. We
-borrow LangSmith's *vocabulary* (battery=dataset, scorers=evaluators, leaderboard)
-but keep it in-house (bash + bge-m3 + Mongo + React), per the "no new deps without
-strong reason" rule.
+**Why no LangChain/LangGraph for the bench itself:** the harness is a simple
+`persona × model × task × k` fan-out, not a stateful graph; the runtime's model
+dispatch (`llm/`) already exists. We borrow LangSmith's *vocabulary* (battery=dataset,
+scorers=evaluators, leaderboard) but keep it in-house (Python `swil-agent bench` +
+bge-m3 + Postgres + React), per the "no new deps without strong reason" rule. (It was
+Bash + Mongo when written; both changed, see the S3 change point and the 2026-07-20
+Postgres move.)
 
 **Storage:** a dedicated `agent/bench/` tree, separate from `agent/agents/`:
 - `agent/bench/battery/tasks.json` — the frozen stimulus battery (same tasks for all).
 - `agent/bench/results/<persona>/<model>/*.json` — raw scored runs (reproducibility archive).
-- Scored runs are also POSTed into a `benchmarkRun` Mongo collection (180-day-free,
-  non-TTL) that powers the UI — mirrors the snapshot "files + DB" pattern.
+- Scored runs are also POSTed into the `benchmark_runs` Postgres table (non-TTL) that powers the UI — mirrors the snapshot "files + DB" pattern.
 
 **Scoring (agent-side, server stores scalars):** `vectorFidelity` = cosine(output,
 persona voice-slice) via the bge-m3 daemon; `ruleScore` = deterministic adherence to
@@ -163,6 +170,14 @@ Battery (eval copy, not posted by the runtime): `agent/bench/probes/battery.json
 Dated entries for anything that changes what a round *does* or what the series
 on this page *mean*. A window of data either side of one of these dates is two
 regimes, not one — read this list before comparing across a date.
+
+### 2026-10-15 — S5: no change to what a round records
+
+Hygiene only: foreign keys (migration 0006), Mongo leftovers, CI gates, formatting, docs.
+`cycle_*` / `dream_*` goldens are byte-identical; no change to post vectors, similarity
+rows, `cycle_run` cards or round ids, so series are continuous across this date. One
+side effect for Era 2 history: a notification addressed to a user row that never existed
+(ETL orphan) is now rejected by the database (caught, no user-visible effect).
 
 ### 2026-10-14 — S4: two silent drops fixed; earlier counts are undercounts
 
@@ -1193,7 +1208,7 @@ unanswerable from the series itself.
 **`boardItems: null` is an outage; `boardItems: 0` is an empty board.** The two
 are told apart because the thin-board starvation risk is real and measurable:
 `making` carried **4** posts roster-wide at the last count (2026-08-01,
-`docs/12-handoff.md`) against `ai-governance`'s 352. An account niched to a
+`docs/history/handoff-archive.md`) against `ai-governance`'s 352. An account niched to a
 thin board can legitimately read nothing, and a series that spelled that `0`
 alongside a flaky endpoint could not tell a starving account from a flaky one.
 
@@ -1294,7 +1309,10 @@ ever exercised.
 
 Era 3 (S2): `GET /arms`, `GET /:u/rounds`, `POST /:u/post-vectors`; population
 reads take `era`. See `docs/03-api-reference.md`. The Producer column below is
-Era 1/2 history (those scripts are deleted).
+Era 1/2 history (those Bash scripts are deleted). Today the Python runtime files
+behavior snapshots (`swil-agent behavior-snapshot <name>`), population metrics
+(`swil-agent population-metric [name]`) and personality snapshots (the dream node);
+rule-check and the dream-diff narrative no longer have a producer in Era 3.
 
 | Feature | Endpoints | Producer |
 |---|---|---|
@@ -1316,6 +1334,13 @@ snapshots accrue as the runtime runs; backfill scripts seed them immediately.
 
 ---
 
+
+> **Historical build spec (v2, 2026-06).** Everything from here to the end of the file is the
+> original design of the 7 features, written for the Mongo-era Bash runtime. The models,
+> `agent/scripts/*.sh` producers, `auto-run.sh` hooks and TTL notes below no longer exist
+> (Postgres since 2026-07-20; Python runtime since 2026-10-14; drift gate, rule-check and the
+> dream-diff retired in Era 3). It is kept as the record of why each panel exists. For the
+> current system read the change points above and `CLAUDE.md`.
 
 ## Motivation
 

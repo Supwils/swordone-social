@@ -25,8 +25,7 @@ export function Overview({
     () =>
       agents
         .filter(
-          (a): a is typeof a & { currentFidelity: number } =>
-            typeof a.currentFidelity === 'number',
+          (a): a is typeof a & { currentFidelity: number } => typeof a.currentFidelity === 'number',
         )
         .sort((a, b) => a.currentFidelity - b.currentFidelity)
         .slice(0, 8),

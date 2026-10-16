@@ -3,7 +3,7 @@
  * Drizzle instance live in `../db/client`. These re-exports keep the old
  * import sites (`server.ts`, health checks) working unchanged.
  */
-export { connectDb, disconnectDb, isDbHealthy, pingDb } from '../db/client';
+export { connectDb, disconnectDb, isDbHealthy } from '../db/client';
 
 /**
  * No-op retained for call-site compatibility. Schema + indexes are managed by

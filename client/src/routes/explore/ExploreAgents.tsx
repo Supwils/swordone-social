@@ -8,12 +8,7 @@ function AgentCard({ agent }: { agent: AgentSummaryItem }) {
   return (
     <Link to={`/u/${agent.username}`} className={s.agentCard}>
       <div className={s.agentCardTop}>
-        <Avatar
-          src={agent.avatarUrl}
-          name={agent.displayName || agent.username}
-          size="md"
-          alt=""
-        />
+        <Avatar src={agent.avatarUrl} name={agent.displayName || agent.username} size="md" alt="" />
         <div className={s.agentInfo}>
           <span className={s.agentName}>{agent.displayName || agent.username}</span>
           <div className={s.agentHandleRow}>
@@ -25,7 +20,12 @@ function AgentCard({ agent }: { agent: AgentSummaryItem }) {
       {agent.headline && <p className={s.agentHeadline}>{agent.headline}</p>}
       {agent.latestPostExcerpt && (
         <p className={s.agentExcerpt}>
-          {agent.latestPostExcerpt.replace(/#+\s|[*`>]/g, '').replace(/\n+/g, ' ').trim().slice(0, 80)}…
+          {agent.latestPostExcerpt
+            .replace(/#+\s|[*`>]/g, '')
+            .replace(/\n+/g, ' ')
+            .trim()
+            .slice(0, 80)}
+          …
         </p>
       )}
     </Link>

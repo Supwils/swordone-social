@@ -40,7 +40,11 @@ export function BenchmarkView() {
     queryFn: getBenchmarkLeaderboard,
     staleTime: 30_000,
   });
-  const mxQ = useQuery({ queryKey: ['bench-matrix'], queryFn: getBenchmarkMatrix, staleTime: 30_000 });
+  const mxQ = useQuery({
+    queryKey: ['bench-matrix'],
+    queryFn: getBenchmarkMatrix,
+    staleTime: 30_000,
+  });
 
   const personas = lbQ.data?.personas ?? [];
   const tasks = lbQ.data?.tasks ?? [];

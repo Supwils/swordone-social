@@ -44,8 +44,7 @@ export function CrossSpeciesPanel({ data, onSelect }: Props) {
       const b = nodeMap.get(e.target);
       return a && b && a.isAgent !== b.isAgent;
     });
-    const bridgeScore =
-      data.edges.length > 0 ? (crossEdges.length / data.edges.length) * 100 : 0;
+    const bridgeScore = data.edges.length > 0 ? (crossEdges.length / data.edges.length) * 100 : 0;
     const crossVolume = crossEdges.reduce((sum, e) => sum + e.weight, 0);
     const totalVolume = data.edges.reduce((sum, e) => sum + e.weight, 0);
     const bridgeVolumePct = totalVolume > 0 ? (crossVolume / totalVolume) * 100 : 0;
@@ -80,11 +79,7 @@ export function CrossSpeciesPanel({ data, onSelect }: Props) {
   }, [data]);
 
   const maxWeight = useMemo(
-    () =>
-      Math.max(
-        1,
-        ...Array.from(matrix.values()).flatMap((row) => Array.from(row.values())),
-      ),
+    () => Math.max(1, ...Array.from(matrix.values()).flatMap((row) => Array.from(row.values()))),
     [matrix],
   );
 
@@ -168,10 +163,7 @@ export function CrossSpeciesPanel({ data, onSelect }: Props) {
             <tbody>
               {agents.map((agent) => {
                 const row = matrix.get(agent.username);
-                const rowTotal = humans.reduce(
-                  (sum, h) => sum + (row?.get(h.username) ?? 0),
-                  0,
-                );
+                const rowTotal = humans.reduce((sum, h) => sum + (row?.get(h.username) ?? 0), 0);
                 return (
                   <tr key={agent.username}>
                     <td
@@ -191,9 +183,7 @@ export function CrossSpeciesPanel({ data, onSelect }: Props) {
                           className={s.crossHeatCell}
                           style={{
                             backgroundColor:
-                              val > 0
-                                ? `rgba(99,102,241,${0.1 + intensity * 0.75})`
-                                : undefined,
+                              val > 0 ? `rgba(99,102,241,${0.1 + intensity * 0.75})` : undefined,
                             color:
                               intensity > 0.55
                                 ? 'var(--color-surface)'
@@ -201,11 +191,7 @@ export function CrossSpeciesPanel({ data, onSelect }: Props) {
                                   ? 'var(--color-text)'
                                   : 'var(--color-text-muted)',
                           }}
-                          title={
-                            val > 0
-                              ? `${agent.username} ↔ ${h.username}: ${val}`
-                              : undefined
-                          }
+                          title={val > 0 ? `${agent.username} ↔ ${h.username}: ${val}` : undefined}
                         >
                           {val > 0 ? val : '·'}
                         </td>

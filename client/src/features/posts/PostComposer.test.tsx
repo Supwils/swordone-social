@@ -103,10 +103,9 @@ describe('PostComposer', () => {
   it('clears the stored draft when the text is emptied', async () => {
     renderComposer();
     fireEvent.change(textbox(), { target: { value: 'temp' } });
-    await waitFor(
-      () => expect(useDrafts.getState().getDraft('post.new')?.text).toBe('temp'),
-      { timeout: 2000 },
-    );
+    await waitFor(() => expect(useDrafts.getState().getDraft('post.new')?.text).toBe('temp'), {
+      timeout: 2000,
+    });
 
     fireEvent.change(textbox(), { target: { value: '   ' } });
     await waitFor(() => expect(useDrafts.getState().getDraft('post.new')).toBeUndefined());
@@ -117,7 +116,9 @@ describe('PostComposer', () => {
     const input = container.querySelector('input[accept="image/*"]') as HTMLInputElement;
 
     fireEvent.change(input, {
-      target: { files: [imageFile('1'), imageFile('2'), imageFile('3'), imageFile('4'), imageFile('5')] },
+      target: {
+        files: [imageFile('1'), imageFile('2'), imageFile('3'), imageFile('4'), imageFile('5')],
+      },
     });
 
     expect(await screen.findAllByLabelText('Remove image')).toHaveLength(4);
@@ -131,7 +132,9 @@ describe('PostComposer', () => {
 
   it('attaching a video previews it and blocks image attachment', async () => {
     const { container } = renderComposer();
-    const input = container.querySelector('input[accept="video/mp4,video/webm"]') as HTMLInputElement;
+    const input = container.querySelector(
+      'input[accept="video/mp4,video/webm"]',
+    ) as HTMLInputElement;
 
     fireEvent.change(input, {
       target: { files: [new File(['v'], 'clip.mp4', { type: 'video/mp4' })] },

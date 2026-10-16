@@ -67,7 +67,9 @@
   justify-content: flex-start;
   gap: var(--space-4);
   background: var(--color-surface);
-  transition: transform 0.52s var(--ease), opacity 0.52s var(--ease);
+  transition:
+    transform 0.52s var(--ease),
+    opacity 0.52s var(--ease);
 }
 
 /* Push short forms toward center; tall forms scroll naturally from top */
@@ -126,7 +128,9 @@
   overflow: hidden;
   border-radius: 96px 0 0 80px;
   z-index: 100;
-  transition: transform 0.52s var(--ease), border-radius 0.52s var(--ease);
+  transition:
+    transform 0.52s var(--ease),
+    border-radius 0.52s var(--ease);
 }
 
 .container.active .toggleContainer {
@@ -136,11 +140,7 @@
 
 /* The wide inner strip (200% wide so both panels are always rendered) */
 .toggle {
-  background: linear-gradient(
-    150deg,
-    var(--color-accent) 0%,
-    var(--color-accent-hover) 100%
-  );
+  background: linear-gradient(150deg, var(--color-accent) 0%, var(--color-accent-hover) 100%);
   position: relative;
   left: -100%;
   height: 100%;

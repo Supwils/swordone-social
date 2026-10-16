@@ -109,11 +109,11 @@ ARTIFACT_BY_KIND: Final[dict[InterventionKind, str]] = {
     InterventionKind.OTHER: "",
 }
 
-# Did this write reach `personality.md` without passing the constitution
-# layer (archive -> drift gate -> validators -> snapshot)? Also derived: it
-# is a consequence of the kind, and it is the single most load-bearing fact
-# for anyone reading the drift series, because it is precisely the case where
-# the series has a gap the gate would otherwise guarantee it does not.
+# Did this write reach `personality.md` without passing the code write path
+# (archive -> validators -> snapshot; Era 1/2 also had a drift gate, removed in
+# Era 3)? Also derived: it is a consequence of the kind, and it is the most
+# load-bearing fact for anyone reading the Era 1/2 drift series, because it
+# marks exactly where that series has a gap the gate would otherwise prevent.
 GATE_BYPASSED_BY_KIND: Final[dict[InterventionKind, bool]] = {
     InterventionKind.PERSONALITY_ROLLBACK: True,
     InterventionKind.PERSONALITY_EDIT: True,

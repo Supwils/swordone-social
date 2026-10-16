@@ -2,9 +2,7 @@ import { http, unwrap } from './client';
 import type { TagDTO } from './types';
 
 export async function trending(limit = 10): Promise<TagDTO[]> {
-  const out = await unwrap<{ items: TagDTO[] }>(
-    http.get('/tags/trending', { params: { limit } }),
-  );
+  const out = await unwrap<{ items: TagDTO[] }>(http.get('/tags/trending', { params: { limit } }));
   return out.items;
 }
 

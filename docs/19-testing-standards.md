@@ -1,8 +1,8 @@
 ---
 title: Testing standards & reliability playbook
 status: stable
-last-updated: 2026-08-24
-owner: agent-loop-engine
+last-updated: 2026-10-15
+owner: s5-hygiene
 ---
 
 # Testing standards & reliability playbook
@@ -17,6 +17,10 @@ this codebase; the examples are real files you can open.
 - `npm run ci:check` is the only definition of green. Run it before claiming
   any change is done, and always for changes touching build config,
   dependencies, lint config, or the CI workflow itself.
+- `ci:check` is 17 steps (`09-contributing.md`): besides tests it gates the contract
+  sync, lint (server, client, mcp, agent), Prettier format check (server, client,
+  mcp), and knip. CI additionally runs the Playwright `e2e` job, which `ci:check`
+  does not.
 - Per-package: `npm --prefix server run test:coverage`,
   `npm --prefix client run test:coverage`, `npm --prefix mcp run test`,
   `cd agent && uv run pytest -q`.
@@ -55,7 +59,8 @@ this codebase; the examples are real files you can open.
 
 | Surface | Pattern | Example |
 |---|---|---|
-| Service touching the DB | Real Postgres + `resetDb()`, seed helpers, real side effects asserted | `modules/comments/comments.service.test.ts` |
+| Service touching the DB | Real Postgres + `resetDb()`, seed helpers, real side effects asserted. The platform tables have foreign keys: create parents first; a historical orphan needs `withForeignKeysOff` (`src/test/orphans.ts`) | `modules/comments/comments.service.test.ts` |
+| Python agent code opening sqlite | Route every connection through `tests/unit/_sqlite.py` (`track()` / `open_saver()`); pytest turns `ResourceWarning` and unraisable-exception warnings into errors, so an unclosed connection fails the test that leaked it | `tests/unit/test_locks_lease.py` |
 | Route stack (validation, status codes, limiter composition) | In-process router walk with mocked service + fake res | `modules/messages/messages.routes.test.ts` |
 | Controller glue | Mock the service module, fake res, assert wiring + status | `modules/bookmarks/bookmarks.controller.test.ts` |
 | Socket layer | Real socket.io server on an ephemeral port, real client, real DB membership | `realtime/io.sockets.test.ts` |

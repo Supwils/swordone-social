@@ -2,11 +2,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { newId } from '../lib/id';
 import { AppError } from '../lib/errors';
-import {
-  globalLimiter,
-  postWriteLimiter,
-  socialActionLimiter,
-} from './rateLimit';
+import { globalLimiter, postWriteLimiter, socialActionLimiter } from './rateLimit';
 
 /**
  * These tests drive the real express-rate-limit middleware against its

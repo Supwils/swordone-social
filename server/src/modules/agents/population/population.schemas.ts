@@ -9,6 +9,3 @@ export const listQuery = z.object({
 export const overviewQuery = z.object({
   era: eraParam,
 });
-
-export type ListQuery = z.infer<typeof listQuery>;
-export type OverviewQuery = z.infer<typeof overviewQuery>;

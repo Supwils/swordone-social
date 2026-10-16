@@ -16,7 +16,9 @@ export function PostCardLightbox({ images, index, onChange }: Props) {
   return (
     <Dialog
       open
-      onOpenChange={(open) => { if (!open) onChange(null); }}
+      onOpenChange={(open) => {
+        if (!open) onChange(null);
+      }}
       // `title=""` rendered no Title at all (falsy), which Radix reports as a
       // console error and which left the lightbox announced as a bare "dialog".
       title={t('post.lightboxTitle', { index: index + 1, total })}

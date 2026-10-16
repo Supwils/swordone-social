@@ -8,3 +8,7 @@ agent/context
 agent/logs
 agent/.agent-state
 .git
+server/src/db/migrations/meta/**
+client/src/contract/**
+mcp/src/contract/**
+agent/tests/contract/**

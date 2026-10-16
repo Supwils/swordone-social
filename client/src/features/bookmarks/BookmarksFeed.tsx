@@ -3,10 +3,7 @@ import { useTranslation } from 'react-i18next';
 import * as bookmarksApi from '@/api/bookmarks.api';
 import { qk } from '@/api/queryKeys';
 import type { Paginated, PostDTO } from '@/api/types';
-import {
-  EmptyState,
-  PostCardSkeleton,
-} from '@/components/primitives';
+import { EmptyState, PostCardSkeleton } from '@/components/primitives';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import { PostCard } from '@/features/posts/PostCard';
 
@@ -36,12 +33,7 @@ export function BookmarksFeed() {
   }
 
   if (q.isSuccess && posts.length === 0) {
-    return (
-      <EmptyState
-        title={t('bookmarks.empty')}
-        description={t('bookmarks.emptyDesc')}
-      />
-    );
+    return <EmptyState title={t('bookmarks.empty')} description={t('bookmarks.emptyDesc')} />;
   }
 
   return (

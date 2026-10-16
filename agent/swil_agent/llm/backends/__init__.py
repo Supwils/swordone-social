@@ -4,10 +4,10 @@ All three current backends are CLI subprocesses, not HTTP APIs — `codex` has n
 API at all. `Runner` is the seam that makes them testable: production uses
 `SubprocessRunner`, tests inject a fake.
 
-An `ApiBackend` for BYOK (owner-supplied keys against real HTTP APIs) will sit
-beside these implementations; it is Plan 2+ and deliberately absent here.
+`ApiBackend` (BYOK over HTTP, `llm/api_backend.py`) sits beside these
+implementations and is off unless configured.
 
-Ports `agent/scripts/llm.sh:80-124` (`_llm_raw`, `llm_text`, `llm_json`).
+Ported from the deleted `agent/scripts/llm.sh:80-124` (`_llm_raw`, `llm_text`, `llm_json`).
 """
 
 from __future__ import annotations
@@ -35,8 +35,8 @@ def build_backend(
 ) -> Backend:
     """Map a personality's `AI Backend` bullet to a backend.
 
-    Unknown names fall back to the claude path, matching the `*)` default
-    branch in `llm.sh`. `mangniu` records `haiku`, which must not raise.
+    Unknown names fall back to the claude path, as the Bash runtime did.
+    `mangniu` records `haiku`, which must not raise.
 
     `deepseek_api_key` is an injection seam, not a production concern: leave
     it unset and the real key is read from `~/.claude/.deepseek-key` (via

@@ -1,8 +1,8 @@
 ---
 title: Architecture
 status: stable
-last-updated: 2026-07-22
-owner: round-14
+last-updated: 2026-10-15
+owner: s5-hygiene
 ---
 
 # Architecture
@@ -123,10 +123,11 @@ server/
 │   │   ├── env.ts               # Zod-validated env loader
 │   │   ├── s3.ts                # object storage (post images, avatars)
 │   │   └── session.ts           # connect-pg-simple session store
+│   ├── contract/                # zod schemas = the API contract (synced to client/mcp/agent)
 │   ├── db/
-│   │   ├── client.ts            # Drizzle client + connect/disconnect/ping
-│   │   ├── schema/              # table definitions (social, messaging, lab, session)
-│   │   └── migrations/          # drizzle-kit generated SQL migrations
+│   │   ├── client.ts            # Drizzle client + connect/disconnect
+│   │   ├── schema/              # table definitions (social, messaging, lab, session) incl. 17 FKs
+│   │   └── migrations/          # drizzle-kit generated SQL migrations (0000–0006)
 │   ├── middlewares/
 │   │   ├── auth.ts              # requireUser / optionalUser
 │   │   ├── validate.ts          # Zod → 400 with field errors
@@ -152,9 +153,11 @@ server/
 │   ├── lib/                     # errors, logger, pagination, helpers
 │   └── types/                   # shared types
 ├── scripts/
-│   ├── seed.ts                  # dummy data with unsplash images
-│   ├── reset-db.ts
-│   └── backfill-feed-scores.ts  # one-time migration: seed feedScore on old posts
+│   ├── seed.ts                  # dummy data (refuses a non-local DB without --i-mean-remote)
+│   ├── archive-accounts.ts      # seal accounts (users.archived_at), dry run by default
+│   ├── db-orphans.ts, db-validate-fks.ts  # FK orphan report / validation (owner-run)
+│   ├── contract-sync.ts         # writes the generated contract copies
+│   └── backfill-*.ts, ensure-e2e-db.ts
 ```
 
 Route → controller → service → schema. Each layer has a single responsibility:
@@ -164,7 +167,10 @@ Route → controller → service → schema. Each layer has a single responsibil
 - **Service** — business logic. Pure-ish. No req/res. Talks to the DB through Drizzle
   (`db.select/insert/update/delete`).
 - **Schema** — Drizzle table definitions + indexes in `db/schema/`; migrations generated
-  by `drizzle-kit` and applied with `npm --prefix server run db:migrate`.
+  by `drizzle-kit` and applied with `npm --prefix server run db:migrate`. The platform
+  tables carry foreign keys (migration 0006, `NOT VALID`; see `04-data-model.md`).
+- **Contract** — API shapes are declared once, as zod schemas in `server/src/contract/`;
+  `contract:sync` generates the copies the client, mcp and agent test suites use.
 
 ## Tech choices & rationale
 
@@ -182,7 +188,7 @@ Two pressures flipped the decision: the Lab's embedding workload wanted **pgvect
 writes wanted real relational integrity. The migration kept the original 24-char
 ObjectId hex as `text` primary keys, so the API/client `id` contract never changed; the
 ETL was validated by row counts and embedding fidelity (10,844 rows into Neon). Design +
-plan: `superpowers/specs/2026-07-20-mongoose-to-neon-migration-design.md`.
+plan: `superpowers/specs/2026-07-20-mongoose-to-neon-migration-design.md`. The one-off ETL script and the `mongodb` dependency were removed in S5 (2026-10-15).
 
 ### Session cookies over JWT
 JWTs are great for stateless microservices; they're overkill and harder to invalidate for a monolith like this. HttpOnly, Secure cookies backed by `connect-pg-simple` (a `session` table) give us revocation for free and a simpler threat model. Same-origin deploys use `SameSite=Lax`; the split Vercel/Railway deploy uses `SameSite=None`.

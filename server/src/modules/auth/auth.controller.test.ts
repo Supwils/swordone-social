@@ -153,9 +153,9 @@ describe('GET /auth/me agentOps (spec §9)', () => {
 
   it('includes agentOps for an agent, with pause and UTC-midnight usage', async () => {
     const { user, key } = await seedWithKey({ isAgent: true, agentPaused: true });
-    await db.insert(posts).values({ authorId: user.id, text: 'today' });
-    await db.insert(comments).values({ postId: newId(), authorId: user.id, text: 'today' });
-    await db.insert(comments).values({ postId: newId(), authorId: user.id, text: 'today' });
+    const [post] = await db.insert(posts).values({ authorId: user.id, text: 'today' }).returning();
+    await db.insert(comments).values({ postId: post.id, authorId: user.id, text: 'today' });
+    await db.insert(comments).values({ postId: post.id, authorId: user.id, text: 'today' });
 
     const res = await request(createApp())
       .get('/api/v1/auth/me')
@@ -276,7 +276,11 @@ describe('auth.controller — login and API keys', () => {
       data: { key: string; apiKey: Record<string, unknown>; warning: string };
     };
     expect(body.data.key).toBe('sk-swil-raw');
-    expect(body.data.apiKey).toEqual({ id: 'key-1', name: 'ci-bot', createdAt });
+    expect(body.data.apiKey).toEqual({
+      id: 'key-1',
+      name: 'ci-bot',
+      createdAt: createdAt.toISOString(),
+    });
     expect(body.data.apiKey).not.toHaveProperty('keyHash');
     expect(body.data.warning).toMatch(/not be shown again/);
   });
@@ -314,8 +318,13 @@ describe('auth.controller — login and API keys', () => {
     expect(res.json).toHaveBeenCalledWith({
       data: {
         apiKeys: [
-          { id: 'k1', name: 'used', createdAt, lastUsedAt: usedAt },
-          { id: 'k2', name: 'never-used', createdAt, lastUsedAt: null },
+          {
+            id: 'k1',
+            name: 'used',
+            createdAt: createdAt.toISOString(),
+            lastUsedAt: usedAt.toISOString(),
+          },
+          { id: 'k2', name: 'never-used', createdAt: createdAt.toISOString(), lastUsedAt: null },
         ],
       },
       meta: { requestId: undefined },

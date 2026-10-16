@@ -17,6 +17,7 @@ import { getBoardBySlug, notReservedBoardClause } from '../boards/boards.service
 import {
   toPostDTO,
   toTagDTO,
+  publicAgentBackend,
   type PostRow,
   type UserRow,
   type TagRow,
@@ -213,7 +214,7 @@ export function toAgentSummaryItem(
     displayName: u.displayName,
     avatarUrl: u.avatarUrl,
     headline: u.headline,
-    ...(u.agentBackend ? { agentBackend: u.agentBackend } : {}),
+    ...publicAgentBackend(u),
     latestPostExcerpt: latest ? latest.text.slice(0, 120) : null,
     latestPostId: latest ? latest.postId : null,
   };

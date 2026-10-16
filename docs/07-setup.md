@@ -131,7 +131,7 @@ npm run install:all
 ```
 
 This covers **all four** workspaces — root, `server/`, `client/`, and `mcp/`. The `mcp/` install
-matters: `npm run ci:check` typechecks and tests it at steps 7 and 8, and skipping it is the second
+matters: `npm run ci:check` typechecks, lints and tests it (steps 8, 9 and 11), and skipping it is the second
 most common fresh-clone `ci:check` failure.
 
 ## Migrate — required, and not automatic
@@ -188,13 +188,13 @@ Health check: `curl -s localhost:8899/health` → `{"status":"ok","db":"ok",...}
 |---|---|
 | `npm run dev` | Server + client concurrently |
 | `npm run install:all` | Install root + server + client + mcp deps |
-| `npm run typecheck` / `lint` / `lint:fix` / `format` | Both packages |
-| `npm run test` | Server (vitest run) + client (vitest run) |
+| `npm run typecheck` / `lint` / `lint:fix` / `format` | server, client and mcp |
+| `npm run test` | Server + client + mcp (vitest run) |
 | `npm run test:coverage` | Both, with coverage thresholds |
 | `npm run test:e2e` | Playwright real-stack suite (own ports + own DB) |
 | `npm run build` | Build both packages |
 | `npm run seed` / `seed:reset` | Dev data (delegates to server) |
-| `npm run ci:check` | The full 14-step pipeline (contract sync check first) — run before every push |
+| `npm run ci:check` | The full 17-step pipeline (contract sync check first) — run before every push |
 | `npm run knip` | Unused code / dependency report |
 | `npm run install-hooks` | Symlink `scripts/git-hooks/*` into `.git/hooks/` |
 
@@ -206,6 +206,8 @@ Health check: `curl -s localhost:8899/health` → `{"status":"ok","db":"ok",...}
 | `npm run build` | `tsc` → `dist/` (entry lands at `dist/src/server.js`) |
 | `npm start` | Run the compiled build |
 | `npm run db:migrate` | Apply pending Drizzle migrations |
+| `npm run db:orphans` / `db:validate-fks -- --yes` | Report / validate foreign-key orphans (read `DATABASE_URL`; owner-run, `04-data-model.md`) |
+| `npm run contract:sync` / `contract:check` | Write / verify the generated contract copies |
 | `npm run db:generate` | Generate a new migration from schema changes |
 | `npm run db:studio` | Drizzle Studio |
 | `npm run test` / `test:watch` / `test:coverage` | Vitest |
@@ -222,16 +224,17 @@ Health check: `curl -s localhost:8899/health` → `{"status":"ok","db":"ok",...}
 
 ## Before your first `npm run ci:check`
 
-`ci:check` mirrors GitHub Actions exactly (`scripts/ci-check.sh`, 14 steps). Two of them need
+`ci:check` mirrors GitHub Actions (`scripts/ci-check.sh`, 17 steps; CI additionally runs the `e2e` job). Two of them need
 things the install alone doesn't give you:
 
-- **Step 5/10 — server tests.** A pgvector Postgres must be *running* and `swil_test_pg` must
+- **Step 6/17 — server tests.** A pgvector Postgres must be *running* and `swil_test_pg` must
   exist. `server/src/test/global-setup.ts` migrates it once before the suite, falling back to
   `postgresql://$USER@127.0.0.1:5432/swil_test_pg` when `DATABASE_URL` is unset — which assumes a
   `brew install postgresql` setup where your OS user is a superuser role. If your local role is
-  named differently, run the suite with an explicit URL:
+  named differently, run the suite with an explicit URL (the role must be a superuser: the
+  foreign-key orphan tests use `session_replication_role = replica`):
   `DATABASE_URL=postgresql://<role>@127.0.0.1:5432/swil_test_pg npm --prefix server run test`.
-- **Step 7/10 — mcp typecheck.** Needs `mcp/node_modules`, i.e. `npm run install:all` and not a
+- **Step 8/17 — mcp typecheck.** Needs `mcp/node_modules`, i.e. `npm run install:all` and not a
   bare `npm install`.
 
 Careful with exporting `DATABASE_URL` in the shell you run tests from: the DB suites truncate
@@ -241,7 +244,7 @@ tables in `beforeEach`. Point it at `swil_test_pg`, never at your dev or a remot
 
 `npm run test:e2e` boots its own server (:8901) and client (:5948) against `swil_e2e_pg`, which
 `server/scripts/ensure-e2e-db.ts` creates, migrates, and truncates for you. The default connection
-string in `playwright.config.ts` hardcodes a role name; if yours differs, export
+string in `playwright.config.ts` uses your OS user as the role (as the test DB does); to use another role, export
 `E2E_DATABASE_URL=postgresql://<role>@127.0.0.1:5432/swil_e2e_pg` first.
 
 ## Troubleshooting

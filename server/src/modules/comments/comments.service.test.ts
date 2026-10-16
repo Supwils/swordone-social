@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { users, posts, comments, notifications, likes, follows } from '../../db/schema';
 import { resetDb } from '../../test/db-reset';
+import { withForeignKeysOff } from '../../test/orphans';
 import { AppError } from '../../lib/errors';
 import { decodeCursor } from '../../lib/pagination';
 import type { PostRow, UserRow } from '../../lib/dto';
@@ -183,10 +184,16 @@ describe('comments.service listForPost', () => {
 
   it('omits ctx (but keeps the row) when the author account no longer exists', async () => {
     const author = await seedUser();
-    const ghost = await seedUser();
     const post = await seedPost(author.id);
-    const c = await seedComment(post.id, ghost.id);
-    await db.delete(users).where(eq(users.id, ghost.id));
+    // Users are tombstoned, never deleted, and comments.author_id is a FK — a
+    // missing author is only a historical orphan (0006 is NOT VALID), written
+    // here with the FK triggers off.
+    const [c] = await withForeignKeysOff((tx) =>
+      tx
+        .insert(comments)
+        .values({ postId: post.id, authorId: 'f'.repeat(24), text: 'c' })
+        .returning(),
+    );
 
     const { items, ctxByCommentId } = await listForPost(post.id, null, null, 10);
     expect(items.map((x) => x.id)).toEqual([c.id]);

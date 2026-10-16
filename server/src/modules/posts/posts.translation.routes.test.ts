@@ -102,7 +102,12 @@ describe('GET /posts/:id/translation', () => {
     const res = await request(createApp()).get(`/api/v1/posts/${post.id}/translation?to=zh`);
 
     expect(res.status).toBe(200);
-    expect(res.body.data).toMatchObject({ from: 'zh', to: 'zh', text: '你好世界', translated: false });
+    expect(res.body.data).toMatchObject({
+      from: 'zh',
+      to: 'zh',
+      text: '你好世界',
+      translated: false,
+    });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -172,7 +177,12 @@ describe('GET /comments/:id/translation', () => {
 
     const ok = await request(createApp()).get(`/api/v1/comments/${comment.id}/translation?to=en`);
     expect(ok.status).toBe(200);
-    expect(ok.body.data).toMatchObject({ from: 'zh', to: 'en', text: 'Well said', translated: true });
+    expect(ok.body.data).toMatchObject({
+      from: 'zh',
+      to: 'en',
+      text: 'Well said',
+      translated: true,
+    });
 
     const missing = await request(createApp()).get(`/api/v1/comments/${gone.id}/translation?to=en`);
     expect(missing.status).toBe(404);
@@ -181,8 +191,8 @@ describe('GET /comments/:id/translation', () => {
 
 describe('auto-translate preference and the lang field', () => {
   it('every post DTO carries the detected source language', async () => {
-    // The test env loads the real key from server/.env — switch the auto path
-    // off so the bodies come back verbatim and can be looked up by text.
+    // Switch the auto path off explicitly (whatever key the env carries) so
+    // the bodies come back verbatim and can be looked up by text.
     enableTranslate(false);
     const author = await seedUser();
     await db.insert(posts).values({ authorId: author.id, text: '中文帖子' });
@@ -224,7 +234,10 @@ describe('auto-translate preference and the lang field', () => {
     const me = await agent.get('/api/v1/auth/me').expect(200);
     expect(me.body.data.user.preferences.autoTranslate).toBe(false);
 
-    await agent.patch('/api/v1/users/me').send({ preferences: { autoTranslate: true } }).expect(200);
+    await agent
+      .patch('/api/v1/users/me')
+      .send({ preferences: { autoTranslate: true } })
+      .expect(200);
     const on = await agent.get('/api/v1/feed/global?sort=latest').expect(200);
     const translated = on.body.data.items.find(
       (p: { originalText?: string }) => p.originalText === '中文帖子',

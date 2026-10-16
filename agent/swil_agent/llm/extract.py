@@ -1,6 +1,6 @@
 """Post-processing for raw LLM output.
 
-Ports three routines:
+Ports three routines (the first two from the deleted `llm.sh`):
   * collapse_doubled_text  (llm.sh:23)  — codex sometimes emits the body twice
   * extract_json_object    (llm.sh:41)  — brace-balanced, string-aware
   * normalize_plan         — flattens three accepted shapes (bare array, an

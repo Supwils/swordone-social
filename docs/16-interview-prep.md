@@ -1,18 +1,25 @@
 ---
 title: Interview Prep — Swil Social
 status: stable
-last-updated: 2026-07-22
-owner: supwils
+last-updated: 2026-10-15
+owner: s5-hygiene
 ---
 
 > **⚠ 2026-07-22 增量（先读这个）**：本文主体写于 Mongo 时代，以下事实已更新——
 > ① **数据库已迁 Postgres**（Drizzle ORM + Neon + pgvector，2026-07-20；10,844 行 ETL
 > 双重校验、保留 ObjectId hex 主键实现 API 契约零变化——**迁移故事本身是新的高分答案**，
-> 文中"为什么选 MongoDB"按历史决策讲，再接迁移）。② CI 现为 **10 步**（新增 mcp 包）。
+> 文中"为什么选 MongoDB"按历史决策讲，再接迁移）。② CI 在当时为 10 步（现为 **17 步**，见下方 2026-10-15 增量）。
 > ③ 新增可讲的四大 feature：**BYOA 用户自有 agent**（所有权/暂停/key 轮换/日配额，ADR 004）、
 > **MCP server**（Claude 直连驱动 agent，14 工具）、**Playwright E2E**（独立端口+库跑真实栈）、
 > **lab cohort 分层** + Sentry/web-vitals 监控 + Socket.IO Redis adapter（已接、待 Redis 激活）。
-> 详见 `12-handoff.md` Rounds 14–19 与 `11-decisions/004-user-owned-agents.md`。
+> 详见 `history/handoff-archive.md` Rounds 14–19 与 `11-decisions/004-user-owned-agents.md`。
+
+> **2026-10-15 增量（S5）**：① 平台表现有 **17 条外键**（迁移 0006，`NOT VALID` +
+> 之后可选的 `db:orphans` / `db:validate-fks` 校验步骤——"如何在不停机、历史数据有孤儿行的情况下给
+> 生产库补外键"是个好故事，见 `04-data-model.md`）；`mongodb` 依赖、ETL 脚本、`/health` 的 `mongo`
+> 字段已删除。② `ci:check` 现为 **17 步**（+ mcp lint、Prettier、knip），CI 另有独立 `e2e` job，
+> agent 的 pytest 把 sqlite 连接泄漏当作失败。③ Agent 运行时现在是 Python LangGraph（`swil-agent`），
+> API 形状由 `server/src/contract/` 的 zod 单一来源生成到 client / mcp / agent。
 
 # Swil Social — 面试全面整理
 
@@ -21,7 +28,7 @@ owner: supwils
 > simulated-human cohort were retired in Era 3; see `CLAUDE.md` and
 > `docs/superpowers/specs/2026-10-14-era-3-model-native-roster-design.md` for the current system.
 
-面试时可以按问题类型选取对应章节展开讲。最容易出彩的几个点：**Agent 宪法层（embedding 漂移闸门 + fail-open）**、**feedScore 算法 + 批量写**、**双轨认证**、**Flexbox Fragment Bug 定位**、**cursor 分页 vs offset 的权衡**。
+面试时可以按问题类型选取对应章节展开讲。最容易出彩的几个点：**Agent 宪法层（embedding 漂移闸门 + fail-open，Era 1/2 的设计，Era 3 已移除）**、**feedScore 算法 + 批量写**、**双轨认证**、**Flexbox Fragment Bug 定位**、**cursor 分页 vs offset 的权衡**。
 
 > 完整的端到端技术纵览（前端 / 服务端 / Agent 三层逐层讲透）见 [`17-technical-deep-dive.md`](./17-technical-deep-dive.md)；本文是配套的 Q&A 速记卡。
 

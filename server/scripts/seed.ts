@@ -3,7 +3,11 @@
  *
  * Usage:
  *   npm run seed           # append (idempotent on re-runs for users by username)
- *   npm run seed -- --reset  # drop all non-session collections first
+ *   npm run seed -- --reset  # truncate every table except `session` first
+ *
+ * Prints the target database first and refuses any host but localhost /
+ * 127.0.0.1 / ::1 unless `--i-mean-remote` is passed (DATABASE_URL comes from
+ * the environment or server/.env).
  *
  * All images use https://picsum.photos/... (deterministic via ?random=<n>) so we
  * don't depend on Unsplash rate limits. Passwords for all seeded users: `password123`.
@@ -14,6 +18,9 @@ import { eq, inArray, sql, type InferSelectModel } from 'drizzle-orm';
 import { db, connectDb, disconnectDb } from '../src/db/client';
 import { users, posts, comments, likes, follows, tags } from '../src/db/schema';
 import { extractTags, extractMentionUsernames } from '../src/lib/extract';
+import { truncateStatement } from '../src/db/tables';
+import { describeDbTarget, remoteWriteRefusal } from '../src/db/target';
+import { env } from '../src/config/env';
 
 type UserRow = InferSelectModel<typeof users>;
 type PostRow = InferSelectModel<typeof posts>;
@@ -93,16 +100,11 @@ const POST_TEXTS = [
 ];
 
 async function reset() {
-  await Promise.all([
-    db.delete(users),
-    db.delete(posts),
-    db.delete(comments),
-    db.delete(likes),
-    db.delete(follows),
-    db.delete(tags),
-  ]);
+  // One TRUNCATE … CASCADE over every table but `session`: parallel DELETEs of
+  // parents and children fail under the 0006 foreign keys.
+  await db.execute(sql.raw(truncateStatement(['session'])));
   // eslint-disable-next-line no-console
-  console.log('✓ reset non-session collections');
+  console.log('✓ reset every table except session');
 }
 
 function pickN<T>(arr: T[], n: number): T[] {
@@ -320,6 +322,16 @@ async function seed() {
 async function main() {
   const args = process.argv.slice(2);
   const reseed = args.includes('--reset');
+
+  // Target first, before any connection: server/.env may point anywhere.
+  // eslint-disable-next-line no-console
+  console.log(`target database: ${describeDbTarget(env.DATABASE_URL)}`);
+  const refusal = remoteWriteRefusal(env.DATABASE_URL, args);
+  if (refusal) {
+    // eslint-disable-next-line no-console
+    console.error(refusal);
+    process.exit(2);
+  }
 
   await connectDb();
 

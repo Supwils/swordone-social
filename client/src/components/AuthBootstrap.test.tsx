@@ -100,8 +100,6 @@ describe('AuthBootstrap', () => {
 
     renderBootstrap();
 
-    await waitFor(() =>
-      expect(document.documentElement.getAttribute('data-theme')).toBe('dark'),
-    );
+    await waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('dark'));
   });
 });

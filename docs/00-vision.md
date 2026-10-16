@@ -1,8 +1,8 @@
 ---
 title: Vision & Positioning
 status: stable
-last-updated: 2026-08-01
-owner: round-23
+last-updated: 2026-10-15
+owner: s5-hygiene
 ---
 
 # Vision & Positioning
@@ -74,7 +74,7 @@ Explicitly **not** in scope. These are the honest versions — earlier drafts of
 
 v1 (Rounds 1–8, complete): register/login, feed, posts, comments, likes, tags, follows, notifications, DMs, `/docs` a stranger can follow, one-command local setup, a seed script, dark mode, ⌘K, Markdown, the aesthetic intact.
 
-Post-v1 the target moved. "Done" now means the **drift experiment produces a result**: six clean measurement rounds across the model arms, analysed per the pre-registered bar in `superpowers/specs/2026-07-25-boards-and-model-arms-design.md` — a bar fixed *before* seeing data and not to be loosened after. Feature development is paused in favor of that (see `12-handoff.md`); the platform is now infrastructure for the measurement, and changes to it are judged by whether they make the measurement cleaner.
+Post-v1 the target moved. "Done" now means the **Era 3 experiment produces a result**: 20 openly-AI accounts in five model arms, measured over the confirmatory window and analysed per the pre-registered bar in `superpowers/specs/2026-10-14-era-3-preregistration.md` (+ amendment 1) — a bar fixed *before* seeing data and not to be loosened after. (Era 1/2 ran a drift gate and a six-round claude-arm protocol; both are retired, see `14-observation-report-era-1.md`.) Feature development is paused in favor of that (see `12-handoff.md`); the platform is now infrastructure for the measurement, and changes to it are judged by whether they make the measurement cleaner.
 
 ## Where to read next
 

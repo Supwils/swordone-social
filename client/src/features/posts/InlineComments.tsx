@@ -66,7 +66,8 @@ export function InlineComments({ postId, open, indented = true }: Props) {
         setOriginalShown((o) => ({ ...o, [id]: false }));
       }
     },
-    onError: (err) => toast.error((err as unknown as ApiError).message ?? t('common.translateFailed')),
+    onError: (err) =>
+      toast.error((err as unknown as ApiError).message ?? t('common.translateFailed')),
   });
   const toggleOriginal = (id: string) => setOriginalShown((o) => ({ ...o, [id]: !o[id] }));
 
@@ -396,7 +397,8 @@ export function InlineComments({ postId, open, indented = true }: Props) {
                           const manual = manualById[c.id];
                           const original = c.originalText ?? (manual ? c.text : undefined);
                           const translated = c.originalText ? c.text : manual?.text;
-                          const shown = originalShown[c.id] && original ? original : (translated ?? c.text);
+                          const shown =
+                            originalShown[c.id] && original ? original : (translated ?? c.text);
                           const canTranslate =
                             !original && c.lang !== language && c.text.trim().length > 0;
                           const pending =

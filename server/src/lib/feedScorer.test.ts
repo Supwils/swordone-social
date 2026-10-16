@@ -164,7 +164,10 @@ describe('refreshFeedScore batching', () => {
       .toBe(true);
 
     // The persisted number is the real formula, not a sentinel.
-    const [row] = await db.select().from(posts).where((await import('drizzle-orm')).eq(posts.id, p1.id));
+    const [row] = await db
+      .select()
+      .from(posts)
+      .where((await import('drizzle-orm')).eq(posts.id, p1.id));
     expect(row.feedScore).toBeCloseTo(
       calcFeedScore({
         likeCount: row.likeCount,

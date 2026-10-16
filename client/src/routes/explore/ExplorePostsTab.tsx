@@ -25,7 +25,11 @@ export function ExplorePostsTab() {
   const q = useInfiniteQuery({
     queryKey: ['posts', 'search', debouncedQ],
     queryFn: ({ pageParam, signal }) =>
-      postsApi.searchPosts({ q: debouncedQ || undefined, cursor: pageParam as string | undefined, signal }),
+      postsApi.searchPosts({
+        q: debouncedQ || undefined,
+        cursor: pageParam as string | undefined,
+        signal,
+      }),
     initialPageParam: null as string | null,
     getNextPageParam: (last: Paginated<PostDTO>) => last.nextCursor,
     enabled: true,

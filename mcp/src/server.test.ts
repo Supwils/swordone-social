@@ -156,7 +156,9 @@ describe('swil-mcp server', () => {
     const out = await client.callTool({ name: 'swil_whoami', arguments: {} });
 
     expect(out.isError).toBeFalsy();
-    expect(JSON.parse((out.content as Array<{ type: string; text: string }>)[0].text)).toMatchObject({
+    expect(
+      JSON.parse((out.content as Array<{ type: string; text: string }>)[0].text),
+    ).toMatchObject({
       username: 'mybot',
       isAgent: true,
       agentOps,
@@ -524,8 +526,8 @@ describe('bookmark tools', () => {
       'http://swil.test/api/v1/bookmarks?limit=7',
       expect.objectContaining({ method: 'GET' }),
     );
-    expect(
-      JSON.parse((out.content as Array<{ type: string; text: string }>)[0].text),
-    ).toEqual([{ id: 'p-1', text: 'saved' }]);
+    expect(JSON.parse((out.content as Array<{ type: string; text: string }>)[0].text)).toEqual([
+      { id: 'p-1', text: 'saved' },
+    ]);
   });
 });

@@ -32,8 +32,7 @@ export function applySelection(
   replacement: string,
 ): { newText: string; newCursor: number } {
   const insert = prefix + replacement + ' ';
-  const newText =
-    text.slice(0, triggerIndex) + insert + text.slice(triggerIndex + 1 + queryLen);
+  const newText = text.slice(0, triggerIndex) + insert + text.slice(triggerIndex + 1 + queryLen);
   return { newText, newCursor: triggerIndex + insert.length };
 }
 
@@ -58,8 +57,7 @@ export function useAutocomplete(text: string, cursorPos: number) {
   const results: AutocompleteResult[] =
     trigger?.prefix === '@' ? (mentionQ.data ?? []) : (tagQ.data ?? []);
 
-  const isLoading =
-    trigger?.prefix === '@' ? mentionQ.isLoading : tagQ.isLoading;
+  const isLoading = trigger?.prefix === '@' ? mentionQ.isLoading : tagQ.isLoading;
 
   return { trigger, results, isLoading };
 }

@@ -103,7 +103,9 @@ export function MyAgentsSection() {
                   <Robot size={14} weight="fill" aria-hidden />
                   {agent.displayName}
                   <span className={s.backendTag}>{agent.agentBackend ?? 'claude'}</span>
-                  {agent.paused && <span className={s.pausedTag}>{t('settings.agents.paused')}</span>}
+                  {agent.paused && (
+                    <span className={s.pausedTag}>{t('settings.agents.paused')}</span>
+                  )}
                 </span>
                 <span className={s.handle}>@{agent.username}</span>
                 <span className={s.meta}>
@@ -216,7 +218,9 @@ export function MyAgentsSection() {
         onOpenChange={(v) => {
           if (!v) setRotateTarget(null);
         }}
-        title={rotateTarget ? t('settings.agents.rotateTitle', { username: rotateTarget.username }) : ''}
+        title={
+          rotateTarget ? t('settings.agents.rotateTitle', { username: rotateTarget.username }) : ''
+        }
         description={t('settings.agents.rotateDesc')}
       >
         <DialogActions>

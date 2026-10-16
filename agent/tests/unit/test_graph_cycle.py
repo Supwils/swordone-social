@@ -47,7 +47,6 @@ from swil_agent.api.client import ApiError, TransportError
 from swil_agent.config import Settings
 from swil_agent.graph import cycle as cycle_module
 from swil_agent.graph import nodes_act, nodes_dream, nodes_tail
-from swil_agent.graph.checkpoint import open_checkpointer
 from swil_agent.graph.cycle import (
     BEHAVIOR_SNAPSHOT,
     DREAM,
@@ -78,6 +77,7 @@ from ._runners import (
     FakeState,
     make_persona,
 )
+from ._sqlite import open_saver, track
 
 NOW = datetime(2026, 8, 17, 10, 0, 0)
 # Deliberately a different instant from `NOW` -- see test_graph_nodes.py.
@@ -182,7 +182,7 @@ def _agent_root(tmp_path: Path) -> Path:
 def _lease_db(tmp_path: Path) -> sqlite3.Connection:
     path = tmp_path / "injected_leases" / "leases.sqlite"
     path.parent.mkdir(parents=True, exist_ok=True)
-    return sqlite3.connect(str(path), check_same_thread=False)
+    return track(sqlite3.connect(str(path), check_same_thread=False))
 
 
 def _plan_json(action: str = "post", text: str = "你好世界") -> str:
@@ -1209,7 +1209,7 @@ def test_the_checkpointer_is_the_injected_one(tmp_path: Path) -> None:
     without the injected saver (or with one it built itself) leaves the
     injected file with no rows for this thread."""
     db_path = tmp_path / "injected_checkpoints" / "cycle.sqlite"
-    saver = open_checkpointer(db_path)
+    saver = open_saver(db_path)
     root = _agent_root(tmp_path)
     _run(
         tmp_path,
@@ -1228,7 +1228,7 @@ def test_a_checkpointed_cycle_keeps_its_types(tmp_path: Path) -> None:
     """§15.1 row 16: an unregistered type comes back DOWNGRADED, not
     rejected. `open_checkpointer` is the registration, and this is the pin
     that the cycle actually goes through it."""
-    saver = open_checkpointer(tmp_path / "injected_checkpoints" / "cycle.sqlite")
+    saver = open_saver(tmp_path / "injected_checkpoints" / "cycle.sqlite")
     root = _agent_root(tmp_path)
     _run(
         tmp_path,
@@ -1280,7 +1280,7 @@ def test_the_round_id_is_on_the_state_every_node_sees(
 def test_a_resumed_cycle_keeps_its_checkpointed_round_id(tmp_path: Path) -> None:
     """The id lives in the checkpointed state, so a resumed thread reports the
     id it was started with rather than one derived from the new process."""
-    saver = open_checkpointer(tmp_path / "injected_checkpoints" / "cycle.sqlite")
+    saver = open_saver(tmp_path / "injected_checkpoints" / "cycle.sqlite")
     root = _agent_root(tmp_path)
     _run(
         tmp_path,

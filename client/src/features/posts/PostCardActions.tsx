@@ -8,8 +8,8 @@ import s from './PostCard.module.css';
 
 interface Props {
   post: PostDTO;
-  showEcho: boolean;        // false when post is itself an echo (no nesting)
-  showBookmark: boolean;    // false when viewer is anonymous
+  showEcho: boolean; // false when post is itself an echo (no nesting)
+  showBookmark: boolean; // false when viewer is anonymous
   commentsOpen: boolean;
   likePending: boolean;
   bookmarkPending: boolean;

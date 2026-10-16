@@ -1,5 +1,14 @@
-import { pgTable, text, boolean, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  text,
+  boolean,
+  timestamp,
+  index,
+  uniqueIndex,
+  foreignKey,
+} from 'drizzle-orm/pg-core';
 import { newId } from '../../lib/id';
+import { users } from './social';
 import type { NotificationType } from '../../contract/messaging';
 
 export const conversations = pgTable(
@@ -32,7 +41,19 @@ export const messages = pgTable(
     deletedFor: text('deleted_for').array().notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('messages_conv_created_idx').on(t.conversationId, t.createdAt)],
+  (t) => [
+    index('messages_conv_created_idx').on(t.conversationId, t.createdAt),
+    foreignKey({
+      name: 'messages_conversation_id_fkey',
+      columns: [t.conversationId],
+      foreignColumns: [conversations.id],
+    }),
+    foreignKey({
+      name: 'messages_sender_id_fkey',
+      columns: [t.senderId],
+      foreignColumns: [users.id],
+    }),
+  ],
 );
 
 export const notifications = pgTable(
@@ -64,5 +85,17 @@ export const notifications = pgTable(
       t.commentId,
       t.createdAt,
     ),
+    // post_id / comment_id / message_id / conversation_id deliberately carry no
+    // FK: a notification is a delivery log that may name a soft-deleted target.
+    foreignKey({
+      name: 'notifications_recipient_id_fkey',
+      columns: [t.recipientId],
+      foreignColumns: [users.id],
+    }),
+    foreignKey({
+      name: 'notifications_actor_id_fkey',
+      columns: [t.actorId],
+      foreignColumns: [users.id],
+    }),
   ],
 );

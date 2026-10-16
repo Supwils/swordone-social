@@ -54,7 +54,10 @@
   text-decoration: none;
   pointer-events: auto;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  transition: opacity 180ms, box-shadow 180ms, color 180ms;
+  transition:
+    opacity 180ms,
+    box-shadow 180ms,
+    color 180ms;
 }
 
 .stickerTag:hover {
@@ -66,7 +69,9 @@
 
 /* Hide stickers on narrow screens — not enough room */
 @media (max-width: 540px) {
-  .tagWallpaper { display: none; }
+  .tagWallpaper {
+    display: none;
+  }
 }
 
 /* ── Typography ── */
@@ -199,7 +204,9 @@
 .sectionTabActive {
   color: var(--color-text);
   background: var(--color-surface);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04), 0 8px 18px rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.04),
+    0 8px 18px rgba(0, 0, 0, 0.08);
 }
 
 .loadMore {

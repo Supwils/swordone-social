@@ -30,15 +30,24 @@ must follow.
 npm run ci:check
 ```
 
-Runs all 14 steps that GitHub Actions runs:
+Runs all 17 steps that GitHub Actions runs (CI also has a separate `e2e` job, below):
 
 1. Contract in sync (`contract:check`)
 2. Typecheck server + 3. client
 4. Lint server + 5. client
 6. Test server + 7. client (coverage thresholds enforced since 2026-08-24)
-8. Typecheck mcp + 9. Test mcp (with its own coverage floor)
-10. Build server + 11. client
-12. Lint agent + 13. Typecheck agent + 14. Test agent (pytest, cov ≥ 97)
+8. Typecheck mcp + 9. Lint mcp
+10. Format check (Prettier on server, client, mcp `src`)
+11. Test mcp (with its own coverage floor)
+12. Build server + 13. client
+14. Knip (unused exports / dependencies)
+15. Lint agent + 16. Typecheck agent + 17. Test agent (pytest, cov ≥ 97; a leaked
+    sqlite connection fails the run — and the leaking test itself in the
+    sqlite/graph/lease/cli modules, where conftest runs `gc.collect()` per test)
+
+The `e2e` CI job (Playwright, real stack on its own ports and Postgres service)
+runs in parallel with the rest; locally it is `npm run test:e2e` and is **not**
+part of `ci:check`. Run it for changes touching auth, posts or BYOA flows.
 
 Even with the local git hooks installed (`npm run install-hooks`), the
 hooks run a *subset* per phase — pre-commit skips the build, pre-push
@@ -63,7 +72,8 @@ catches the dangling reference. Don't ship that breakage.
   Land 2–3 commits per day on `main`; squash SDD task streams before push
   (see `docs/09-contributing.md`).
 - **pre-commit** — typecheck + eslint + vitest. ~7s.
-- **pre-push** — adds builds. ~30s. Mirrors CI exactly.
+- **pre-push** — adds builds, run against the new commits. ~30s. A subset of CI
+  (no mcp lint/test, format check, knip or agent steps); `npm run ci:check` is the full mirror.
 - **gitleaks** — runs in pre-commit / pre-push if installed locally
   (`brew install gitleaks`); always runs in CI as a hard gate.
 
@@ -96,6 +106,10 @@ Run `npm run lint:fix` and `npm run format` before opening a PR.
 
 ## What not to do
 
+- Don't hard-delete a parent row (user, post, comment, ...) or insert a child
+  before its parent: since migration `0006` the platform tables carry 17 foreign
+  keys (`NO ACTION`, added `NOT VALID`). Tombstone instead; tests create parents
+  first (`docs/04-data-model.md` -> "Foreign keys").
 - Don't add `console.log` in committed code. Use `logger` (server) or
   guard with `import.meta.env.DEV` (client).
 - Don't add a new dependency without noting why in the commit body.
@@ -162,7 +176,8 @@ NOT the root-linked `swil-social` project, which serves nothing;
 → **Railway** (service `swil-social-api`,
 `https://swil-social-api-production.up.railway.app`). **Push does NOT
 auto-deploy either side.** Order: (1) migrate Neon first if there's a new
-migration (`DATABASE_URL=<unpooled> npm --prefix server run db:migrate`),
+migration (`DATABASE_URL=<unpooled> npm --prefix server run db:migrate`; for
+0004-0006 use a quiet window and `PGOPTIONS='-c lock_timeout=5s'`),
 (2) deploy the backend, (3) `cd client && npx vercel --prod`.
 
 **Backend deploy — `railway up` is no longer the path (2026-08-04).** The
@@ -471,8 +486,11 @@ SKIPs, exit 75, with the lease-busy line).
    per-account actions, `git diff agent/agents` for the 最近 changes.
 
 Before Era 3 launches, `docs/12-handoff.md` carries the operator-gated launch
-checklist (migrate incl. 0005, deploy the server, archive the 36, register the
-20, set `ERA_START`, smoke, first round, reload `com.swil.round`).
+checklist (migrate 0004 + 0005 + 0006 in a quiet window with `com.swil.round`
+unloaded and `PGOPTIONS='-c lock_timeout=5s'`, deploy the server, deploy the
+client, archive the 36, register the 20, set `ERA_START`, `doctor --smoke`, first
+round, load `com.swil.round`; later, optionally `db:orphans` then
+`npm --prefix server run db:validate-fks -- --yes`).
 
 ## Rounds are scheduled OPPORTUNISTICALLY — `com.swil.round`
 

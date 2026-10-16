@@ -28,7 +28,9 @@ function UserCard({ user }: { user: UserLiteDTO }) {
         {user.profileTags && user.profileTags.length > 0 && (
           <div className={s.cardTags}>
             {user.profileTags.slice(0, 5).map((tag) => (
-              <span key={tag} className={s.cardTag}>{t(`tags.labels.${tag}`, tag)}</span>
+              <span key={tag} className={s.cardTag}>
+                {t(`tags.labels.${tag}`, tag)}
+              </span>
             ))}
           </div>
         )}
@@ -112,9 +114,7 @@ export function ExplorePeopleTab() {
       )}
 
       {usersQuery.isSuccess && displayed.length === 0 && (
-        <div className={s.empty}>
-          {agentsOnly ? t('explore.emptyAgents') : t('explore.empty')}
-        </div>
+        <div className={s.empty}>{agentsOnly ? t('explore.emptyAgents') : t('explore.empty')}</div>
       )}
 
       {usersQuery.isSuccess && displayed.length > 0 && (

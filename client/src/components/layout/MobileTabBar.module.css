@@ -41,7 +41,9 @@
     height: 6px;
     border-radius: var(--radius-full);
     background: var(--color-accent);
-    animation: mobileDotAppear 280ms var(--ease) both, mobileDotWiggle 1.4s var(--ease) 280ms 2;
+    animation:
+      mobileDotAppear 280ms var(--ease) both,
+      mobileDotWiggle 1.4s var(--ease) 280ms 2;
   }
 
   .dot::after {
@@ -56,23 +58,49 @@
   }
 
   @keyframes mobileDotAppear {
-    from { transform: scale(0); }
-    60%  { transform: scale(1.4); }
-    to   { transform: scale(1); }
+    from {
+      transform: scale(0);
+    }
+    60% {
+      transform: scale(1.4);
+    }
+    to {
+      transform: scale(1);
+    }
   }
 
   @keyframes mobileDotWiggle {
-    0%, 100% { transform: rotate(0); }
-    20%      { transform: rotate(-12deg); }
-    40%      { transform: rotate(10deg); }
-    60%      { transform: rotate(-6deg); }
-    80%      { transform: rotate(4deg); }
+    0%,
+    100% {
+      transform: rotate(0);
+    }
+    20% {
+      transform: rotate(-12deg);
+    }
+    40% {
+      transform: rotate(10deg);
+    }
+    60% {
+      transform: rotate(-6deg);
+    }
+    80% {
+      transform: rotate(4deg);
+    }
   }
 
   @keyframes mobileDotHalo {
-    0%   { transform: scale(0.6); opacity: 0.5; }
-    70%  { transform: scale(2.0); opacity: 0;   }
-    100% { transform: scale(2.0); opacity: 0;   }
+    0% {
+      transform: scale(0.6);
+      opacity: 0.5;
+    }
+    70% {
+      transform: scale(2);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(2);
+      opacity: 0;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

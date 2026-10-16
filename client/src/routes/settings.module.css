@@ -116,7 +116,9 @@
   opacity: 0.7;
   line-height: 1;
 }
-.tagRemove:hover { opacity: 1; }
+.tagRemove:hover {
+  opacity: 1;
+}
 
 .tagInput {
   width: 100%;
@@ -129,8 +131,13 @@
   font-family: var(--font-sans);
   outline: none;
 }
-.tagInput:focus { border-color: var(--color-accent); }
-.tagInput:disabled { opacity: 0.5; cursor: not-allowed; }
+.tagInput:focus {
+  border-color: var(--color-accent);
+}
+.tagInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .tagCategories {
   display: flex;
@@ -164,14 +171,19 @@
   color: var(--color-text-muted);
   border: 1px solid var(--color-border);
   cursor: pointer;
-  transition: background 120ms, color 120ms;
+  transition:
+    background 120ms,
+    color 120ms;
 }
 .tagSuggestion:hover:not(:disabled) {
   background: var(--color-accent-muted);
   color: var(--color-accent);
   border-color: transparent;
 }
-.tagSuggestion:disabled { opacity: 0.4; cursor: not-allowed; }
+.tagSuggestion:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 .tagSuggestionMore {
   padding: 2px 10px;
@@ -181,7 +193,9 @@
   color: var(--color-accent);
   border: 1px dashed var(--color-accent);
   cursor: pointer;
-  transition: background 120ms, color 120ms;
+  transition:
+    background 120ms,
+    color 120ms;
 }
 .tagSuggestionMore:hover {
   background: var(--color-accent-soft);
@@ -211,9 +225,13 @@
   border: none;
   border-right: 1px solid var(--color-border);
   cursor: pointer;
-  transition: background 120ms, color 120ms;
+  transition:
+    background 120ms,
+    color 120ms;
 }
-.themeBtn:last-child { border-right: none; }
+.themeBtn:last-child {
+  border-right: none;
+}
 .themeBtn:hover:not(.themeBtnActive) {
   background: var(--color-surface-muted);
   color: var(--color-text);
@@ -233,11 +251,12 @@
   height: 28px;
   border-radius: var(--radius-sm);
   color: var(--color-text-subtle);
-  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
 }
 
 .eyeBtn:hover {
   color: var(--color-text-muted);
   background: var(--color-surface-muted);
 }
-

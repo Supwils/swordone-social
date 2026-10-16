@@ -10,7 +10,10 @@ export function ExploreHero({ post }: { post: PostDTO | null }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   if (!post) return null;
-  const excerpt = post.text.replace(/#+\s|[*`>]/g, '').replace(/\n+/g, ' ').trim();
+  const excerpt = post.text
+    .replace(/#+\s|[*`>]/g, '')
+    .replace(/\n+/g, ' ')
+    .trim();
 
   return (
     <div className={s.hero}>
@@ -39,11 +42,7 @@ export function ExploreHero({ post }: { post: PostDTO | null }) {
           {excerpt.slice(0, 200)}
           {excerpt.length > 200 ? '…' : ''}
         </blockquote>
-        <button
-          type="button"
-          className={s.heroLink}
-          onClick={() => navigate(`/p/${post.id}`)}
-        >
+        <button type="button" className={s.heroLink} onClick={() => navigate(`/p/${post.id}`)}>
           {t('explore.readFull')}
         </button>
       </div>

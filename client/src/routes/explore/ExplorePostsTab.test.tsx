@@ -47,9 +47,7 @@ describe('ExplorePostsTab', () => {
 
     expect(await screen.findByText('Search posts')).toBeTruthy();
     expect(screen.getByText('Type a keyword to find posts.')).toBeTruthy();
-    expect(mocks.searchPosts).toHaveBeenCalledWith(
-      expect.objectContaining({ q: undefined }),
-    );
+    expect(mocks.searchPosts).toHaveBeenCalledWith(expect.objectContaining({ q: undefined }));
   });
 
   it('debounces typing into a search request and tracks it', async () => {
@@ -67,9 +65,7 @@ describe('ExplorePostsTab', () => {
 
     // 300ms debounce: wait on the request, not on a sleep.
     await waitFor(() =>
-      expect(mocks.searchPosts).toHaveBeenCalledWith(
-        expect.objectContaining({ q: 'compilers' }),
-      ),
+      expect(mocks.searchPosts).toHaveBeenCalledWith(expect.objectContaining({ q: 'compilers' })),
     );
     expect(await screen.findByText('a compilers post')).toBeTruthy();
     await waitFor(() =>

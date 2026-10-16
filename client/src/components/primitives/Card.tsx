@@ -19,12 +19,7 @@ export function Card({
 }: CardProps) {
   return (
     <Tag
-      className={clsx(
-        s.card,
-        padding === 'flush' && s.flush,
-        hoverable && s.hoverable,
-        className,
-      )}
+      className={clsx(s.card, padding === 'flush' && s.flush, hoverable && s.hoverable, className)}
       {...rest}
     >
       {children}

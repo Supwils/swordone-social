@@ -95,7 +95,7 @@ export function paginated<T extends z.ZodTypeAny>(item: T) {
 
 // ── Ids, usernames, limits ───────────────────────────────────────────────────
 
-/** A primary-key id: MongoDB ObjectId hex, 24 lowercase hex chars. */
+/** A primary-key id: ObjectId hex, 24 lowercase hex chars. */
 export const ID_RE = /^[a-f0-9]{24}$/;
 
 /** Characters a username may contain. Length is bounded separately (LIMITS). */

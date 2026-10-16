@@ -6,7 +6,16 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { Card } from '@/components/primitives';
 import { getHomogenization } from '@/features/lab/api';
 import type { LabEra } from '@/features/lab/types';
@@ -30,7 +39,8 @@ export function HomogenizationPanel({ era, range }: { era: LabEra; range: '7d' |
   );
   const cur = q.data?.current;
   const trend = series.length >= 2 ? series[series.length - 1].behavior - series[0].behavior : 0;
-  const trendLabel = trend > 0.01 ? t('lab.homog.up') : trend < -0.01 ? t('lab.homog.down') : t('lab.homog.flat');
+  const trendLabel =
+    trend > 0.01 ? t('lab.homog.up') : trend < -0.01 ? t('lab.homog.down') : t('lab.homog.flat');
 
   return (
     <section className={s.chartBlock}>

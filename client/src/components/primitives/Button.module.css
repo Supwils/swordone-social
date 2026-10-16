@@ -10,7 +10,8 @@
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease),
+  transition:
+    background var(--dur-fast) var(--ease),
     color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease);
   user-select: none;

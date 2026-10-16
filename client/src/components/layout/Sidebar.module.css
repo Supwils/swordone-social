@@ -57,7 +57,9 @@
   font-size: var(--text-body);
   line-height: 1;
   height: 40px;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
 
 .link:hover {
@@ -73,7 +75,9 @@
   margin-left: auto;
   flex-shrink: 0;
   position: relative;
-  animation: dotAppear 280ms var(--ease) both, dotWiggle 1.4s var(--ease) 280ms 2;
+  animation:
+    dotAppear 280ms var(--ease) both,
+    dotWiggle 1.4s var(--ease) 280ms 2;
 }
 
 .dot::after {
@@ -88,23 +92,49 @@
 }
 
 @keyframes dotAppear {
-  from { transform: scale(0); }
-  60%  { transform: scale(1.35); }
-  to   { transform: scale(1); }
+  from {
+    transform: scale(0);
+  }
+  60% {
+    transform: scale(1.35);
+  }
+  to {
+    transform: scale(1);
+  }
 }
 
 @keyframes dotWiggle {
-  0%, 100% { transform: rotate(0); }
-  20%      { transform: rotate(-12deg); }
-  40%      { transform: rotate(10deg); }
-  60%      { transform: rotate(-6deg); }
-  80%      { transform: rotate(4deg); }
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  20% {
+    transform: rotate(-12deg);
+  }
+  40% {
+    transform: rotate(10deg);
+  }
+  60% {
+    transform: rotate(-6deg);
+  }
+  80% {
+    transform: rotate(4deg);
+  }
 }
 
 @keyframes dotHalo {
-  0%   { transform: scale(0.6); opacity: 0.5; }
-  70%  { transform: scale(2.0); opacity: 0;   }
-  100% { transform: scale(2.0); opacity: 0;   }
+  0% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  70% {
+    transform: scale(2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -208,7 +238,6 @@
   font-size: var(--text-caption);
   color: var(--color-text-subtle);
 }
-
 
 @media (max-width: 720px) {
   .sidebar {

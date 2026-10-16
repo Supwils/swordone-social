@@ -41,9 +41,10 @@ class _ClaudeStyleBackend:
         # account. Transcript evidence: two `Write` tool_use records under
         # ~/.claude/projects/<repo>/, timestamps matching both files.
         #
-        # Every call through here is text-in/text-out. The constitution layer
-        # (archive -> drift gate -> validators -> snapshot) is only a gate if
-        # the model's ONLY channel to disk is its return value.
+        # Every call through here is text-in/text-out. The write path
+        # (code archives, validates and snapshots; the Era 1/2 drift gate is
+        # removed) only holds if the model's ONLY channel to disk is its
+        # return value.
         argv = ["claude", "-p", "--tools", ""]
         if model:
             argv += ["--model", model]
@@ -61,7 +62,7 @@ class ClaudeCLIBackend(_ClaudeStyleBackend):
 class DeepSeekCLIBackend(_ClaudeStyleBackend):
     """Same CLI, different endpoint.
 
-    The env is applied to this subprocess only. Mirrors `deepseek-env.sh`: it also
+    The env is applied to this subprocess only. It also
     explicitly strips `ANTHROPIC_API_KEY`, because that variable takes
     precedence over `ANTHROPIC_AUTH_TOKEN` in the claude CLI's auth
     resolution — if a developer's shell has their own real Anthropic key
@@ -88,8 +89,8 @@ class DeepSeekCLIBackend(_ClaudeStyleBackend):
 def _default_deepseek_key() -> str:
     """Production key source: `~/.claude/.deepseek-key`, one line, chmod 600.
 
-    Mirrors `deepseek-env.sh`'s own read — including `tr -d '[:space:]'`,
-    which strips ALL whitespace (leading, trailing, AND internal, e.g. a
+    Reads the key and strips ALL whitespace (as the Bash `tr -d '[:space:]'`
+    did): leading, trailing, AND internal, e.g. a
     stray newline or space pasted into the middle of the key), not just the
     ends. `.strip()` alone would leave an internal newline in place and
     silently hand the CLI a broken token. Kept separate from

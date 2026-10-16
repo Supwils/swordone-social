@@ -39,7 +39,8 @@
 
   /* Fonts */
   --font-serif: 'Cormorant Garamond', 'Noto Serif SC', Georgia, 'Times New Roman', serif;
-  --font-sans: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans:
+    'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   /* Type scale (base 16, ratio 1.25) */

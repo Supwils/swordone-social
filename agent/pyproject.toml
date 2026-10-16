@@ -106,3 +106,14 @@ testpaths = ["tests"]
 # fix-wave that first turned it on, so it starts at today's level and can only
 # ratchet up, never fail spuriously on an unrelated merge.
 addopts = "-q --cov=swil_agent"
+# A leaked sqlite3.Connection warns from its C dealloc, i.e. inside __del__,
+# where an exception cannot propagate: it reaches sys.unraisablehook and pytest
+# re-emits it as PytestUnraisableExceptionWarning. Both must be errors or a
+# leak only shows up in the warnings summary. tests/conftest.py runs gc.collect()
+# after tests in graph/locks/cycle/cli/sqlite3 modules so cyclic garbage is
+# blamed on the test that leaked it; elsewhere it fails the run at session end.
+# (The mutation harness runs -p no:warnings, so this gate does not apply there.)
+filterwarnings = [
+    "error::ResourceWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]

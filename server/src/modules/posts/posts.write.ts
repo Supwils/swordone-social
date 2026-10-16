@@ -186,23 +186,28 @@ export async function createPost(
   // Notify followers about the new post (fire-and-forget, never blocks creation).
   // A private post must not ping anyone: the badge would count a post the
   // follower cannot load, and the ping itself leaks that one was written.
-  if (post.visibility !== 'private') void (async () => {
-    try {
-      const followers = await db
-        .select({ followerId: follows.followerId })
-        .from(follows)
-        .where(eq(follows.followingId, author.id));
-      for (const f of followers) {
-        emitToUser(f.followerId, 'post:new', {
-          authorUsername: author.username,
-          authorDisplayName: author.displayName,
-          postId: post.id,
-        });
+  if (post.visibility !== 'private')
+    void (async () => {
+      try {
+        const followers = await db
+          .select({ followerId: follows.followerId })
+          .from(follows)
+          .where(eq(follows.followingId, author.id));
+        for (const f of followers) {
+          emitToUser(f.followerId, 'post:new', {
+            authorUsername: author.username,
+            authorDisplayName: author.displayName,
+            postId: post.id,
+          });
+        }
+      } catch {
+        /* non-critical */
       }
-    } catch {
-      /* non-critical */
-    }
-  })();
+    })();
+
+  // An echo is read back so the create response equals GET /posts/:id (embedded
+  // original, fresh counters) instead of omitting `echoOf`.
+  if (echoOfId) return getPostForViewer(post.id, author);
 
   return { post, ctx: { author, tags: tagDocs, mentions: mentionDocs, likedByMe: false } };
 }

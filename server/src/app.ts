@@ -104,12 +104,12 @@ export function createApp(opts: AppOptions = {}): Express {
   app.use(express.json({ limit: '100kb' }));
   app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
-  // Strips `$`-prefixed and dotted keys from request inputs. This began as
-  // MongoDB operator-injection defense; under Drizzle/Postgres the actual
-  // protection is parameterized SQL, so it is now defense-in-depth against
-  // operator-shaped keys reaching any future document-ish sink (jsonb columns,
-  // the translations blobs). Named so the middleware is findable by name in
-  // stack traces and tests rather than by a positional index.
+  // Strips `$`-prefixed and dotted keys from request inputs. Under
+  // Drizzle/Postgres the actual protection is parameterized SQL, so this is
+  // defense-in-depth against operator-shaped keys reaching any future
+  // document-ish sink (jsonb columns, the translations blobs). Named so the
+  // middleware is findable by name in stack traces and tests rather than by a
+  // positional index.
   app.use(function stripOperatorKeys(req, _res, next) {
     const strip = (obj: unknown): void => {
       if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
@@ -139,11 +139,7 @@ export function createApp(opts: AppOptions = {}): Express {
       status: 'ok',
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
-      // `mongo` is kept as a deprecated alias of `db`: the store has been
-      // Postgres since the 2026-07-20 migration, but the key is part of a
-      // response shape that external monitoring may already be scraping.
       db: isDbHealthy() ? 'ok' : 'down',
-      mongo: isDbHealthy() ? 'ok' : 'down',
       version: process.env.npm_package_version ?? 'unknown',
     });
   });

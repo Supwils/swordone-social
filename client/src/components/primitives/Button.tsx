@@ -31,13 +31,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       type={type}
-      className={clsx(
-        s.btn,
-        s[size],
-        s[variant],
-        fullWidth && s.fullWidth,
-        className,
-      )}
+      className={clsx(s.btn, s[size], s[variant], fullWidth && s.fullWidth, className)}
       {...rest}
     >
       {leadingIcon}

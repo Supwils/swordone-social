@@ -78,7 +78,13 @@ export function PopulationHealth({
     const divSeries = homogPts.map((p) => 1 - p.behaviorCohesion);
     const divDelta = periodDelta(divSeries);
     const divStatus: Status =
-      diversity === null ? 'neutral' : diversity >= 0.25 ? 'good' : diversity >= 0.15 ? 'warn' : 'bad';
+      diversity === null
+        ? 'neutral'
+        : diversity >= 0.25
+          ? 'good'
+          : diversity >= 0.15
+            ? 'warn'
+            : 'bad';
 
     // Stability — recent mean drift velocity (higher = personalities churning).
     const driftVel = lastNonNull(pts.map((p) => p.meanDriftVelocity));
@@ -106,7 +112,9 @@ export function PopulationHealth({
         status: authStatus,
         higherIsBetter: true,
         pct: fidDelta.pct,
-        spark: pts.filter((p) => p.meanFidelity !== null).map((p) => ({ v: p.meanFidelity as number })),
+        spark: pts
+          .filter((p) => p.meanFidelity !== null)
+          .map((p) => ({ v: p.meanFidelity as number })),
         sparkColor: 'var(--color-success)',
       },
       {
@@ -180,7 +188,13 @@ export function PopulationHealth({
   );
 }
 
-function DeltaChip({ pct, higherIsBetter }: { pct: number | null; higherIsBetter: boolean | null }) {
+function DeltaChip({
+  pct,
+  higherIsBetter,
+}: {
+  pct: number | null;
+  higherIsBetter: boolean | null;
+}) {
   if (pct === null || Math.abs(pct) < 0.05) {
     return <span className={`${s.delta} ${s.deltaFlat}`}>—</span>;
   }

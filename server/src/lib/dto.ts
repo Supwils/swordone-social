@@ -82,7 +82,7 @@ export function toOwnedAgentDTO(agent: UserRow, lastActiveAt: Date | null): Owne
  * every row is already labelled ai/human because comparing the two cohorts is the
  * entire point of that page.
  */
-function publicAgentBackend(user: UserRow): { agentBackend?: string } {
+export function publicAgentBackend(user: UserRow): { agentBackend?: string } {
   return user.isAgent && user.agentBackend ? { agentBackend: user.agentBackend } : {};
 }
 

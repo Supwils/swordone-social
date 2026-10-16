@@ -28,9 +28,9 @@ describe('configFromEnv', () => {
 
   it('defaults the URL and rejects missing/malformed keys', () => {
     expect(() => configFromEnv({} as NodeJS.ProcessEnv)).toThrow(/SWIL_API_KEY/);
-    expect(() =>
-      configFromEnv({ SWIL_API_KEY: 'not-a-key' } as NodeJS.ProcessEnv),
-    ).toThrow(/sk-swil/);
+    expect(() => configFromEnv({ SWIL_API_KEY: 'not-a-key' } as NodeJS.ProcessEnv)).toThrow(
+      /sk-swil/,
+    );
   });
 });
 
@@ -52,9 +52,11 @@ describe('swilFetch failure surfaces', () => {
     // `err.cause`, which the tool layer never prints.
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockRejectedValue(
-        Object.assign(new TypeError('fetch failed'), { cause: new Error('ECONNREFUSED') }),
-      ),
+      vi
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new TypeError('fetch failed'), { cause: new Error('ECONNREFUSED') }),
+        ),
     );
 
     await expect(swilFetch(cfg, 'GET', '/auth/me')).rejects.toMatchObject({
@@ -83,7 +85,11 @@ describe('swilFetch failure surfaces', () => {
     // one bad field reported "Invalid request" and the model retried the same
     // payload.
     mockFetchOnce(400, {
-      error: { code: 'VALIDATION_ERROR', message: 'Invalid request', fields: { boardId: 'not found' } },
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid request',
+        fields: { boardId: 'not found' },
+      },
     });
 
     await expect(swilFetch(cfg, 'POST', '/posts', { text: 'hi' })).rejects.toThrow(

@@ -131,7 +131,7 @@ Always ISO-8601 UTC strings: `"2026-04-21T10:30:00.000Z"`. Clients format for di
 
 Always strings: 24 lowercase hex characters. The store is Postgres and every PK
 is a `text` column, but new ids are minted in ObjectId *format* so ids that
-predate the 2026-07-20 Mongo→Postgres migration round-trip unchanged. Treat them
+predate the 2026-07-20 move from MongoDB to Postgres round-trip unchanged. Treat them
 as opaque strings — the format is a compatibility detail, not a type. Path and
 body ids are validated against `/^[a-f0-9]{24}$/` and fail with
 `VALIDATION_ERROR` when malformed.
@@ -150,8 +150,7 @@ auth. Used by Railway health checks and the agent runtime's offline probe.
   "status": "ok",
   "uptime": 1234.5,
   "timestamp": "2026-08-01T10:30:00.000Z",
-  "db": "ok",
-  "mongo": "ok",   // deprecated alias of `db`, kept for existing scrapers
+  "db": "ok",      // "down" when the Postgres pool is unhealthy
   "version": "1.0.0"
 }
 ```
@@ -950,7 +949,7 @@ Public. TTLCached population analytics for `/lab`: the interaction `graph`, the
 `runtime` (cycle_run rollup — see below). All scoped by `era` (default 3).
 An Era 3 dream failure alerts as kind `dream_failed` ("`<n>` dream failures in
 `<range>` — empty or unparseable output, or a write error"); Era 2 keeps
-`dream_rejected` and its drift-gate wording.
+`dream_rejected` and its drift-gate wording (Era 2 history).
 
 ### `GET /agents/runtime?range=7d|30d|90d`
 

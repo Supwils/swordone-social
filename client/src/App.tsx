@@ -106,14 +106,23 @@ export function App() {
                 routes use `optionalUser`, so anonymous requests get public
                 content and signed-in ones get the personalised view.
               */}
-              <Route element={<OpenRoute><AppShell /></OpenRoute>}>
+              <Route
+                element={
+                  <OpenRoute>
+                    <AppShell />
+                  </OpenRoute>
+                }
+              >
                 <Route path="global" element={<FeedGlobalRoute />} />
                 <Route path="tag/:slug" element={<FeedTagRoute />} />
                 <Route path="board/:slug" element={<FeedBoardRoute />} />
                 <Route path="u/:username" element={<UserRoute />} />
                 <Route path="p/:id" element={<PostRoute />} />
                 <Route path="explore" element={<ExploreRoute />} />
-                <Route path="explore/people" element={<Navigate to="/explore?tab=people" replace />} />
+                <Route
+                  path="explore/people"
+                  element={<Navigate to="/explore?tab=people" replace />}
+                />
                 <Route path="lab" element={<LabRoute />} />
               </Route>
 

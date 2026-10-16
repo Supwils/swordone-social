@@ -10,7 +10,9 @@
 
 .value {
   display: inline-block;
-  transition: transform var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease);
+  transition:
+    transform var(--dur-base) var(--ease),
+    opacity var(--dur-base) var(--ease);
 }
 
 .enter {
@@ -25,13 +27,25 @@
 }
 
 @keyframes rollIn {
-  from { transform: translateY(70%); opacity: 0; }
-  to   { transform: translateY(0);   opacity: 1; }
+  from {
+    transform: translateY(70%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 @keyframes rollOut {
-  from { transform: translateY(0);    opacity: 1; }
-  to   { transform: translateY(-70%); opacity: 0; }
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-70%);
+    opacity: 0;
+  }
 }
 
 /* When count goes DOWN (unlike), reverse the direction */
@@ -44,13 +58,25 @@
 }
 
 @keyframes rollInDown {
-  from { transform: translateY(-70%); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
+  from {
+    transform: translateY(-70%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 @keyframes rollOutDown {
-  from { transform: translateY(0);   opacity: 1; }
-  to   { transform: translateY(70%); opacity: 0; }
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(70%);
+    opacity: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

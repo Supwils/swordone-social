@@ -27,7 +27,7 @@ export function isoDay(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Count rows per UTC day (matches Mongo's `$dateToString %Y-%m-%d` on a UTC date). */
+/** Count rows per UTC day (keyed `YYYY-MM-DD` on the UTC date). */
 export function countByDay(dates: Array<{ createdAt: Date }>): Map<string, number> {
   const m = new Map<string, number>();
   for (const r of dates) {

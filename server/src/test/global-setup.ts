@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { restoreForeignKeyState } from './fkState';
 
 /**
  * Vitest globalSetup — runs once before the whole suite. Applies Drizzle
@@ -20,5 +21,11 @@ export default async function setup(): Promise<void> {
   const pool = new Pool({ connectionString: url });
   const db = drizzle(pool);
   await migrate(db, { migrationsFolder: `${__dirname}/../db/migrations` });
-  await pool.end();
+  // A killed run of the validate-script test can leave 0006's constraints
+  // validated or dropped; the migrator never revisits an applied file.
+  try {
+    await restoreForeignKeyState(pool);
+  } finally {
+    await pool.end();
+  }
 }

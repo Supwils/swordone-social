@@ -76,6 +76,15 @@ jobs:
       - name: Lint (client)
         run: npm --prefix client run lint
 
+      - name: Format check (server)
+        run: npm --prefix server run format:check
+
+      - name: Format check (client)
+        run: npm --prefix client run format:check
+
+      - name: Format check (mcp)
+        run: npm --prefix mcp run format:check
+
       - name: Test (server)
         run: npm --prefix server run test:coverage -- --reporter=dot
 
@@ -84,6 +93,9 @@ jobs:
 
       - name: Typecheck (mcp)
         run: npm --prefix mcp run typecheck
+
+      - name: Lint (mcp)
+        run: npm --prefix mcp run lint
 
       - name: Test (mcp)
         run: npm --prefix mcp run test:coverage -- --reporter=dot
@@ -96,6 +108,68 @@ jobs:
         env:
           # Keep build env minimal — no secrets needed at build time.
           VITE_API_BASE: /api/v1
+
+      - name: Knip (unused exports and deps)
+        run: npm run knip
+
+  e2e:
+    name: Playwright e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Not gated on `typecheck`: it only reads the repo, so running alongside
+    # the other jobs shortens the wall clock; a type error fails CI either way.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # ensure-e2e-db.ts creates swil_e2e_pg itself via the /postgres database.
+      E2E_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/swil_e2e_pg
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+            client/package-lock.json
+
+      - name: Install root deps (Playwright)
+        run: npm ci --no-audit --no-fund
+
+      - name: Install server deps
+        run: npm --prefix server ci --no-audit --no-fund
+
+      - name: Install client deps
+        run: npm --prefix client ci --no-audit --no-fund
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run e2e
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
 
   python:
     name: Python agent runtime

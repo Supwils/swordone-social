@@ -2,9 +2,7 @@ import { http, unwrap } from './client';
 import type { ConversationDTO, MessageDTO, Paginated } from './types';
 
 export async function getConversation(id: string): Promise<ConversationDTO> {
-  const out = await unwrap<{ conversation: ConversationDTO }>(
-    http.get(`/conversations/${id}`),
-  );
+  const out = await unwrap<{ conversation: ConversationDTO }>(http.get(`/conversations/${id}`));
   return out.conversation;
 }
 

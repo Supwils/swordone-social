@@ -15,8 +15,7 @@ import { getDrift, getFidelity, ingestBehaviorSnapshot, ingestSnapshot } from '.
 
 /**
  * Integration rewrite: these suites run against the real test Postgres (migrated
- * by vitest globalSetup, truncated per test by resetDb). Where the old test
- * mocked a Mongoose model, we now seed real rows and assert on the service's
+ * by vitest globalSetup, truncated per test by resetDb). We seed real rows and assert on the service's
  * returned shape and/or the resulting DB rows.
  */
 

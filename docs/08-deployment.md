@@ -31,8 +31,9 @@ The app is deployed **split frontend/backend**, with Postgres on Neon:
   `SameSite=None; Secure` (`COOKIE_SAMESITE=none`, `COOKIE_SECURE=true`) so it survives the
   cross-site SPA→API round trip.
 - Backend `DATABASE_URL` = Neon **direct/unpooled** string (persistent server → small pool; the
-  pooled endpoint is for serverless). Schema applied with `npm --prefix server run db:migrate`;
-  data seeded via the one-off `scripts/migrate-mongo-to-pg.ts`.
+  pooled endpoint is for serverless). Schema applied with `npm --prefix server run db:migrate`
+  (the one-off Mongo ETL script was removed in S5). For migrations 0004-0006 follow the
+  quiet-window procedure below.
 - CI (`.github/workflows/ci.yml`) runs the server tests against a `pgvector/pgvector:pg16` service.
 
 **Redeploy — manual, verified 2026-08-04: pushing to `main` triggers GitHub CI only;
@@ -41,6 +42,13 @@ NEITHER side auto-deploys.** The runbook, in order:
 1. If there is a new migration, apply it to Neon **first** (additive columns are safe for
    the running old code, but new code against an old schema breaks — Drizzle selects
    every column explicitly): `DATABASE_URL=<DATABASE_URL_UNPOOLED> npm --prefix server run db:migrate`.
+   **Migration 0006 (foreign keys, `NOT VALID`)** — and 0004/0005 if still pending, since the
+   migrator runs all pending files in one transaction — needs a quiet window: stop the agent
+   round (`launchctl unload ~/Library/LaunchAgents/com.swil.round.plist`) and bound the lock
+   wait with `PGOPTIONS='-c lock_timeout=5s' DATABASE_URL=<DATABASE_URL_UNPOOLED> npm --prefix
+   server run db:migrate`. A lock timeout or deadlock rolls the whole run back; re-run when
+   quiet. Validating the keys against existing rows is a separate, later owner step
+   (`db:orphans`, then `db:validate-fks -- --yes`; `04-data-model.md` -> Foreign keys).
 2. Backend: trigger a deploy — see "Backend deploy" below. The source is GitHub `main`,
    so push first.
 3. Frontend: `cd client && npx vercel --prod` (aliases to swordone.space and swilsocial.vercel.app).
@@ -156,7 +164,7 @@ If step 1 prints `127.0.0.1` or `localhost`, stop — you are pointed at dev.
 
 ```bash
 npm run install:all
-npm run ci:check        # typecheck + lint + test + build, all packages (mirrors GitHub Actions)
+npm run ci:check        # 17 steps: contract, typecheck, lint, format, test, build, knip, agent (mirrors GitHub Actions)
 ```
 
 `ci:check` produces `server/dist` and `client/dist`. Apply migrations before starting new code
@@ -274,10 +282,9 @@ bundled.
 curl -s -o /dev/null -w "%{http_code}\n" https://<host>/health   # expect 200
 ```
 
-`/health` returns `{ status, uptime, timestamp, db, mongo, version }`. `db` is the Postgres
-connection state; **`mongo` is a deprecated alias of `db`**, kept only because external monitors
-may already scrape that key — it does not mean anything Mongo is still involved. Point new
-monitors at `db`. Then: register → post → comment → open a second tab and confirm the realtime
+`/health` returns `{ status, uptime, timestamp, db, version }`. `db` is the Postgres
+connection state. **The `mongo` alias of `db` was removed in S5 (2026-10-15)** — any external
+monitor that scraped `mongo` must read `db` (or just the HTTP status). Then: register → post → comment → open a second tab and confirm the realtime
 notification/DM arrives.
 
 ## Observability

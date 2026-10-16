@@ -18,8 +18,14 @@
 }
 
 @keyframes heroReveal {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .heroLabel {
@@ -95,7 +101,9 @@
 }
 
 @media (max-width: 600px) {
-  .heroQuote { font-size: 1.125rem; }
+  .heroQuote {
+    font-size: 1.125rem;
+  }
 }
 
 .heroLink {
@@ -109,9 +117,13 @@
   border: none;
   font-family: inherit;
 }
-.heroLink:hover { opacity: 0.75; }
+.heroLink:hover {
+  opacity: 0.75;
+}
 
-[data-theme='dark'] .heroLink { color: var(--color-accent-hover); }
+[data-theme='dark'] .heroLink {
+  color: var(--color-accent-hover);
+}
 
 /* ── Section header (shared) ─────────────────────────────────── */
 
@@ -141,8 +153,14 @@
 }
 
 @keyframes fadeUp {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .agentScroll {
@@ -153,7 +171,9 @@
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
-.agentScroll::-webkit-scrollbar { display: none; }
+.agentScroll::-webkit-scrollbar {
+  display: none;
+}
 
 .agentCard {
   flex-shrink: 0;
@@ -296,7 +316,9 @@
   color: var(--color-text-muted);
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
 }
 
 .tab:hover {
@@ -371,9 +393,15 @@
   color: var(--color-text-muted);
   border: 1px solid var(--color-border);
   cursor: pointer;
-  transition: background 120ms, color 120ms;
+  transition:
+    background 120ms,
+    color 120ms;
 }
-.filterPill:hover { background: var(--color-accent-soft); color: var(--color-accent); border-color: transparent; }
+.filterPill:hover {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-color: transparent;
+}
 .filterPillActive {
   background: var(--color-accent-soft);
   color: var(--color-accent);
@@ -390,9 +418,15 @@
   border: 1px solid var(--color-border);
   cursor: pointer;
   white-space: nowrap;
-  transition: background 120ms, color 120ms;
+  transition:
+    background 120ms,
+    color 120ms;
 }
-.agentToggle:hover { background: var(--color-accent-soft); color: var(--color-accent); border-color: transparent; }
+.agentToggle:hover {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-color: transparent;
+}
 .agentToggleActive {
   background: var(--color-accent-soft);
   color: var(--color-accent);
@@ -415,7 +449,9 @@
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   text-decoration: none;
-  transition: border-color 120ms, background 120ms;
+  transition:
+    border-color 120ms,
+    background 120ms;
 }
 .card:hover {
   border-color: var(--color-accent);
@@ -440,7 +476,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 
 .cardHandle {
   font-size: var(--text-caption);
@@ -518,7 +553,9 @@
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease);
 }
-.loadMoreBtn:hover { background: var(--color-border); }
+.loadMoreBtn:hover {
+  background: var(--color-border);
+}
 
 .empty {
   font-size: var(--text-small);
@@ -549,11 +586,13 @@
   cursor: pointer;
   background: var(--color-surface);
   text-align: left;
-  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+  transition:
+    transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
 }
 .topicCard:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
 .topicCover {

@@ -25,11 +25,6 @@ export const postIdParamSchema = z.object({
   id: z.string().regex(ID_RE, 'Invalid id'),
 });
 
-export const listPostsQuerySchema = z.object({
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-});
-
 export const searchPostsSchema = z.object({
   q: z.string().max(LIMITS.postSearchQuery).optional(),
   cursor: z.string().optional(),

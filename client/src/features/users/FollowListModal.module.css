@@ -32,7 +32,9 @@
   background: var(--color-surface-muted);
   color: var(--color-text);
   font-size: var(--text-small);
-  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
 }
 
 .searchInput::placeholder {
@@ -113,7 +115,6 @@
   font-size: var(--text-caption);
   color: var(--color-text-muted);
 }
-
 
 /* ─── States ─────────────────────────────────────────────────────────────────── */
 

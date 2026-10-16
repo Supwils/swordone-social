@@ -10,7 +10,9 @@
   font-weight: 500;
   line-height: 1.4;
   border: 1px solid transparent;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
 
 a.tag:hover {

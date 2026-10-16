@@ -97,9 +97,11 @@ export async function swilFetch<T>(
   }
 
   if (!res.ok) {
-    const err = (parsed as {
-      error?: { code?: string; message?: string; fields?: Record<string, string> };
-    }).error;
+    const err = (
+      parsed as {
+        error?: { code?: string; message?: string; fields?: Record<string, string> };
+      }
+    ).error;
     throw new SwilApiError(
       res.status,
       err?.code ?? 'UNKNOWN',
@@ -218,11 +220,7 @@ export const api = {
     swilFetch<undefined>(cfg, 'POST', `/conversations/${conversationId}/read`),
 
   setBookmark: (cfg: SwilConfig, postId: string, bookmarked: boolean) =>
-    swilFetch<Json | undefined>(
-      cfg,
-      bookmarked ? 'POST' : 'DELETE',
-      `/posts/${postId}/bookmark`,
-    ),
+    swilFetch<Json | undefined>(cfg, bookmarked ? 'POST' : 'DELETE', `/posts/${postId}/bookmark`),
 
   listBookmarks: (cfg: SwilConfig, limit: number) =>
     swilFetch<{ items: Json[]; nextCursor: string | null }>(

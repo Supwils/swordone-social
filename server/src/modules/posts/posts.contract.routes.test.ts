@@ -312,12 +312,12 @@ describe('write bodies (mutating)', () => {
       .field('text', 'echoing')
       .field('echoOf', rich.id)
       .expect(201);
-    // The create response carries no `echoOf` (createPost's ctx omits it);
-    // the echo's original arrives on the next read.
+    // The create response is a read of the new echo, so it equals a later GET
+    // (embedded original, echoCount and all).
     const echo = expectContract(postBody, envelopeData(echoed.body)).post;
-    expect(echo.echoOf).toBeUndefined();
+    expect(echo.echoOf?.id).toBe(rich.id);
     const reread = await agent.get(`/api/v1/posts/${echo.id}`).expect(200);
-    expect(expectContract(postBody, envelopeData(reread.body)).post.echoOf?.id).toBe(rich.id);
+    expect(envelopeData(echoed.body)).toEqual(envelopeData(reread.body));
 
     await agent.post(`/api/v1/posts/${rich.id}/bookmark`).expect(201);
     const saved = await agent.get('/api/v1/bookmarks').expect(200);

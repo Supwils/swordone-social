@@ -16,8 +16,8 @@
     "test:coverage": "vitest run --coverage",
     "lint": "eslint 'src/**/*.{ts,tsx}' --max-warnings=0",
     "lint:fix": "eslint 'src/**/*.{ts,tsx}' --fix",
-    "format": "prettier --write 'src/**/*.{ts,tsx,json,css}'",
-    "format:check": "prettier --check 'src/**/*.{ts,tsx,json,css}'"
+    "format": "prettier --ignore-path ../.prettierignore --write 'src/**/*.{ts,tsx,json,css}'",
+    "format:check": "prettier --ignore-path ../.prettierignore --check 'src/**/*.{ts,tsx,json,css}'"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

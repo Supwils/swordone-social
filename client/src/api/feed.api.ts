@@ -21,7 +21,12 @@ export async function following(params: Pagination = {}): Promise<Paginated<Post
 export async function global(params: Pagination = {}): Promise<Paginated<PostDTO>> {
   return unwrap<Paginated<PostDTO>>(
     http.get('/feed/global', {
-      params: { cursor: params.cursor ?? undefined, limit: params.limit, lang: params.lang, sort: params.sort },
+      params: {
+        cursor: params.cursor ?? undefined,
+        limit: params.limit,
+        lang: params.lang,
+        sort: params.sort,
+      },
     }),
   );
 }

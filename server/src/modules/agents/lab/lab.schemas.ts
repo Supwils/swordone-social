@@ -27,4 +27,3 @@ export const populationRangeQuery = rangeQuery.extend({
 });
 
 export type RangeQuery = z.infer<typeof rangeQuery>;
-export type PopulationRangeQuery = z.infer<typeof populationRangeQuery>;

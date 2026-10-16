@@ -23,8 +23,7 @@ export function MobileTabBar() {
   const unreadN = useRealtime((st) => st.unreadNotifications);
   const [composerOpen, setComposerOpen] = useState(false);
 
-  const linkClass = ({ isActive }: { isActive: boolean }) =>
-    clsx(s.tab, isActive && s.tabActive);
+  const linkClass = ({ isActive }: { isActive: boolean }) => clsx(s.tab, isActive && s.tabActive);
 
   return (
     <>
@@ -59,7 +58,9 @@ export function MobileTabBar() {
             <NavLink to="/notifications" className={linkClass}>
               <Bell weight="regular" className={s.tabIcon} aria-hidden />
               <span>{t('nav.notifications')}</span>
-              {unreadN > 0 && <span className={s.dot} aria-label={t('nav.unread', { count: unreadN })} />}
+              {unreadN > 0 && (
+                <span className={s.dot} aria-label={t('nav.unread', { count: unreadN })} />
+              )}
             </NavLink>
             <NavLink to={`/u/${user.username}`} className={linkClass}>
               <UserIcon weight="regular" className={s.tabIcon} aria-hidden />

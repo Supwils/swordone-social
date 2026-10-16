@@ -27,12 +27,20 @@
   line-height: var(--lh-tight);
 }
 
-.body h1 { font-size: var(--text-h1); }
-.body h2 { font-size: var(--text-h2); }
-.body h3 { font-size: var(--text-h3); }
+.body h1 {
+  font-size: var(--text-h1);
+}
+.body h2 {
+  font-size: var(--text-h2);
+}
+.body h3 {
+  font-size: var(--text-h3);
+}
 .body h4,
 .body h5,
-.body h6 { font-size: var(--text-body); }
+.body h6 {
+  font-size: var(--text-body);
+}
 
 .body strong {
   font-weight: 600;

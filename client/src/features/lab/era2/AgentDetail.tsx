@@ -8,12 +8,35 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Link } from 'react-router-dom';
-import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ComposedChart,
+  Legend,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { Card, Skeleton } from '@/components/primitives';
-import { getAgentDrift, getAgentEvents, getAgentFidelity, getAgentStats, getInfluences } from '@/features/lab/api';
+import {
+  getAgentDrift,
+  getAgentEvents,
+  getAgentFidelity,
+  getAgentStats,
+  getInfluences,
+} from '@/features/lab/api';
 import type { AgentEventDTO } from '@/features/lab/types';
 import { CollapsePanel } from '../CollapsePanel';
-import { DriftCountdownPanel, aspectThresholdsFrom, useDriftCountdown } from './DriftCountdownPanel';
+import {
+  DriftCountdownPanel,
+  aspectThresholdsFrom,
+  useDriftCountdown,
+} from './DriftCountdownPanel';
 import s from '@/features/lab/lab.module.css';
 
 /**
@@ -86,7 +109,8 @@ export function AgentDetail({
     const inf = influencesQ.data;
     if (!inf) return [];
     const byDate = new Map<string, { date: string; actions: number; drift: number | null }>();
-    for (const a of inf.activity) byDate.set(a.date, { date: a.date, actions: a.actions, drift: null });
+    for (const a of inf.activity)
+      byDate.set(a.date, { date: a.date, actions: a.actions, drift: null });
     for (const d of inf.drift) {
       const day = d.capturedAt.slice(0, 10);
       const row = byDate.get(day) ?? { date: day, actions: 0, drift: null };
@@ -181,7 +205,9 @@ export function AgentDetail({
             {currentFidelity !== null ? currentFidelity.toFixed(3) : '—'}
           </span>
           <span className={s.tileHint}>
-            {currentFidelity !== null ? t('lab.detail.fidelityHint') : t('lab.detail.fidelityWaiting')}
+            {currentFidelity !== null
+              ? t('lab.detail.fidelityHint')
+              : t('lab.detail.fidelityWaiting')}
           </span>
         </Card>
         <Card className={s.tile}>
@@ -190,7 +216,9 @@ export function AgentDetail({
             <>
               <div className={s.miniRow}>
                 <span>{t('lab.detail.pullAi')}</span>
-                <span>{eng.selfPostsReceived.likes.byAi + eng.selfPostsReceived.comments.byAi}</span>
+                <span>
+                  {eng.selfPostsReceived.likes.byAi + eng.selfPostsReceived.comments.byAi}
+                </span>
               </div>
               <div className={s.miniRow}>
                 <span>{t('lab.detail.pullHuman')}</span>
@@ -233,7 +261,11 @@ export function AgentDetail({
           ) : (
             <ResponsiveContainer>
               <LineChart data={driftSeries} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
+                <CartesianGrid
+                  stroke="var(--color-border)"
+                  strokeDasharray="3 3"
+                  vertical={false}
+                />
                 <XAxis dataKey="x" stroke="var(--color-text-muted)" fontSize={11} />
                 <YAxis stroke="var(--color-text-muted)" fontSize={11} domain={[0, 'auto']} />
                 <Tooltip
@@ -299,7 +331,11 @@ export function AgentDetail({
             ) : (
               <ResponsiveContainer>
                 <LineChart data={aspectSeries} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                  <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
+                  <CartesianGrid
+                    stroke="var(--color-border)"
+                    strokeDasharray="3 3"
+                    vertical={false}
+                  />
                   <XAxis dataKey="x" stroke="var(--color-text-muted)" fontSize={11} />
                   <YAxis stroke="var(--color-text-muted)" fontSize={11} domain={[0, 1]} />
                   <Tooltip
@@ -320,13 +356,28 @@ export function AgentDetail({
                     no line — a missing line is honest, a guessed one is not.
                   */}
                   {aspectThresholds.values !== null && (
-                    <ReferenceLine y={aspectThresholds.values} stroke="var(--color-accent)" strokeDasharray="4 4" strokeOpacity={0.5} />
+                    <ReferenceLine
+                      y={aspectThresholds.values}
+                      stroke="var(--color-accent)"
+                      strokeDasharray="4 4"
+                      strokeOpacity={0.5}
+                    />
                   )}
                   {aspectThresholds.style !== null && (
-                    <ReferenceLine y={aspectThresholds.style} stroke="#e0a458" strokeDasharray="4 4" strokeOpacity={0.5} />
+                    <ReferenceLine
+                      y={aspectThresholds.style}
+                      stroke="#e0a458"
+                      strokeDasharray="4 4"
+                      strokeOpacity={0.5}
+                    />
                   )}
                   {aspectThresholds.topic !== null && (
-                    <ReferenceLine y={aspectThresholds.topic} stroke="var(--color-text-muted)" strokeDasharray="4 4" strokeOpacity={0.5} />
+                    <ReferenceLine
+                      y={aspectThresholds.topic}
+                      stroke="var(--color-text-muted)"
+                      strokeDasharray="4 4"
+                      strokeOpacity={0.5}
+                    />
                   )}
                   <Line
                     type="monotone"
@@ -396,7 +447,11 @@ export function AgentDetail({
           ) : (
             <ResponsiveContainer>
               <LineChart data={fidelitySeries} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
+                <CartesianGrid
+                  stroke="var(--color-border)"
+                  strokeDasharray="3 3"
+                  vertical={false}
+                />
                 <XAxis dataKey="x" stroke="var(--color-text-muted)" fontSize={11} />
                 <YAxis stroke="var(--color-text-muted)" fontSize={11} domain={[-1, 1]} />
                 <Tooltip
@@ -430,7 +485,11 @@ export function AgentDetail({
           ) : (
             <ResponsiveContainer>
               <BarChart data={cadence} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
+                <CartesianGrid
+                  stroke="var(--color-border)"
+                  strokeDasharray="3 3"
+                  vertical={false}
+                />
                 <XAxis dataKey="date" stroke="var(--color-text-muted)" fontSize={10} interval={4} />
                 <YAxis stroke="var(--color-text-muted)" fontSize={11} allowDecimals={false} />
                 <Tooltip
@@ -441,7 +500,12 @@ export function AgentDetail({
                   }}
                 />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="posts" stackId="a" fill="var(--color-accent)" name={t('lab.detail.cadencePosts')} />
+                <Bar
+                  dataKey="posts"
+                  stackId="a"
+                  fill="var(--color-accent)"
+                  name={t('lab.detail.cadencePosts')}
+                />
                 <Bar
                   dataKey="comments"
                   stackId="a"
@@ -534,8 +598,17 @@ export function AgentDetail({
           ) : (
             <ResponsiveContainer>
               <ComposedChart data={causalSeries} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-                <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="date" stroke="var(--color-text-muted)" fontSize={10} interval="preserveStartEnd" />
+                <CartesianGrid
+                  stroke="var(--color-border)"
+                  strokeDasharray="3 3"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="date"
+                  stroke="var(--color-text-muted)"
+                  fontSize={10}
+                  interval="preserveStartEnd"
+                />
                 <YAxis
                   yAxisId="actions"
                   stroke="var(--color-text-muted)"

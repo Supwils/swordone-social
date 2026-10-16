@@ -22,9 +22,7 @@ function EchoPreview({ post }: { post: PostDTO }) {
         <span className={s.previewHandle}>@{post.author.username}</span>
       </div>
       {post.text && <p className={s.previewText}>{post.text}</p>}
-      {post.images[0] && (
-        <img src={post.images[0].url} alt="" className={s.previewImg} />
-      )}
+      {post.images[0] && <img src={post.images[0].url} alt="" className={s.previewImg} />}
     </Link>
   );
 }
@@ -60,7 +58,9 @@ export function EchoComposer({ post, open, onClose }: Props) {
   return (
     <Dialog
       open={open}
-      onOpenChange={(v) => { if (!v) handleClose(); }}
+      onOpenChange={(v) => {
+        if (!v) handleClose();
+      }}
       title={t('post.echo')}
     >
       <div className={s.inner}>

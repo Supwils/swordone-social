@@ -7,7 +7,13 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Skeleton } from '@/components/primitives';
-import { getAgentOverview, getAlerts, getHomogenization, getPopulationPulse, listLabAgents } from '@/features/lab/api';
+import {
+  getAgentOverview,
+  getAlerts,
+  getHomogenization,
+  getPopulationPulse,
+  listLabAgents,
+} from '@/features/lab/api';
 import { mean, median, zScore } from '@/features/lab/stats';
 import type { LabEra } from '@/features/lab/types';
 import s from '@/features/lab/lab.module.css';
@@ -77,14 +83,42 @@ export function PopulationInsights({
       const deltaStr = `${delta >= 0 ? '▲' : '▼'}${Math.abs(delta).toFixed(3)}`;
       const detail = t('lab.conclusions.monoDetail', { value: last.toFixed(3), delta: deltaStr });
       if (delta > 0.01) {
-        mono = { key: 'mono', tone: delta > 0.04 ? 'bad' : 'warn', rank: 5, tag: monoTag, title: t('lab.conclusions.convergingTitle'), detail };
+        mono = {
+          key: 'mono',
+          tone: delta > 0.04 ? 'bad' : 'warn',
+          rank: 5,
+          tag: monoTag,
+          title: t('lab.conclusions.convergingTitle'),
+          detail,
+        };
       } else if (delta < -0.01) {
-        mono = { key: 'mono', tone: 'good', rank: 5, tag: monoTag, title: t('lab.conclusions.divergingTitle'), detail };
+        mono = {
+          key: 'mono',
+          tone: 'good',
+          rank: 5,
+          tag: monoTag,
+          title: t('lab.conclusions.divergingTitle'),
+          detail,
+        };
       } else {
-        mono = { key: 'mono', tone: 'neutral', rank: 5, tag: monoTag, title: t('lab.conclusions.steadyTitle'), detail };
+        mono = {
+          key: 'mono',
+          tone: 'neutral',
+          rank: 5,
+          tag: monoTag,
+          title: t('lab.conclusions.steadyTitle'),
+          detail,
+        };
       }
     } else {
-      mono = { key: 'mono', tone: 'neutral', rank: 5, tag: monoTag, title: t('lab.conclusions.steadyTitle'), detail: t('lab.conclusions.monoWaiting') };
+      mono = {
+        key: 'mono',
+        tone: 'neutral',
+        rank: 5,
+        tag: monoTag,
+        title: t('lab.conclusions.steadyTitle'),
+        detail: t('lab.conclusions.monoWaiting'),
+      };
     }
 
     const rated = agents.filter(
@@ -103,7 +137,10 @@ export function PopulationInsights({
         rank: isOutlier ? 4 : 3,
         tag: t('lab.conclusions.fidelityTag'),
         title: isOutlier
-          ? t('lab.conclusions.fidOutlierTitle', { username: worst.username, sigma: Math.abs(z).toFixed(1) })
+          ? t('lab.conclusions.fidOutlierTitle', {
+              username: worst.username,
+              sigma: Math.abs(z).toFixed(1),
+            })
           : t('lab.conclusions.offCharTitle', { username: worst.username }),
         detail: t('lab.conclusions.offCharDetail', { value: worst.currentFidelity.toFixed(3) }),
         focus: worst.username,
@@ -135,7 +172,10 @@ export function PopulationInsights({
       .filter((x): x is { a: (typeof agents)[number]; d: number } => typeof x.d === 'number');
     if (driftRated.length > 0) {
       const top = driftRated.reduce((m, x) => (x.d > m.d ? x : m));
-      const z = zScore(top.d, driftRated.map((x) => x.d));
+      const z = zScore(
+        top.d,
+        driftRated.map((x) => x.d),
+      );
       const isOutlier = z >= 1.5;
       rest.push({
         key: 'drift',
@@ -143,7 +183,10 @@ export function PopulationInsights({
         rank: isOutlier ? 4 : 2,
         tag: t('lab.conclusions.driftTag'),
         title: isOutlier
-          ? t('lab.conclusions.driftOutlierTitle', { username: top.a.username, sigma: z.toFixed(1) })
+          ? t('lab.conclusions.driftOutlierTitle', {
+              username: top.a.username,
+              sigma: z.toFixed(1),
+            })
           : t('lab.conclusions.drifterTitle', { username: top.a.username }),
         detail: t('lab.conclusions.drifterDetail', { value: top.d.toFixed(3) }),
         focus: top.a.username,
@@ -162,7 +205,9 @@ export function PopulationInsights({
           tone: 'neutral',
           rank: 2,
           tag: t('lab.conclusions.activityTag'),
-          title: t('lab.conclusions.activityUp', { pct: Math.round((recent / baseline - 1) * 100) }),
+          title: t('lab.conclusions.activityUp', {
+            pct: Math.round((recent / baseline - 1) * 100),
+          }),
           detail: t('lab.conclusions.activityDetail', { recent, baseline: Math.round(baseline) }),
         });
       } else if (baseline > 0 && recent > 0 && recent <= baseline * 0.5) {
@@ -171,7 +216,9 @@ export function PopulationInsights({
           tone: 'neutral',
           rank: 2,
           tag: t('lab.conclusions.activityTag'),
-          title: t('lab.conclusions.activityDown', { pct: Math.round((1 - recent / baseline) * 100) }),
+          title: t('lab.conclusions.activityDown', {
+            pct: Math.round((1 - recent / baseline) * 100),
+          }),
           detail: t('lab.conclusions.activityDetail', { recent, baseline: Math.round(baseline) }),
         });
       }
@@ -186,7 +233,10 @@ export function PopulationInsights({
         rank: 3,
         tag: t('lab.conclusions.dreamTag'),
         title: t('lab.conclusions.dreamTitle', { count: dreamFails.length }),
-        detail: dreamFails.slice(0, 4).map((a) => `@${a.username}`).join(' · '),
+        detail: dreamFails
+          .slice(0, 4)
+          .map((a) => `@${a.username}`)
+          .join(' · '),
         focus: dreamFails[0].username,
       });
     }

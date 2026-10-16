@@ -6,16 +6,18 @@ export async function getByUsername(username: string): Promise<UserDTO> {
   return out.user;
 }
 
-export async function updateMe(patch: Partial<{
-  displayName: string;
-  bio: string;
-  headline: string;
-  location: string | null;
-  website: string | null;
-  birthdate: string | null;
-  preferences: UserPreferences;
-  profileTags: string[];
-}>): Promise<UserDTO> {
+export async function updateMe(
+  patch: Partial<{
+    displayName: string;
+    bio: string;
+    headline: string;
+    location: string | null;
+    website: string | null;
+    birthdate: string | null;
+    preferences: UserPreferences;
+    profileTags: string[];
+  }>,
+): Promise<UserDTO> {
   const out = await unwrap<{ user: UserDTO }>(http.patch('/users/me', patch));
   return out.user;
 }
@@ -27,9 +29,7 @@ export async function browseUsers(
 ): Promise<UserLiteDTO[]> {
   const params: Record<string, string | number> = { limit };
   if (tag) params.tag = tag;
-  const out = await unwrap<{ items: UserLiteDTO[] }>(
-    http.get('/users', { params, signal }),
-  );
+  const out = await unwrap<{ items: UserLiteDTO[] }>(http.get('/users', { params, signal }));
   return out.items;
 }
 

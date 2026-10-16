@@ -125,10 +125,9 @@ describe('createApp', () => {
     expect(res.payload).toMatchObject({
       status: 'ok',
       db: 'ok',
-      // deprecated alias, kept so existing monitoring does not break
-      mongo: 'ok',
       version: expect.any(String),
     });
+    expect(res.payload).not.toHaveProperty('mongo');
   });
 
   it('returns JSON 404s through the global notFound handler', async () => {
@@ -164,7 +163,7 @@ describe('createApp', () => {
     });
   });
 
-  it('strips Mongo operators and dotted keys from body and query objects', async () => {
+  it('strips $-prefixed operator keys and dotted keys from body and query objects', async () => {
     mocks.createSessionMiddleware.mockReturnValue(mocks.sessionMiddleware as RequestHandler);
     mocks.isDbHealthy.mockReturnValue(true);
 
@@ -172,7 +171,9 @@ describe('createApp', () => {
     const stack = (
       app as unknown as {
         _router: {
-          stack: Array<{ handle: { name?: string } & ((req: any, res: any, next: () => void) => void) }>;
+          stack: Array<{
+            handle: { name?: string } & ((req: any, res: any, next: () => void) => void);
+          }>;
         };
       }
     )._router.stack;

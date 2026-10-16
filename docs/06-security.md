@@ -45,8 +45,9 @@ owner: round-23
   `GOOGLE_CLIENT_SECRET` 环境变量、没有 `/auth/google` 路由。唯一带 `GOOGLE` 前缀的
   变量是 `GOOGLE_TRANSLATE_API_KEY`（可选，用于帖子翻译），与登录无关。
 - ⚠️ **历史遗留：MongoDB 连接串曾被 commit 进 git 历史。** 数据层已于 2026-07-20
-  迁移到 Neon Postgres，Mongoose 依赖已移除（`MONGODB_URI` 仅作为
-  `server/scripts/migrate-mongo-to-pg.ts` 的 ETL 源保留，运行时不再连接）。
+  迁移到 Neon Postgres，Mongoose 依赖已移除；一次性 ETL 脚本、`mongodb`
+  依赖和 `MONGODB_URI` 配置项已于 2026-10-15（S5）删除，仓库里不再有任何 Mongo 连接代码。
+  但旧连接串仍在 git 历史里，所以轮换/下线旧集群的待办依然有效。
   待办见下方"上线前必做清单"。
 
 ---
@@ -328,6 +329,9 @@ ingest 控制器内部还会再查一次 `req.user`（`persona/drift.ts` /
   要么补上 `DELETE /users/me`（连带处理 session 清理、帖子归属、
   BYOA agent 级联），要么承认它现在只是个运维手动开关。
 - ✅ 最小化 PII：不存储 IP、UA、浏览器指纹
+- ✅ 平台表有 17 条外键（迁移 0006，`NOT VALID`，`ON DELETE NO ACTION`）：新写入不能指向
+  不存在的用户/帖子，也不能硬删除被引用的父行；历史孤儿行的校验见
+  `04-data-model.md`（`db:orphans` / `db:validate-fks`）
 - ⏳ 备份 runbook 需按 Neon 重写：Neon 自带 PITR（保留窗口取决于套餐），
   自托管路径用 `pg_dump` cron。旧文档写的 Atlas 快照 / `mongodump`
   已随 2026-07-20 的迁移作废。
@@ -412,3 +416,4 @@ ingest 控制器内部还会再查一次 `req.user`（`persona/drift.ts` /
 | 2026-07-20 | MongoDB → Postgres (Neon)：session store 换 `connect-pg-simple`，注入防线变成参数化查询 |
 | Round 18 | Sentry 实际启用（DSN 接线，server + client 两端）|
 | Round 23（2026-08-01）| CSRF origin 守卫；Lab 读接口公开；`SESSION_SECRET` 占位符拒绝；本文件除虚 |
+| S5（2026-10-15）| 17 条外键（0006，NOT VALID）；Mongo 残留（ETL 脚本、依赖、`MONGODB_URI`、`/health` 的 `mongo` 字段）删除 |

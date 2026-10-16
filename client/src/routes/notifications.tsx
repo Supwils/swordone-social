@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { type InfiniteData, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  type InfiniteData,
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -8,7 +13,14 @@ import * as notificationsApi from '@/api/notifications.api';
 import { qk } from '@/api/queryKeys';
 import { useRealtime } from '@/stores/realtime.store';
 import { formatRelative } from '@/lib/formatDate';
-import { Avatar, Button, Dialog, DialogActions, EmptyState, NotificationSkeleton } from '@/components/primitives';
+import {
+  Avatar,
+  Button,
+  Dialog,
+  DialogActions,
+  EmptyState,
+  NotificationSkeleton,
+} from '@/components/primitives';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import type { ApiError, NotificationDTO, Paginated, UserLiteDTO } from '@/api/types';
 import s from './notifications.module.css';
@@ -34,11 +46,7 @@ function groupNotifications(items: NotificationDTO[]): GroupedNotification[] {
     // Group likes and echos by their target; keep other types individual
     let key: string;
     if (n.type === 'like' || n.type === 'echo') {
-      const target = n.comment
-        ? `comment:${n.comment.id}`
-        : n.post
-          ? `post:${n.post.id}`
-          : n.id;
+      const target = n.comment ? `comment:${n.comment.id}` : n.post ? `post:${n.post.id}` : n.id;
       key = `${n.type}:${target}`;
     } else {
       key = n.id;
@@ -70,7 +78,10 @@ function groupNotifications(items: NotificationDTO[]): GroupedNotification[] {
   return Array.from(groups.values());
 }
 
-function actorLabel(actors: UserLiteDTO[], t: (k: string, opts?: Record<string, unknown>) => string): string {
+function actorLabel(
+  actors: UserLiteDTO[],
+  t: (k: string, opts?: Record<string, unknown>) => string,
+): string {
   if (actors.length === 1) return actors[0].displayName || actors[0].username;
   if (actors.length === 2)
     return `${actors[0].displayName || actors[0].username} ${t('notifications.and')} ${actors[1].displayName || actors[1].username}`;
@@ -91,8 +102,7 @@ export default function NotificationsRoute() {
 
   const q = useInfiniteQuery({
     queryKey: qk.notifications.list,
-    queryFn: ({ pageParam }) =>
-      notificationsApi.list({ cursor: pageParam, limit: 30 }),
+    queryFn: ({ pageParam }) => notificationsApi.list({ cursor: pageParam, limit: 30 }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
   });
@@ -146,7 +156,7 @@ export default function NotificationsRoute() {
       autoMarked.current = false;
       qc.invalidateQueries({ queryKey: qk.notifications.list });
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q.isSuccess, rawItems]);
 
   return (
@@ -184,10 +194,7 @@ export default function NotificationsRoute() {
       )}
 
       {q.isSuccess && groups.length === 0 && (
-        <EmptyState
-          title={t('notifications.empty')}
-          description={t('notifications.emptyDesc')}
-        />
+        <EmptyState title={t('notifications.empty')} description={t('notifications.emptyDesc')} />
       )}
 
       {groups.map((g) => (
@@ -202,7 +209,9 @@ export default function NotificationsRoute() {
 
       <Dialog
         open={confirmingClear}
-        onOpenChange={(open) => { if (!open) setConfirmingClear(false); }}
+        onOpenChange={(open) => {
+          if (!open) setConfirmingClear(false);
+        }}
         title={t('notifications.confirmClear')}
         description={t('notifications.confirmClearDesc')}
       >
@@ -210,11 +219,7 @@ export default function NotificationsRoute() {
           <Button variant="ghost" onClick={() => setConfirmingClear(false)}>
             {t('post.cancel')}
           </Button>
-          <Button
-            variant="danger"
-            onClick={() => clearAll.mutate()}
-            disabled={clearAll.isPending}
-          >
+          <Button variant="danger" onClick={() => clearAll.mutate()} disabled={clearAll.isPending}>
             {t('notifications.clearAll')}
           </Button>
         </DialogActions>
@@ -233,13 +238,10 @@ function GroupedNotificationRow({ g }: { g: GroupedNotification }) {
   const content = (
     <div className={s.body}>
       <div className={s.text}>
-        <span className={s.strong}>{label}</span>{' '}
-        {verb}
+        <span className={s.strong}>{label}</span> {verb}
       </div>
       {(g.post?.textPreview || g.comment?.textPreview) && (
-        <div className={s.preview}>
-          "{g.comment?.textPreview ?? g.post?.textPreview}"
-        </div>
+        <div className={s.preview}>"{g.comment?.textPreview ?? g.post?.textPreview}"</div>
       )}
     </div>
   );
@@ -257,7 +259,11 @@ function GroupedNotificationRow({ g }: { g: GroupedNotification }) {
     ) : (
       <div className={s.avatarStack}>
         {visibleAvatars.map((actor, i) => (
-          <div key={actor.id} className={s.stackedAvatar} style={{ zIndex: visibleAvatars.length - i }}>
+          <div
+            key={actor.id}
+            className={s.stackedAvatar}
+            style={{ zIndex: visibleAvatars.length - i }}
+          >
             <Avatar
               src={actor.avatarUrl}
               name={actor.displayName || actor.username}

@@ -15,7 +15,14 @@ import { PostCard } from '@/features/posts/PostCard';
 import { FollowListModal } from '@/features/users/FollowListModal';
 import { AgentDriftWidget } from '@/features/lab';
 import type { UserDTO, ApiError } from '@/api/types';
-import { AccountBadge, Avatar, Button, EmptyState, PostCardSkeleton, Skeleton } from '@/components/primitives';
+import {
+  AccountBadge,
+  Avatar,
+  Button,
+  EmptyState,
+  PostCardSkeleton,
+  Skeleton,
+} from '@/components/primitives';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import s from './user.module.css';
 import { usePageTitle } from '@/lib/usePageTitle';

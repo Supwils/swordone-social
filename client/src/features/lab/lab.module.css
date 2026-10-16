@@ -70,7 +70,9 @@
   border-left-width: 3px;
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  transition: border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
 }
 
 .concClickable {
@@ -559,7 +561,9 @@
   color: var(--color-text-muted);
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
 }
 
 .tab:hover {
@@ -802,7 +806,9 @@
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
   border-right: 1px solid var(--color-border);
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
 
 .rangeBtn:last-child {
@@ -1306,7 +1312,10 @@
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
 }
 
 .liveBtn:hover {
@@ -1336,8 +1345,13 @@
 }
 
 @keyframes livePulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 /* ── Graph controls row ────────────────────────────────── */
@@ -1357,7 +1371,10 @@
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
 }
 
 .crossToggle:hover {

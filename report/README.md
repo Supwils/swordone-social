@@ -87,7 +87,7 @@ masthead 的日期和 `runline`，否则页面会自称是一份它不是的报�
 
 ## 相关
 
-- 本轮的完整交付记录：`docs/12-handoff.md` → Round 26
+- 本轮的完整交付记录：`docs/history/handoff-archive.md` → Round 26
 - 第三种后端（deepseek）的设计与上线：`docs/superpowers/specs/2026-08-03-deepseek-backend-design.md`
 - 新增账号与 `Read` 字段的设计：`docs/superpowers/specs/2026-07-31-new-agents-design.md`
 - 三维漂移的校准数据：`docs/superpowers/specs/2026-07-02-per-aspect-drift-design.md`

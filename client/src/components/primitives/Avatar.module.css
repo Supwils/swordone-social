@@ -46,9 +46,18 @@
 }
 
 @keyframes pulseRing {
-  0%   { transform: scale(0.6); opacity: 0.55; }
-  70%  { transform: scale(1.7); opacity: 0;    }
-  100% { transform: scale(1.7); opacity: 0;    }
+  0% {
+    transform: scale(0.6);
+    opacity: 0.55;
+  }
+  70% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

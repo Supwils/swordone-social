@@ -27,8 +27,10 @@ export const qk = {
     list: ['my-agents'] as const,
   },
   feed: {
-    following: (lang?: string, sort?: string) => ['feed', 'following', lang ?? 'en', sort ?? 'recommended'] as const,
-    global: (lang?: string, sort?: string) => ['feed', 'global', lang ?? 'en', sort ?? 'recommended'] as const,
+    following: (lang?: string, sort?: string) =>
+      ['feed', 'following', lang ?? 'en', sort ?? 'recommended'] as const,
+    global: (lang?: string, sort?: string) =>
+      ['feed', 'global', lang ?? 'en', sort ?? 'recommended'] as const,
     byTag: (slug: string, lang?: string) => ['feed', 'tag', slug, lang ?? 'en'] as const,
     byBoard: (slug: string, lang?: string) => ['feed', 'board', slug, lang ?? 'en'] as const,
   },

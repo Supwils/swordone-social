@@ -6,7 +6,13 @@ import {
   useRef,
   useState,
 } from 'react';
-import { type InfiniteData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  type InfiniteData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import clsx from 'clsx';
@@ -63,7 +69,8 @@ export default function ConversationRoute() {
   // Mark read on enter and decrement nav badge
   useEffect(() => {
     if (!id) return;
-    messagesApi.markRead(id)
+    messagesApi
+      .markRead(id)
       .then(() => messagesApi.unreadCount())
       .then(setUnreadC)
       .catch(() => undefined);
@@ -79,8 +86,7 @@ export default function ConversationRoute() {
 
   const q = useInfiniteQuery({
     queryKey: qk.conversations.messages(id),
-    queryFn: ({ pageParam }) =>
-      messagesApi.listMessages(id, { cursor: pageParam, limit: 50 }),
+    queryFn: ({ pageParam }) => messagesApi.listMessages(id, { cursor: pageParam, limit: 50 }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
     enabled: Boolean(id),
@@ -115,7 +121,10 @@ export default function ConversationRoute() {
       const { userId: uid } = payload as { userId: string };
       setTypingUserId((prev) => (prev === uid ? null : prev));
     });
-    return () => { offTyping(); offTypingEnd(); };
+    return () => {
+      offTyping();
+      offTypingEnd();
+    };
   }, [id]);
 
   const send = useMutation({
@@ -198,7 +207,12 @@ export default function ConversationRoute() {
         </Link>
         {other && (
           <Link to={`/u/${other.username}`} className={s.threadPeer}>
-            <Avatar src={other.avatarUrl} name={other.displayName || other.username} size="sm" alt="" />
+            <Avatar
+              src={other.avatarUrl}
+              name={other.displayName || other.username}
+              size="sm"
+              alt=""
+            />
             <strong>{other.displayName || other.username}</strong>
             <span className={s.rowDate}>@{other.username}</span>
           </Link>
@@ -227,10 +241,12 @@ export default function ConversationRoute() {
 
       {typingUserId && other && typingUserId !== me?.id && (
         <div className={s.typingIndicator}>
-          <span className={s.typingName}>{other.displayName || other.username}</span>
-          {' '}{t('messages.isTyping')}
+          <span className={s.typingName}>{other.displayName || other.username}</span>{' '}
+          {t('messages.isTyping')}
           <span className={s.typingDots}>
-            <span /><span /><span />
+            <span />
+            <span />
+            <span />
           </span>
         </div>
       )}

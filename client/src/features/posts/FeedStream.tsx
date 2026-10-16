@@ -18,10 +18,7 @@ interface StreamProps {
 export function FeedSkeletons({ count = 4 }: { count?: number }) {
   const layout = useUI((st) => st.feedLayout);
   return (
-    <div
-      className={layout === 'list' ? s.postList : s.postGrid}
-      data-testid="feed-skeletons"
-    >
+    <div className={layout === 'list' ? s.postList : s.postGrid} data-testid="feed-skeletons">
       {Array.from({ length: count }, (_, i) => (
         <PostCardSkeleton key={i} />
       ))}

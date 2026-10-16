@@ -9,12 +9,7 @@ export interface SkeletonProps {
   className?: string;
 }
 
-export function Skeleton({
-  width,
-  height,
-  variant = 'block',
-  className,
-}: SkeletonProps) {
+export function Skeleton({ width, height, variant = 'block', className }: SkeletonProps) {
   const sizes: Record<string, string | number | undefined> = {};
   if (width !== undefined) sizes.width = typeof width === 'number' ? `${width}px` : width;
   if (height !== undefined) sizes.height = typeof height === 'number' ? `${height}px` : height;

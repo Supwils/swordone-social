@@ -65,7 +65,7 @@ export function DistributionPanel({
       <Strip
         label={t('lab.dist.drift')}
         dots={drift}
-        domain={[0, Math.max(0.3, ...drift.map((d) => d.value)) ]}
+        domain={[0, Math.max(0.3, ...drift.map((d) => d.value))]}
         format={(v) => v.toFixed(2)}
         onSelect={onSelect}
         emptyLabel={t('lab.dist.empty')}

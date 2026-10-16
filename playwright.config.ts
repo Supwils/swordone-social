@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+import { e2eServerEnv } from './e2e/server-env';
 
 /**
  * E2E suite — runs the real stack (Express + Vite + Postgres) on dedicated
@@ -8,7 +9,7 @@ import { defineConfig } from '@playwright/test';
  *   npm run test:e2e:ui     # Playwright UI mode
  *
  * The e2e database (swil_e2e_pg) is created/migrated/truncated by
- * e2e/global-setup.ts → server/scripts/ensure-e2e-db.ts.
+ * the webServer command chain → server/scripts/ensure-e2e-db.ts.
  */
 const CLIENT_PORT = 5948;
 const SERVER_PORT = 8901;
@@ -25,7 +26,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
-  reporter: [['list']],
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : [['list']],
   use: {
     baseURL: BASE_URL,
     trace: 'retain-on-failure',
@@ -36,15 +37,11 @@ export default defineConfig({
       // prep (create + migrate + truncate) must run in this command chain.
       command: 'npm --prefix server run e2e:db && npm --prefix server run dev',
       url: `http://127.0.0.1:${SERVER_PORT}/health`,
-      env: {
-        E2E_DATABASE_URL,
-        DATABASE_URL: E2E_DATABASE_URL,
-        PORT: String(SERVER_PORT),
-        NODE_ENV: 'development',
-        // Browsers attach an Origin header to (even same-origin) POSTs; the
-        // server's CORS allowlist must include the e2e client port.
-        CORS_ORIGINS: `http://localhost:${CLIENT_PORT},http://127.0.0.1:${CLIENT_PORT}`,
-      },
+      env: e2eServerEnv({
+        databaseUrl: E2E_DATABASE_URL,
+        serverPort: SERVER_PORT,
+        clientPort: CLIENT_PORT,
+      }),
       reuseExistingServer: false,
       timeout: 90_000,
     },

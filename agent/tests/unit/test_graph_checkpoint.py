@@ -41,6 +41,7 @@ from swil_agent.models import (
 )
 
 from ._runners import make_persona
+from ._sqlite import open_saver
 
 
 def _persona(tmp_path: Path) -> Persona:
@@ -87,7 +88,7 @@ def _one_node_graph(saver: object) -> object:
 
 
 def test_a_state_carrying_a_persona_round_trips(tmp_path: Path) -> None:
-    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    saver = open_saver(tmp_path / CHECKPOINT_DB_NAME)
     graph = _one_node_graph(saver)
     persona = _persona(tmp_path)
     config = {"configurable": {"thread_id": "builtin:zenith:round-1"}}
@@ -132,7 +133,7 @@ def test_the_allowlist_is_explicit_and_closed(tmp_path: Path) -> None:
         "CooldownDecision became reachable from CycleState; pick another "
         "unregistered probe, or this test proves nothing"
     )
-    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    saver = open_saver(tmp_path / CHECKPOINT_DB_NAME)
 
     payload = {"probe": CooldownDecision(proceed=True, reason="probe")}
     restored = saver.serde.loads_typed(saver.serde.dumps_typed(payload))
@@ -150,7 +151,7 @@ def test_every_registered_type_survives_the_round_trip_as_itself(tmp_path: Path)
     `StrEnum`, so every `==` still held while the value was already a plain
     `str`.
     """
-    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    saver = open_saver(tmp_path / CHECKPOINT_DB_NAME)
     graph = _one_node_graph(saver)
     state = _full_state(tmp_path)
     config = {"configurable": {"thread_id": state["thread_id"]}}
@@ -171,7 +172,7 @@ def test_no_deprecation_warning_is_emitted(
     unregistered type, so it cannot fail for the reason this test names.
     `caplog` is the fixture that can actually observe the message.
     """
-    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    saver = open_saver(tmp_path / CHECKPOINT_DB_NAME)
     graph = _one_node_graph(saver)
     persona = _persona(tmp_path)
     config = {"configurable": {"thread_id": "builtin:zenith:round-1"}}
@@ -238,7 +239,7 @@ def test_an_enum_field_survives_as_its_enum_and_not_as_a_lookalike_string(
     leaves every model field intact and this one field quietly string-shaped
     -- the shape a non-`StrEnum` field would arrive in as an outright bug.
     """
-    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    saver = open_saver(tmp_path / CHECKPOINT_DB_NAME)
     graph = _one_node_graph(saver)
     config = {"configurable": {"thread_id": "builtin:zenith:round-1"}}
     graph.invoke(  # type: ignore[attr-defined]
@@ -269,7 +270,7 @@ def test_the_latest_round_is_the_most_recent_one_not_the_first(tmp_path: Path) -
     oldest round would re-run a cycle that already finished -- re-posting
     whatever it landed -- while the interrupted one stays interrupted.
     """
-    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    saver = open_saver(tmp_path / CHECKPOINT_DB_NAME)
     for round_id in ("20260817T090000", "20260818T140000", "20260817T235959"):
         _checkpoint(saver, f"builtin:zenith:{round_id}")
 
@@ -282,7 +283,7 @@ def test_the_latest_round_is_scoped_to_one_account_and_one_tenant(tmp_path: Path
     account's cycle under another's name -- with that account's persona
     already in the checkpoint, which is how a round posts as the wrong
     agent."""
-    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    saver = open_saver(tmp_path / CHECKPOINT_DB_NAME)
     _checkpoint(saver, "builtin:zenith:20260817T090000")
     _checkpoint(saver, "builtin:someone_else:20260818T140000")
     _checkpoint(saver, "acme:zenith:20260819T140000")
@@ -296,7 +297,7 @@ def test_a_foreign_thread_id_cannot_break_the_lookup(tmp_path: Path) -> None:
     """`thread_id()` refuses to BUILD an id that does not split into exactly
     three components, so any such row was written by something else. A shared
     database must not let a foreign row turn `--resume` into a crash."""
-    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    saver = open_saver(tmp_path / CHECKPOINT_DB_NAME)
     _checkpoint(saver, "not-a-cycle-thread")
     _checkpoint(saver, "builtin:zenith:20260817T090000")
 
@@ -307,14 +308,14 @@ def test_an_empty_database_has_no_round_to_resume(tmp_path: Path) -> None:
     """`None`, not an exception -- the CLI turns it into a SKIP naming the
     command that creates a checkpoint, where langgraph's own `EmptyInputError`
     would read as a bug."""
-    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    saver = open_saver(tmp_path / CHECKPOINT_DB_NAME)
     assert latest_round_id(saver, "builtin", "zenith") is None
 
 
 def test_the_latest_round_is_the_newest_of_mixed_sweep_and_manual_ids(tmp_path: Path) -> None:
     """S2 ids lead with the UTC stamp, so `-r` and `-m` interleave in time
     order and the suffix never outranks the stamp."""
-    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    saver = open_saver(tmp_path / CHECKPOINT_DB_NAME)
     for round_id in ("20261014T091500Z-r", "20261016T080000Z-m", "20261015T120000Z-r"):
         _checkpoint(saver, f"builtin:zenith:{round_id}")
 
@@ -325,7 +326,7 @@ def test_an_era_2_round_key_ranks_below_any_new_round_id(tmp_path: Path) -> None
     """A dev checkpoint DB may still hold `%Y%m%dT%H%M%S` keys from before the
     S2 format. They must not crash the lookup, and a new-format id wins even
     against an old key with a later stamp."""
-    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    saver = open_saver(tmp_path / CHECKPOINT_DB_NAME)
     _checkpoint(saver, "builtin:zenith:20991231T235959")
     _checkpoint(saver, "builtin:zenith:20261014T091500Z-m")
 
@@ -333,7 +334,7 @@ def test_an_era_2_round_key_ranks_below_any_new_round_id(tmp_path: Path) -> None
 
 
 def test_thread_exists_is_true_only_for_a_checkpointed_thread(tmp_path: Path) -> None:
-    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    saver = open_saver(tmp_path / CHECKPOINT_DB_NAME)
     _checkpoint(saver, "builtin:zenith:20261014T091500Z-r")
 
     assert thread_exists(saver, "builtin:zenith:20261014T091500Z-r")
@@ -347,7 +348,7 @@ def test_thread_exists_without_a_checkpointer_is_false() -> None:
 
 
 def test_thread_exists_on_a_closed_database_is_false(tmp_path: Path) -> None:
-    saver = open_checkpointer(tmp_path / CHECKPOINT_DB_NAME)
+    saver = open_saver(tmp_path / CHECKPOINT_DB_NAME)
     _checkpoint(saver, "builtin:zenith:20261014T091500Z-r")
     saver.conn.close()
 

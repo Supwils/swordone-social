@@ -1,4 +1,11 @@
-import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState, useCallback } from 'react';
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+} from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { X, Eye, EyeSlash } from '@phosphor-icons/react';
@@ -14,13 +21,7 @@ import { useSession } from '@/stores/session.store';
 import { useUI, type ThemePreference, type LanguagePreference } from '@/stores/ui.store';
 import { useSetLanguage } from '@/lib/useSetLanguage';
 import type { ApiError } from '@/api/types';
-import {
-  Avatar,
-  Button,
-  Card,
-  Input,
-  Textarea,
-} from '@/components/primitives';
+import { Avatar, Button, Card, Input, Textarea } from '@/components/primitives';
 import s from './settings.module.css';
 import { usePageTitle } from '@/lib/usePageTitle';
 
@@ -116,7 +117,10 @@ export default function SettingsRoute() {
 
   const changePwd = useMutation({
     mutationFn: (data: PwdFields) =>
-      authApi.changePassword({ currentPassword: data.currentPassword, newPassword: data.newPassword }),
+      authApi.changePassword({
+        currentPassword: data.currentPassword,
+        newPassword: data.newPassword,
+      }),
     onSuccess: () => {
       pwdForm.reset();
       setShowCurrentPwd(false);
@@ -140,7 +144,9 @@ export default function SettingsRoute() {
   const qc = useQueryClient();
   const autoTranslate = user?.preferences?.autoTranslate !== false;
   const changeAutoTranslate = async (on: boolean) => {
-    const updated = await usersApi.updateMe({ preferences: { autoTranslate: on } }).catch(() => null);
+    const updated = await usersApi
+      .updateMe({ preferences: { autoTranslate: on } })
+      .catch(() => null);
     if (!updated) return;
     setUser(updated);
     // Bodies are translated on read, so every cached page is now the wrong shape.
@@ -212,7 +218,11 @@ export default function SettingsRoute() {
             <input
               className={s.tagInput}
               type="text"
-              placeholder={profileTags.length >= 10 ? t('settings.profile.maxTags') : t('settings.profile.addTag')}
+              placeholder={
+                profileTags.length >= 10
+                  ? t('settings.profile.maxTags')
+                  : t('settings.profile.addTag')
+              }
               value={tagInput}
               maxLength={30}
               disabled={profileTags.length >= 10}
@@ -225,7 +235,9 @@ export default function SettingsRoute() {
                 const available = slugs.filter((slug) => !profileTags.includes(slug));
                 if (available.length === 0) return null;
                 const isExpanded = expandedCategories.has(catKey);
-                const shown = isExpanded ? available : available.slice(0, TAGS_PER_CATEGORY_DEFAULT);
+                const shown = isExpanded
+                  ? available
+                  : available.slice(0, TAGS_PER_CATEGORY_DEFAULT);
                 return (
                   <div key={catKey} className={s.tagCategory}>
                     <span className={s.tagCategoryLabel}>{t(`tags.categories.${catKey}`)}</span>
@@ -247,7 +259,9 @@ export default function SettingsRoute() {
                           className={s.tagSuggestionMore}
                           onClick={() => toggleCategoryExpand(catKey)}
                         >
-                          {isExpanded ? t('tags.showLess') : `+${available.length - TAGS_PER_CATEGORY_DEFAULT} ${t('tags.showMore')}`}
+                          {isExpanded
+                            ? t('tags.showLess')
+                            : `+${available.length - TAGS_PER_CATEGORY_DEFAULT} ${t('tags.showMore')}`}
                         </button>
                       )}
                     </div>
@@ -271,12 +285,7 @@ export default function SettingsRoute() {
           <p className={s.sectionDesc}>{t('settings.avatar.desc')}</p>
         </header>
         <div className={s.avatarRow}>
-          <Avatar
-            src={user.avatarUrl}
-            name={user.displayName || user.username}
-            size="lg"
-            alt=""
-          />
+          <Avatar src={user.avatarUrl} name={user.displayName || user.username} size="lg" alt="" />
           <Button
             variant="subtle"
             onClick={() => fileRef.current?.click()}
@@ -303,10 +312,7 @@ export default function SettingsRoute() {
           <h2 className={s.sectionTitle}>{t('settings.password.title')}</h2>
           <p className={s.sectionDesc}>{t('settings.password.desc')}</p>
         </header>
-        <form
-          className={s.form}
-          onSubmit={pwdForm.handleSubmit((data) => changePwd.mutate(data))}
-        >
+        <form className={s.form} onSubmit={pwdForm.handleSubmit((data) => changePwd.mutate(data))}>
           <Input
             label={t('settings.password.current')}
             type={showCurrentPwd ? 'text' : 'password'}
@@ -317,11 +323,15 @@ export default function SettingsRoute() {
                 type="button"
                 className={s.eyeBtn}
                 onClick={() => setShowCurrentPwd((v) => !v)}
-                aria-label={showCurrentPwd ? t('settings.password.hide') : t('settings.password.show')}
+                aria-label={
+                  showCurrentPwd ? t('settings.password.hide') : t('settings.password.show')
+                }
               >
-                {showCurrentPwd
-                  ? <EyeSlash size={16} weight="regular" aria-hidden />
-                  : <Eye size={16} weight="regular" aria-hidden />}
+                {showCurrentPwd ? (
+                  <EyeSlash size={16} weight="regular" aria-hidden />
+                ) : (
+                  <Eye size={16} weight="regular" aria-hidden />
+                )}
               </button>
             }
             {...pwdForm.register('currentPassword')}
@@ -339,9 +349,11 @@ export default function SettingsRoute() {
                 onClick={() => setShowNewPwd((v) => !v)}
                 aria-label={showNewPwd ? t('settings.password.hide') : t('settings.password.show')}
               >
-                {showNewPwd
-                  ? <EyeSlash size={16} weight="regular" aria-hidden />
-                  : <Eye size={16} weight="regular" aria-hidden />}
+                {showNewPwd ? (
+                  <EyeSlash size={16} weight="regular" aria-hidden />
+                ) : (
+                  <Eye size={16} weight="regular" aria-hidden />
+                )}
               </button>
             }
             {...pwdForm.register('newPassword')}
@@ -356,11 +368,15 @@ export default function SettingsRoute() {
                 type="button"
                 className={s.eyeBtn}
                 onClick={() => setShowConfirmPwd((v) => !v)}
-                aria-label={showConfirmPwd ? t('settings.password.hide') : t('settings.password.show')}
+                aria-label={
+                  showConfirmPwd ? t('settings.password.hide') : t('settings.password.show')
+                }
               >
-                {showConfirmPwd
-                  ? <EyeSlash size={16} weight="regular" aria-hidden />
-                  : <Eye size={16} weight="regular" aria-hidden />}
+                {showConfirmPwd ? (
+                  <EyeSlash size={16} weight="regular" aria-hidden />
+                ) : (
+                  <Eye size={16} weight="regular" aria-hidden />
+                )}
               </button>
             }
             {...pwdForm.register('confirmPassword')}
@@ -371,7 +387,9 @@ export default function SettingsRoute() {
               type="submit"
               disabled={changePwd.isPending || pwdForm.formState.isSubmitting}
             >
-              {changePwd.isPending ? t('settings.password.changing') : t('settings.password.change')}
+              {changePwd.isPending
+                ? t('settings.password.changing')
+                : t('settings.password.change')}
             </Button>
           </div>
         </form>
@@ -394,8 +412,8 @@ export default function SettingsRoute() {
               {themeVal === 'system'
                 ? t('settings.appearance.themeSystem')
                 : themeVal === 'light'
-                ? t('settings.appearance.themeLight')
-                : t('settings.appearance.themeDark')}
+                  ? t('settings.appearance.themeLight')
+                  : t('settings.appearance.themeDark')}
             </button>
           ))}
         </div>
@@ -408,13 +426,19 @@ export default function SettingsRoute() {
               className={`${s.themeBtn} ${language === lang ? s.themeBtnActive : ''}`}
               onClick={() => changeLanguage(lang)}
             >
-              {lang === 'en' ? t('settings.appearance.languageEn') : t('settings.appearance.languageZh')}
+              {lang === 'en'
+                ? t('settings.appearance.languageEn')
+                : t('settings.appearance.languageZh')}
             </button>
           ))}
         </div>
         <p className={s.appearanceLabel}>{t('settings.appearance.autoTranslate')}</p>
         <p className={s.sectionDesc}>{t('settings.appearance.autoTranslateDesc')}</p>
-        <div className={s.themeToggle} role="group" aria-label={t('settings.appearance.autoTranslate')}>
+        <div
+          className={s.themeToggle}
+          role="group"
+          aria-label={t('settings.appearance.autoTranslate')}
+        >
           {[true, false].map((on) => (
             <button
               key={String(on)}
@@ -423,7 +447,9 @@ export default function SettingsRoute() {
               aria-pressed={autoTranslate === on}
               onClick={() => changeAutoTranslate(on)}
             >
-              {on ? t('settings.appearance.autoTranslateOn') : t('settings.appearance.autoTranslateOff')}
+              {on
+                ? t('settings.appearance.autoTranslateOn')
+                : t('settings.appearance.autoTranslateOff')}
             </button>
           ))}
         </div>

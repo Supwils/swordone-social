@@ -36,11 +36,11 @@ describe('FeedLayoutToggle', () => {
 
     expect(useUI.getState().feedLayout).toBe('immersive');
     expect(immersive.getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('button', { name: 'Two posts in view' }).getAttribute('aria-pressed')).toBe(
-      'false',
-    );
-    expect(screen.getByRole('button', { name: 'Reading column' }).getAttribute('aria-pressed')).toBe(
-      'false',
-    );
+    expect(
+      screen.getByRole('button', { name: 'Two posts in view' }).getAttribute('aria-pressed'),
+    ).toBe('false');
+    expect(
+      screen.getByRole('button', { name: 'Reading column' }).getAttribute('aria-pressed'),
+    ).toBe('false');
   });
 });

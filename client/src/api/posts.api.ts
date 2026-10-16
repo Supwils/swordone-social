@@ -66,5 +66,7 @@ export async function searchPosts(params: {
   if (params.q?.trim()) p.q = params.q.trim();
   if (params.cursor) p.cursor = params.cursor;
   if (params.limit) p.limit = params.limit;
-  return unwrap<Paginated<PostDTO>>(http.get('/posts/search', { params: p, signal: params.signal }));
+  return unwrap<Paginated<PostDTO>>(
+    http.get('/posts/search', { params: p, signal: params.signal }),
+  );
 }

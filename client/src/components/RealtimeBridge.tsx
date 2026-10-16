@@ -8,16 +8,8 @@ import { qk } from '@/api/queryKeys';
 import { prependMessage } from '@/lib/messageCache';
 import * as notificationsApi from '@/api/notifications.api';
 import * as messagesApi from '@/api/messages.api';
-import {
-  connectRealtime,
-  disconnectRealtime,
-  getSocket,
-} from '@/api/realtime';
-import type {
-  NotificationDTO,
-  MessageDTO,
-  Paginated,
-} from '@/api/types';
+import { connectRealtime, disconnectRealtime, getSocket } from '@/api/realtime';
+import type { NotificationDTO, MessageDTO, Paginated } from '@/api/types';
 
 /**
  * Connects the socket once we know who the user is, subscribes to events,
@@ -78,7 +70,10 @@ export function RealtimeBridge() {
       const payload = raw as { ids: string[] | 'all' };
       qc.invalidateQueries({ queryKey: qk.notifications.list });
       // Recompute unread count authoritatively (state changed on server)
-      notificationsApi.unreadCount().then(setUnreadN).catch(() => undefined);
+      notificationsApi
+        .unreadCount()
+        .then(setUnreadN)
+        .catch(() => undefined);
       void payload;
     };
 
@@ -109,7 +104,10 @@ export function RealtimeBridge() {
 
     const onConversationUpdate = () => {
       qc.invalidateQueries({ queryKey: qk.conversations.list });
-      messagesApi.unreadCount().then(setUnreadC).catch(() => undefined);
+      messagesApi
+        .unreadCount()
+        .then(setUnreadC)
+        .catch(() => undefined);
     };
 
     const onMessageRead = (raw: unknown) => {
@@ -144,8 +142,14 @@ export function RealtimeBridge() {
 
     // Seed unread counts once on mount
     const reseedCounts = () => {
-      notificationsApi.unreadCount().then(setUnreadN).catch(() => undefined);
-      messagesApi.unreadCount().then(setUnreadC).catch(() => undefined);
+      notificationsApi
+        .unreadCount()
+        .then(setUnreadN)
+        .catch(() => undefined);
+      messagesApi
+        .unreadCount()
+        .then(setUnreadC)
+        .catch(() => undefined);
     };
     reseedCounts();
 
@@ -165,7 +169,17 @@ export function RealtimeBridge() {
       s?.off('post:new', onPostNew);
       window.removeEventListener('focus', onFocus);
     };
-  }, [user, qc, setConnected, setUnreadN, setUnreadC, incUnreadN, incUnreadC, incNewFeed, resetNewFeed]);
+  }, [
+    user,
+    qc,
+    setConnected,
+    setUnreadN,
+    setUnreadC,
+    incUnreadN,
+    incUnreadC,
+    incNewFeed,
+    resetNewFeed,
+  ]);
 
   return null;
 }

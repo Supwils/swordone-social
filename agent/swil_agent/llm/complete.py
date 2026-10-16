@@ -15,6 +15,7 @@ def complete_text(backend: Backend, req: CompletionRequest) -> str:
 def complete_json(backend: Backend, req: CompletionRequest) -> str | None:
     """`llm_json`: extract from the RAW body, with no collapse pass.
 
-    The asymmetry with `complete_text` is deliberate and matches `llm.sh`.
+    The asymmetry with `complete_text` is deliberate: `complete_text` collapses a doubled
+    body, this does not.
     """
     return extract_json_object(backend.complete(req))

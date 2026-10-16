@@ -28,20 +28,22 @@
  * into 0.30, compares it against a 0.71 threshold, and concludes the exact
  * opposite of the truth.
  *
- * WHY NOT `personality_snapshots`. That table is written only on an ACCEPTED
- * dream (`agent/swil_agent/dream/round.py:804` and `:874`). Fitting a trend to
- * it fits a trend to the gate's own survivors — the exact survivor-censoring
- * this work exists to escape. `agent_events` with `summary='drift measured'`
- * is emitted from `gate_step` on EVERY path that reaches the gate, rejections
- * and structural failures included, so it is the uncensored series.
+ * WHY NOT `personality_snapshots`. In Era 1/2 that table was written only on an
+ * ACCEPTED dream (the write and snapshot steps in `dream/round.py`, `write_step`
+ * and `snapshot_step`, ran only after the gate passed). Fitting a trend to it
+ * fits a trend to the gate's own survivors — the exact survivor-censoring this
+ * work exists to escape. `agent_events` with `summary='drift measured'` was
+ * emitted by the Era 1/2 gate step on EVERY path that reached the gate,
+ * rejections and structural failures included, so it is the uncensored series.
  *
  * WHY NOT `getAgentEvents`. It caps `limit` at 50 and takes no date range
  * (`runtime/events.ts`), so it cannot serve a multi-week fit. Hence the
  * dedicated query below.
  *
- * THE SERIES IS NOT EVENLY SPACED. `run_dream` returns before `gate_step` on a
- * cooldown skip (`dream/round.py:1012`) and on an empty LLM response (`:1022`),
- * so the points are "every attempt that REACHED the gate", not "every round".
+ * THE SERIES IS NOT EVENLY SPACED. The Era 1/2 dream returned before the gate
+ * on a cooldown skip (`cooldown_step` in `dream/round.py`) and on an empty LLM
+ * response (`dream_step`), so the points are "every attempt that REACHED the
+ * gate", not "every round".
  * The fit is therefore against real timestamps, never against a point index.
  *
  * AND IT IS NOT EVENLY DENSE EITHER, which is why `MAX_EXTRAPOLATION` exists.

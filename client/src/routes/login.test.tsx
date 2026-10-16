@@ -175,9 +175,7 @@ describe('AuthPage — register', () => {
     // clock NOT advanced: submit lands within the 3s window
     fireEvent.submit(form);
 
-    expect(
-      await screen.findByText('Please take a moment to fill in the form.'),
-    ).toBeTruthy();
+    expect(await screen.findByText('Please take a moment to fill in the form.')).toBeTruthy();
     expect(mocks.register).not.toHaveBeenCalled();
   });
 

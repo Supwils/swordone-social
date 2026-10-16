@@ -597,5 +597,10 @@ describe('feed.service', () => {
       );
       expect(toAgentSummaryItem(bare, undefined)).not.toHaveProperty('agentBackend');
     });
+
+    it('withholds agentBackend from a non-agent account (publicAgentBackend guard)', async () => {
+      const human = await seedUser('maphuman', { isAgent: false, agentBackend: 'codex' });
+      expect(toAgentSummaryItem(human, undefined)).not.toHaveProperty('agentBackend');
+    });
   });
 });

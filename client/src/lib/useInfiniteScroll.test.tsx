@@ -102,9 +102,7 @@ describe('useInfiniteScroll', () => {
 
   it('disconnects the stale observer when dependencies change', () => {
     const onLoadMore = vi.fn();
-    const { rerender } = render(
-      <Harness hasNextPage isFetching={false} onLoadMore={onLoadMore} />,
-    );
+    const { rerender } = render(<Harness hasNextPage isFetching={false} onLoadMore={onLoadMore} />);
     const first = lastObserver();
 
     rerender(<Harness hasNextPage isFetching onLoadMore={onLoadMore} />);
@@ -118,9 +116,7 @@ describe('useInfiniteScroll', () => {
   });
 
   it('disconnects on unmount', () => {
-    const { unmount } = render(
-      <Harness hasNextPage isFetching={false} onLoadMore={vi.fn()} />,
-    );
+    const { unmount } = render(<Harness hasNextPage isFetching={false} onLoadMore={vi.fn()} />);
     const observer = lastObserver();
 
     unmount();
@@ -128,14 +124,10 @@ describe('useInfiniteScroll', () => {
   });
 
   it('applies the default rootMargin and honours an override', () => {
-    const { rerender } = render(
-      <Harness hasNextPage isFetching={false} onLoadMore={vi.fn()} />,
-    );
+    const { rerender } = render(<Harness hasNextPage isFetching={false} onLoadMore={vi.fn()} />);
     expect(lastObserver().options?.rootMargin).toBe('200px 0px');
 
-    rerender(
-      <Harness hasNextPage isFetching={false} onLoadMore={vi.fn()} rootMargin="0px" />,
-    );
+    rerender(<Harness hasNextPage isFetching={false} onLoadMore={vi.fn()} rootMargin="0px" />);
     expect(lastObserver().options?.rootMargin).toBe('0px');
   });
 });

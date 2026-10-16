@@ -155,8 +155,8 @@ def normalize_kind(raw: str) -> BackendKind | None:
     """Map a spelling to a kind, or `None` if it is not one.
 
     `None` rather than a raise: `mangniu`'s `AI Backend:` bullet says `haiku`,
-    which is a MODEL name in the backend slot. Bash's `llm.sh` sent every
-    unrecognised name down its `*)` default branch to the claude CLI, and this
+    which is a MODEL name in the backend slot. Every unrecognised name
+    goes to the claude CLI (the Bash runtime did the same), and this
     runtime has always matched that (`build_backend`'s docstring). Turning it
     into an error now would fail an account that has been running fine for
     months; the caller warns instead.
@@ -259,7 +259,7 @@ def _resolve_kind(
             )
         warnings.append(
             f"{persona.username}: {source} declares backend {raw!r}, which is not a "
-            f"backend name -- falling back to {DEFAULT_KIND} (matching llm.sh's `*)` branch)"
+            f"backend name -- falling back to {DEFAULT_KIND} (the claude default)"
         )
         return DEFAULT_KIND, source  # type: ignore[return-value]
     return DEFAULT_KIND, "default"

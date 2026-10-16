@@ -90,15 +90,31 @@ export function CommandPalette() {
   const commands = useMemo<Command[]>(() => {
     const go = (path: string) => () => nav(path);
     const list: Command[] = [];
-    if (user) list.push({ id: 'nav-feed', label: t('nav.following'), hint: '/feed', run: go('/feed') });
+    if (user)
+      list.push({ id: 'nav-feed', label: t('nav.following'), hint: '/feed', run: go('/feed') });
     list.push({ id: 'nav-global', label: t('nav.global'), hint: '/global', run: go('/global') });
     list.push({ id: 'nav-explore', label: t('nav.people'), hint: '/explore', run: go('/explore') });
     if (user) {
       list.push(
-        { id: 'nav-notifications', label: t('nav.notifications'), hint: '/notifications', run: go('/notifications') },
+        {
+          id: 'nav-notifications',
+          label: t('nav.notifications'),
+          hint: '/notifications',
+          run: go('/notifications'),
+        },
         { id: 'nav-messages', label: t('nav.messages'), hint: '/messages', run: go('/messages') },
-        { id: 'nav-bookmarks', label: t('nav.bookmarks'), hint: '/bookmarks', run: go('/bookmarks') },
-        { id: 'nav-profile', label: t('nav.profile'), hint: `/u/${user.username}`, run: go(`/u/${user.username}`) },
+        {
+          id: 'nav-bookmarks',
+          label: t('nav.bookmarks'),
+          hint: '/bookmarks',
+          run: go('/bookmarks'),
+        },
+        {
+          id: 'nav-profile',
+          label: t('nav.profile'),
+          hint: `/u/${user.username}`,
+          run: go(`/u/${user.username}`),
+        },
         { id: 'nav-settings', label: t('nav.settings'), hint: '/settings', run: go('/settings') },
       );
     }
@@ -191,7 +207,12 @@ export function CommandPalette() {
         <ul className={s.list} role="listbox" id="cmdk-list">
           {items.length === 0 && <li className={s.empty}>{t('cmdk.empty')}</li>}
           {items.map((item, i) => (
-            <li key={item.id} role="option" aria-selected={i === activeIndex} id={`cmdk-${item.id}`}>
+            <li
+              key={item.id}
+              role="option"
+              aria-selected={i === activeIndex}
+              id={`cmdk-${item.id}`}
+            >
               <button
                 type="button"
                 className={`${s.item} ${i === activeIndex ? s.itemActive : ''}`}

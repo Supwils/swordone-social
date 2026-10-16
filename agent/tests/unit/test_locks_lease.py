@@ -34,6 +34,8 @@ from swil_agent.locks.lease import (
     sweep_expired,
 )
 
+from ._sqlite import track
+
 _NOW = 1_700_000_000.0
 
 _INSERT = (
@@ -48,7 +50,7 @@ def _now() -> float:
 
 
 def _memory_db() -> sqlite3.Connection:
-    return sqlite3.connect(":memory:")
+    return track(sqlite3.connect(":memory:"))
 
 
 def _insert_lease(
@@ -273,7 +275,7 @@ def test_a_database_error_that_is_not_a_conflict_also_releases_the_file_lock(
                 raise sqlite3.OperationalError("database is locked")
             return super().execute(sql, parameters)
 
-    db = sqlite3.connect(":memory:", factory=_FailingConnection)
+    db = track(sqlite3.connect(":memory:", factory=_FailingConnection))
     lease = RunLease(db, tmp_path, "builtin", "zenith", kind="act")
     with pytest.raises(sqlite3.OperationalError), lease:
         pass
@@ -911,7 +913,7 @@ def test_open_lease_db_puts_a_real_connection_in_wal_journal_mode(tmp_path: Path
     nothing about the file every real cycle actually opens.
     """
     db_path = tmp_path / "run_leases.sqlite"
-    db = open_lease_db(str(db_path))
+    db = track(open_lease_db(str(db_path)))
     try:
         with RunLease(db, tmp_path, "builtin", "zenith", kind="act"):
             journal_mode = db.execute("PRAGMA journal_mode").fetchone()[0]
@@ -935,12 +937,12 @@ def test_open_lease_db_sets_a_busy_timeout_distinguishable_from_sqlite3s_own_def
     so a regression back to a value indistinguishable from the stdlib
     default fails here even if `_BUSY_TIMEOUT_MS` itself is edited to match.
     """
-    plain = sqlite3.connect(str(tmp_path / "plain.sqlite"))
+    plain = track(sqlite3.connect(str(tmp_path / "plain.sqlite")))
     assert plain.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
     plain.close()
 
     db_path = tmp_path / "run_leases.sqlite"
-    db = open_lease_db(str(db_path))
+    db = track(open_lease_db(str(db_path)))
     try:
         with RunLease(db, tmp_path, "builtin", "zenith", kind="act"):
             busy_timeout = db.execute("PRAGMA busy_timeout").fetchone()[0]
@@ -957,7 +959,7 @@ def test_a_memory_lease_db_still_gets_a_busy_timeout_even_though_wal_is_impossib
     databases to `memory` journal mode), but `busy_timeout` is an ordinary
     per-connection pragma with no such restriction, and costs nothing to set
     on a connection nothing else can ever contend for."""
-    db = open_lease_db(":memory:")
+    db = track(open_lease_db(":memory:"))
     try:
         assert str(db.execute("PRAGMA journal_mode").fetchone()[0]).lower() == "memory"
         assert int(db.execute("PRAGMA busy_timeout").fetchone()[0]) == 8000
@@ -984,7 +986,7 @@ class _LockedOnHeartbeat(sqlite3.Connection):
 
 
 def _locked_on_heartbeat_db() -> sqlite3.Connection:
-    return sqlite3.connect(":memory:", factory=_LockedOnHeartbeat)
+    return track(sqlite3.connect(":memory:", factory=_LockedOnHeartbeat))
 
 
 def test_a_heartbeat_failure_does_not_abort_the_cycle(tmp_path: Path) -> None:

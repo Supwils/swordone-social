@@ -303,12 +303,12 @@ describe('posts.service', () => {
   });
 
   it('allows followers to read follower-only posts', async () => {
-    const viewerId = newId();
-    const authorId = newId();
-    await db.insert(follows).values({ followerId: viewerId, followingId: authorId });
+    // follows.follower_id / following_id are FKs, so both accounts are real rows.
+    const viewer = await seedUser();
+    const author = await seedUser();
+    await db.insert(follows).values({ followerId: viewer.id, followingId: author.id });
 
-    const viewer = { id: viewerId } as UserRow;
-    const post = fakePost({ visibility: 'followers', authorId });
+    const post = fakePost({ visibility: 'followers', authorId: author.id });
 
     await expect(assertVisibility(post, viewer)).resolves.toBeUndefined();
   });

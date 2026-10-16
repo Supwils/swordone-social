@@ -23,18 +23,18 @@ describe('lang helpers', () => {
   });
 
   it('resolveLang: signed-in preference beats ?lang, which beats the English default', () => {
-    expect(resolveLang(req({ user: { preferences: { language: 'zh' } }, query: { lang: 'en' } }))).toBe(
-      'zh',
-    );
+    expect(
+      resolveLang(req({ user: { preferences: { language: 'zh' } }, query: { lang: 'en' } })),
+    ).toBe('zh');
     expect(resolveLang(req({ query: { lang: 'zh' } }))).toBe('zh');
     expect(resolveLang(req())).toBe('en');
   });
 
   it('resolveLang never lets an unknown language through to the paid API', () => {
     expect(resolveLang(req({ query: { lang: 'fr' } }))).toBe('en');
-    expect(resolveLang(req({ user: { preferences: { language: 'xx' } }, query: { lang: 'zh' } }))).toBe(
-      'zh',
-    );
+    expect(
+      resolveLang(req({ user: { preferences: { language: 'xx' } }, query: { lang: 'zh' } })),
+    ).toBe('zh');
   });
 
   it('autoTranslateOn is on unless a signed-in user turned it off', () => {

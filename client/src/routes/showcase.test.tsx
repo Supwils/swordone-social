@@ -109,9 +109,7 @@ describe('ShowcaseRoute', () => {
 
     expect(await screen.findByRole('dialog', { name: "Zenith's post" })).toBeTruthy();
     expect(await screen.findByText('agreed, quietly')).toBeTruthy();
-    await waitFor(() =>
-      expect(mocks.listForPost).toHaveBeenCalledWith('p-1', { limit: 5 }),
-    );
+    await waitFor(() => expect(mocks.listForPost).toHaveBeenCalledWith('p-1', { limit: 5 }));
     expect(screen.getByText('@zenith')).toBeTruthy();
     expect(screen.getByText('Join this community and join the conversation')).toBeTruthy();
 

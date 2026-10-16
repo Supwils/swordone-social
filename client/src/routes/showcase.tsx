@@ -17,7 +17,7 @@ import { usePageTitle } from '@/lib/usePageTitle';
 // Deterministic tilt + vertical shift per card — stable, never repeating in a visible pattern
 const CARD_TRANSFORMS = Array.from({ length: 24 }, (_, i) => {
   const tilt = (((i * 137 + i * i * 3) % 130) - 65) / 10; // -6.5° to +6.5°
-  const dy = ((i * 37) % 24) - 12;                         // -12px to +12px
+  const dy = ((i * 37) % 24) - 12; // -12px to +12px
   return { tilt, dy };
 });
 
@@ -40,7 +40,10 @@ function ShowcaseCard({
 }) {
   const { t } = useTranslation();
   const { tilt, dy } = CARD_TRANSFORMS[index % CARD_TRANSFORMS.length];
-  const excerpt = post.text.replace(/#+\s|[*`>]/g, '').replace(/\n+/g, ' ').trim();
+  const excerpt = post.text
+    .replace(/#+\s|[*`>]/g, '')
+    .replace(/\n+/g, ' ')
+    .trim();
 
   return (
     <button
@@ -54,7 +57,9 @@ function ShowcaseCard({
         } as React.CSSProperties
       }
       onClick={onClick}
-      aria-label={t('showcase.postAriaLabel', { name: post.author.displayName || post.author.username })}
+      aria-label={t('showcase.postAriaLabel', {
+        name: post.author.displayName || post.author.username,
+      })}
     >
       <div className={s.cardHeader}>
         <Avatar
@@ -64,9 +69,7 @@ function ShowcaseCard({
           alt=""
         />
         <div className={s.cardAuthor}>
-          <span className={s.cardName}>
-            {post.author.displayName || post.author.username}
-          </span>
+          <span className={s.cardName}>{post.author.displayName || post.author.username}</span>
           {(post.author.isAgent || post.author.archivedAt) && (
             <AccountBadge
               isAgent={post.author.isAgent}
@@ -98,21 +101,13 @@ function ShowcaseCard({
           <ChatCircle size={11} />
           {post.commentCount}
         </span>
-        {post.tags.length > 0 && (
-          <span className={s.cardTag}>#{post.tags[0].display}</span>
-        )}
+        {post.tags.length > 0 && <span className={s.cardTag}>#{post.tags[0].display}</span>}
       </div>
     </button>
   );
 }
 
-function PostPreviewModal({
-  post,
-  onClose,
-}: {
-  post: PostDTO | null;
-  onClose: () => void;
-}) {
+function PostPreviewModal({ post, onClose }: { post: PostDTO | null; onClose: () => void }) {
   const { t } = useTranslation();
 
   const commentsQuery = useQuery({
@@ -203,8 +198,12 @@ function PostPreviewModal({
           <div className={s.modalCta}>
             <p className={s.modalCtaText}>{t('showcase.ctaText')}</p>
             <div className={s.modalCtaActions}>
-              <Link to="/login" className={s.ctaSecondary}>{t('showcase.login')}</Link>
-              <Link to="/register" className={s.ctaPrimary}>{t('showcase.register')}</Link>
+              <Link to="/login" className={s.ctaSecondary}>
+                {t('showcase.login')}
+              </Link>
+              <Link to="/register" className={s.ctaPrimary}>
+                {t('showcase.register')}
+              </Link>
             </div>
           </div>
         </div>
@@ -255,8 +254,12 @@ export default function ShowcaseRoute() {
         </div>
         <nav className={s.topNav}>
           <LangToggle />
-          <Link to="/login" className={s.navLogin}>{t('showcase.login')}</Link>
-          <Link to="/register" className={s.navRegister}>{t('showcase.join')}</Link>
+          <Link to="/login" className={s.navLogin}>
+            {t('showcase.login')}
+          </Link>
+          <Link to="/register" className={s.navRegister}>
+            {t('showcase.join')}
+          </Link>
         </nav>
       </header>
 
@@ -267,18 +270,15 @@ export default function ShowcaseRoute() {
           </div>
         )}
         {posts?.map((post, i) => (
-          <ShowcaseCard
-            key={post.id}
-            post={post}
-            index={i}
-            onClick={() => setSelectedPost(post)}
-          />
+          <ShowcaseCard key={post.id} post={post} index={i} onClick={() => setSelectedPost(post)} />
         ))}
       </main>
 
       <footer className={s.bottomBar}>
         <span className={s.bottomTagline}>{t('showcase.bottomTagline')}</span>
-        <Link to="/register" className={s.bottomCta}>{t('showcase.bottomCta')}</Link>
+        <Link to="/register" className={s.bottomCta}>
+          {t('showcase.bottomCta')}
+        </Link>
       </footer>
 
       <PostPreviewModal post={selectedPost} onClose={() => setSelectedPost(null)} />

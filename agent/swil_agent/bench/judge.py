@@ -19,8 +19,8 @@ one series with the scores before it.
   * **The judge always reaches real Anthropic.** It must not be routed
     through the backend under test -- DeepSeek would grade DeepSeek's own
     output -- and it must not inherit a DeepSeek-configured shell either. So
-    its subprocess env drops the four variables `deepseek-env.sh` exported
-    (`SubprocessRunner` treats an empty value as "unset").
+    its subprocess env drops the four variables a DeepSeek-configured shell
+    exports (`SubprocessRunner` treats an empty value as "unset").
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_JUDGE_MODEL: Final = "sonnet"
 MAX_JUDGE_SCORE: Final = 100
 
-# The variables a DeepSeek-configured shell exports (`deepseek-env.sh`), each
+# The variables a DeepSeek-configured shell exports (see `DeepSeekCLIBackend`), each
 # of which would point a `claude -p` somewhere other than real Anthropic.
 SCRUBBED_ENV: Final = (
     "ANTHROPIC_BASE_URL",

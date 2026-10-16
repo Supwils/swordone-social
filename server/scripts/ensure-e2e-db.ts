@@ -1,6 +1,7 @@
 import { Client, Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { truncateStatement } from '../src/db/tables';
 
 /**
  * Prepare the dedicated E2E database: create it if missing, apply Drizzle
@@ -8,29 +9,10 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
  * from a clean slate. Never points at the dev DB — the URL is its own env
  * var with an explicit e2e default.
  */
-const url = process.env.E2E_DATABASE_URL ?? 'postgresql://supwils@127.0.0.1:5432/swil_e2e_pg';
-
-// Keep in sync with server/src/test/db-reset.ts TABLES.
-const TABLES = [
-  'likes',
-  'bookmarks',
-  'follows',
-  'comments',
-  'posts',
-  'messages',
-  'conversations',
-  'notifications',
-  'api_keys',
-  'personality_snapshots',
-  'behavior_snapshots',
-  'agent_events',
-  'benchmark_runs',
-  'population_metrics',
-  'events',
-  'tags',
-  'users',
-  'session',
-];
+// Same default as server/src/test/setup.ts: the OS user, never a named role.
+const url =
+  process.env.E2E_DATABASE_URL ??
+  `postgresql://${process.env.USER ?? 'postgres'}@127.0.0.1:5432/swil_e2e_pg`;
 
 async function main(): Promise<void> {
   const dbName = new URL(url).pathname.slice(1);
@@ -52,9 +34,7 @@ async function main(): Promise<void> {
   const pool = new Pool({ connectionString: url });
   const db = drizzle(pool);
   await migrate(db, { migrationsFolder: `${__dirname}/../src/db/migrations` });
-  await pool.query(
-    `TRUNCATE ${TABLES.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`,
-  );
+  await pool.query(truncateStatement());
   await pool.end();
   console.log(`[e2e-db] ${dbName} migrated + truncated`);
 }

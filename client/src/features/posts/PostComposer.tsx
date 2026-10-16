@@ -33,8 +33,7 @@ function insertFormat(
   const end = el.selectionEnd;
   const selected = el.value.slice(start, end);
   const insert = selected || defaultText;
-  const next =
-    el.value.slice(0, start) + prefix + insert + suffix + el.value.slice(end);
+  const next = el.value.slice(0, start) + prefix + insert + suffix + el.value.slice(end);
   onValueChange(next);
   requestAnimationFrame(() => {
     el.focus();
@@ -44,10 +43,7 @@ function insertFormat(
   });
 }
 
-function insertQuote(
-  el: HTMLTextAreaElement,
-  onValueChange: (v: string) => void,
-) {
+function insertQuote(el: HTMLTextAreaElement, onValueChange: (v: string) => void) {
   const start = el.selectionStart;
   const lineStart = el.value.lastIndexOf('\n', start - 1) + 1;
   const linePrefix = el.value.slice(lineStart, lineStart + 2);
@@ -91,7 +87,11 @@ export function PostComposer({ onSuccess, bare }: PostComposerProps = {}) {
     if (!trigger) return;
     const replacement = 'username' in item ? item.username : item.slug;
     const { newText, newCursor } = applySelection(
-      text, trigger.triggerIndex, trigger.query.length, trigger.prefix, replacement,
+      text,
+      trigger.triggerIndex,
+      trigger.query.length,
+      trigger.prefix,
+      replacement,
     );
     setText(newText);
     requestAnimationFrame(() => {
@@ -187,194 +187,199 @@ export function PostComposer({ onSuccess, bare }: PostComposerProps = {}) {
   const hasDraft = Boolean(getDraft(DRAFT_KEY)?.text);
 
   const form = (
-      <form onSubmit={onSubmit} className={s.composer}>
-        <div className={s.formatBar}>
-          <button
-            type="button"
-            className={s.fmtBtn}
-            title={t('post.formatBold')}
-            aria-label={t('post.formatBold')}
-            onClick={() =>
-              textareaRef.current &&
-              insertFormat(textareaRef.current, { prefix: '**', suffix: '**', defaultText: 'bold text' }, setText)
-            }
-          >
-            <TextB size={14} weight="bold" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={s.fmtBtn}
-            title={t('post.formatItalic')}
-            aria-label={t('post.formatItalic')}
-            onClick={() =>
-              textareaRef.current &&
-              insertFormat(textareaRef.current, { prefix: '*', suffix: '*', defaultText: 'italic text' }, setText)
-            }
-          >
-            <TextItalic size={14} weight="regular" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={s.fmtBtn}
-            title={t('post.formatCode')}
-            aria-label={t('post.formatCode')}
-            onClick={() =>
-              textareaRef.current &&
-              insertFormat(textareaRef.current, { prefix: '`', suffix: '`', defaultText: 'code' }, setText)
-            }
-          >
-            <Code size={14} weight="regular" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={s.fmtBtn}
-            title={t('post.formatQuote')}
-            aria-label={t('post.formatQuote')}
-            onClick={() =>
-              textareaRef.current && insertQuote(textareaRef.current, setText)
-            }
-          >
-            <Quotes size={14} weight="regular" aria-hidden />
-          </button>
-        </div>
+    <form onSubmit={onSubmit} className={s.composer}>
+      <div className={s.formatBar}>
+        <button
+          type="button"
+          className={s.fmtBtn}
+          title={t('post.formatBold')}
+          aria-label={t('post.formatBold')}
+          onClick={() =>
+            textareaRef.current &&
+            insertFormat(
+              textareaRef.current,
+              { prefix: '**', suffix: '**', defaultText: 'bold text' },
+              setText,
+            )
+          }
+        >
+          <TextB size={14} weight="bold" aria-hidden />
+        </button>
+        <button
+          type="button"
+          className={s.fmtBtn}
+          title={t('post.formatItalic')}
+          aria-label={t('post.formatItalic')}
+          onClick={() =>
+            textareaRef.current &&
+            insertFormat(
+              textareaRef.current,
+              { prefix: '*', suffix: '*', defaultText: 'italic text' },
+              setText,
+            )
+          }
+        >
+          <TextItalic size={14} weight="regular" aria-hidden />
+        </button>
+        <button
+          type="button"
+          className={s.fmtBtn}
+          title={t('post.formatCode')}
+          aria-label={t('post.formatCode')}
+          onClick={() =>
+            textareaRef.current &&
+            insertFormat(
+              textareaRef.current,
+              { prefix: '`', suffix: '`', defaultText: 'code' },
+              setText,
+            )
+          }
+        >
+          <Code size={14} weight="regular" aria-hidden />
+        </button>
+        <button
+          type="button"
+          className={s.fmtBtn}
+          title={t('post.formatQuote')}
+          aria-label={t('post.formatQuote')}
+          onClick={() => textareaRef.current && insertQuote(textareaRef.current, setText)}
+        >
+          <Quotes size={14} weight="regular" aria-hidden />
+        </button>
+      </div>
 
-        <div className={s.textareaWrapper}>
-          <Textarea
-            ref={textareaRef}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              setCursorPos(e.target.selectionStart ?? 0);
-              setAcActiveIndex(0);
-            }}
-            onClick={(e) => setCursorPos((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
-            onKeyDown={handleTextareaKeyDown}
-            placeholder={t('post.placeholder')}
-            maxLength={5000}
-            showCounter
-            serif
-            autoResize
-            aria-label={t('post.textAria')}
-            aria-autocomplete="list"
-            aria-expanded={trigger !== null && results.length > 0}
+      <div className={s.textareaWrapper}>
+        <Textarea
+          ref={textareaRef}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setCursorPos(e.target.selectionStart ?? 0);
+            setAcActiveIndex(0);
+          }}
+          onClick={(e) => setCursorPos((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
+          onKeyDown={handleTextareaKeyDown}
+          placeholder={t('post.placeholder')}
+          maxLength={5000}
+          showCounter
+          serif
+          autoResize
+          aria-label={t('post.textAria')}
+          aria-autocomplete="list"
+          aria-expanded={trigger !== null && results.length > 0}
+        />
+        {trigger && results.length > 0 && (
+          <AutocompleteDropdown
+            prefix={trigger.prefix}
+            results={results}
+            activeIndex={acActiveIndex}
+            onSelect={handleAcSelect}
           />
-          {trigger && results.length > 0 && (
-            <AutocompleteDropdown
-              prefix={trigger.prefix}
-              results={results}
-              activeIndex={acActiveIndex}
-              onSelect={handleAcSelect}
-            />
-          )}
+        )}
+      </div>
+
+      {previews.length > 0 && (
+        <div className={s.previews}>
+          {previews.map((p, idx) => (
+            <div key={p.url} className={s.previewItem}>
+              <img src={p.url} alt="" className={s.previewImg} />
+              <button
+                type="button"
+                className={s.previewRemove}
+                onClick={() => removeFile(idx)}
+                aria-label={t('post.removeImage')}
+              >
+                ×
+              </button>
+            </div>
+          ))}
         </div>
+      )}
 
-        {previews.length > 0 && (
-          <div className={s.previews}>
-            {previews.map((p, idx) => (
-              <div key={p.url} className={s.previewItem}>
-                <img src={p.url} alt="" className={s.previewImg} />
-                <button
-                  type="button"
-                  className={s.previewRemove}
-                  onClick={() => removeFile(idx)}
-                  aria-label={t('post.removeImage')}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+      {videoPreviewUrl && (
+        <div className={s.videoPreview}>
+          <video src={videoPreviewUrl} muted controls className={s.videoPreviewEl} />
+          <button
+            type="button"
+            className={s.previewRemove}
+            onClick={() => setVideoFile(null)}
+            aria-label={t('post.removeVideo')}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
-        {videoPreviewUrl && (
-          <div className={s.videoPreview}>
-            <video
-              src={videoPreviewUrl}
-              muted
-              controls
-              className={s.videoPreviewEl}
-            />
-            <button
-              type="button"
-              className={s.previewRemove}
-              onClick={() => setVideoFile(null)}
-              aria-label={t('post.removeVideo')}
-            >
-              ×
-            </button>
-          </div>
-        )}
-
-        <div className={s.toolbar}>
-          <div className={s.toolsLeft}>
-            <button
-              type="button"
-              className={s.iconButton}
-              onClick={() => fileRef.current?.click()}
-              aria-label={t('post.attachImages')}
-              disabled={files.length >= 4 || videoFile !== null}
-            >
-              <ImageIcon size={20} weight="regular" aria-hidden />
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className={s.hiddenInput}
-              onChange={(e) => {
-                const picked = Array.from(e.target.files ?? []);
-                setFiles((prev) => [...prev, ...picked].slice(0, 4));
-                e.target.value = '';
-              }}
-            />
-            <button
-              type="button"
-              className={s.iconButton}
-              onClick={() => videoRef.current?.click()}
-              aria-label={t('post.attachVideo')}
-              disabled={files.length > 0 || videoFile !== null}
-            >
-              <FilmStrip size={20} weight="regular" aria-hidden />
-            </button>
-            <input
-              ref={videoRef}
-              type="file"
-              accept="video/mp4,video/webm"
-              className={s.hiddenInput}
-              onChange={(e) => {
-                const picked = e.target.files?.[0] ?? null;
-                if (picked) setVideoFile(picked);
-                e.target.value = '';
-              }}
-            />
-            <Select
-              className={s.visibilitySelect}
-              value={visibility}
-              onChange={(e) => setVisibility(e.target.value as Visibility)}
-              aria-label={t('post.visibility')}
-            >
-              <option value="public">{t('post.visibilityPublic')}</option>
-              <option value="followers">{t('post.visibilityFollowers')}</option>
-              <option value="private">{t('post.visibilityPrivate')}</option>
-            </Select>
-          </div>
-          <div className={s.toolsRight}>
-            {hasDraft && text.trim() && (
-              <Button variant="ghost" size="sm" type="button" onClick={discardDraft}>
-                {t('post.discard')}
-              </Button>
-            )}
-            <Button
-              variant="primary"
-              type="submit"
-              disabled={create.isPending || (!text.trim() && files.length === 0 && !videoFile)}
-            >
-              {create.isPending ? t('post.posting') : t('post.post')}
+      <div className={s.toolbar}>
+        <div className={s.toolsLeft}>
+          <button
+            type="button"
+            className={s.iconButton}
+            onClick={() => fileRef.current?.click()}
+            aria-label={t('post.attachImages')}
+            disabled={files.length >= 4 || videoFile !== null}
+          >
+            <ImageIcon size={20} weight="regular" aria-hidden />
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className={s.hiddenInput}
+            onChange={(e) => {
+              const picked = Array.from(e.target.files ?? []);
+              setFiles((prev) => [...prev, ...picked].slice(0, 4));
+              e.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            className={s.iconButton}
+            onClick={() => videoRef.current?.click()}
+            aria-label={t('post.attachVideo')}
+            disabled={files.length > 0 || videoFile !== null}
+          >
+            <FilmStrip size={20} weight="regular" aria-hidden />
+          </button>
+          <input
+            ref={videoRef}
+            type="file"
+            accept="video/mp4,video/webm"
+            className={s.hiddenInput}
+            onChange={(e) => {
+              const picked = e.target.files?.[0] ?? null;
+              if (picked) setVideoFile(picked);
+              e.target.value = '';
+            }}
+          />
+          <Select
+            className={s.visibilitySelect}
+            value={visibility}
+            onChange={(e) => setVisibility(e.target.value as Visibility)}
+            aria-label={t('post.visibility')}
+          >
+            <option value="public">{t('post.visibilityPublic')}</option>
+            <option value="followers">{t('post.visibilityFollowers')}</option>
+            <option value="private">{t('post.visibilityPrivate')}</option>
+          </Select>
+        </div>
+        <div className={s.toolsRight}>
+          {hasDraft && text.trim() && (
+            <Button variant="ghost" size="sm" type="button" onClick={discardDraft}>
+              {t('post.discard')}
             </Button>
-          </div>
+          )}
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={create.isPending || (!text.trim() && files.length === 0 && !videoFile)}
+          >
+            {create.isPending ? t('post.posting') : t('post.post')}
+          </Button>
         </div>
-      </form>
+      </div>
+    </form>
   );
 
   return bare ? form : <Card as="section">{form}</Card>;

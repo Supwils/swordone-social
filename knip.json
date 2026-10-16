@@ -6,32 +6,18 @@
       "ignore": ["agent/**", ".remember/**", "e2e/**"]
     },
     "server": {
-      "entry": ["src/server.ts", "scripts/*.ts", "src/**/*.test.ts", "src/contract/index.ts"],
+      "entry": ["scripts/*.ts", "src/**/*.test.ts", "src/contract/index.ts"],
       "project": ["src/**/*.ts", "scripts/*.ts"]
     },
     "client": {
-      "entry": [
-        "src/main.tsx",
-        "vite.config.ts",
-        "src/**/*.test.{ts,tsx}",
-        "src/contract/index.ts"
-      ],
+      "entry": ["src/**/*.test.{ts,tsx}", "src/contract/index.ts"],
       "project": ["src/**/*.{ts,tsx}"]
     },
     "mcp": {
-      "entry": ["src/index.ts", "scripts/*.mts", "src/**/*.test.ts", "src/contract/common.ts"],
+      "entry": ["scripts/*.mts", "src/**/*.test.ts", "src/contract/common.ts"],
       "project": ["src/**/*.ts"]
     }
   },
-  "ignoreDependencies": [
-    "@vitest/coverage-v8",
-    "@testing-library/jest-dom",
-    "@testing-library/dom",
-    "concurrently",
-    "@commitlint/cli",
-    "@commitlint/config-conventional",
-    "supertest",
-    "@types/supertest",
-    "pino-pretty"
-  ]
+  "ignoreDependencies": ["@testing-library/jest-dom", "@commitlint/cli", "pino-pretty"],
+  "ignoreExportsUsedInFile": true
 }

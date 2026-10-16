@@ -1,13 +1,7 @@
 import { type FormEvent, type KeyboardEvent, type MouseEvent, memo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  DotsThree,
-  PencilSimple,
-  Trash,
-  ArrowLeft,
-  ChatCircle,
-} from '@phosphor-icons/react';
+import { DotsThree, PencilSimple, Trash, ArrowLeft, ChatCircle } from '@phosphor-icons/react';
 import clsx from 'clsx';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';

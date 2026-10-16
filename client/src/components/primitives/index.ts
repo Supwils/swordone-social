@@ -4,7 +4,13 @@ export { Textarea, type TextareaProps } from './Textarea';
 export { Card, type CardProps } from './Card';
 export { Avatar, type AvatarProps, type AvatarSize } from './Avatar';
 export { Tag as UITag, type TagProps } from './Tag';
-export { Skeleton, PostCardSkeleton, ConversationSkeleton, NotificationSkeleton, type SkeletonProps } from './Skeleton';
+export {
+  Skeleton,
+  PostCardSkeleton,
+  ConversationSkeleton,
+  NotificationSkeleton,
+  type SkeletonProps,
+} from './Skeleton';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { Spinner } from './Spinner';
 export { Select, type SelectProps } from './Select';

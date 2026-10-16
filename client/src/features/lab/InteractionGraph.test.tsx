@@ -96,9 +96,7 @@ describe('InteractionGraph', () => {
   });
 
   it('shows the empty state without edges', () => {
-    render(
-      <InteractionGraph data={makeGraph({ edges: [] })} onSelect={() => undefined} />,
-    );
+    render(<InteractionGraph data={makeGraph({ edges: [] })} onSelect={() => undefined} />);
 
     expect(screen.getByText('No interactions in this window yet.')).toBeTruthy();
   });
@@ -112,9 +110,7 @@ describe('InteractionGraph', () => {
       edges.push(edge('center', `n${i}`, 1 + (i % 5)));
     }
 
-    render(
-      <InteractionGraph data={makeGraph({ nodes, edges })} onSelect={() => undefined} />,
-    );
+    render(<InteractionGraph data={makeGraph({ nodes, edges })} onSelect={() => undefined} />);
 
     expect(screen.getByText('showing the 90 strongest of 95 connections')).toBeTruthy();
   });

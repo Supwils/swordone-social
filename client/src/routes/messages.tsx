@@ -24,8 +24,7 @@ export default function MessagesRoute() {
 
   const q = useInfiniteQuery({
     queryKey: qk.conversations.list,
-    queryFn: ({ pageParam }) =>
-      messagesApi.listConversations({ cursor: pageParam, limit: 30 }),
+    queryFn: ({ pageParam }) => messagesApi.listConversations({ cursor: pageParam, limit: 30 }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
   });
@@ -47,7 +46,10 @@ export default function MessagesRoute() {
         <h1 className={s.title}>{t('messages.title')}</h1>
       </header>
 
-      <UserSearchCompose onSelect={(username) => start.mutate(username)} loading={start.isPending} />
+      <UserSearchCompose
+        onSelect={(username) => start.mutate(username)}
+        loading={start.isPending}
+      />
 
       {q.isLoading && (
         <>
@@ -59,10 +61,7 @@ export default function MessagesRoute() {
       )}
 
       {q.isSuccess && items.length === 0 && (
-        <EmptyState
-          title={t('messages.empty')}
-          description={t('messages.emptyDesc')}
-        />
+        <EmptyState title={t('messages.empty')} description={t('messages.emptyDesc')} />
       )}
 
       {items.map((c) => (

@@ -69,9 +69,7 @@ describe('AutocompleteDropdown', () => {
     const onSelect = vi.fn();
     const tag = AI_TAG;
 
-    render(
-      <AutocompleteDropdown prefix="#" results={[tag]} activeIndex={0} onSelect={onSelect} />,
-    );
+    render(<AutocompleteDropdown prefix="#" results={[tag]} activeIndex={0} onSelect={onSelect} />);
 
     expect(screen.getByText('#ai')).toBeTruthy();
     // The component formats via toLocaleString(); compute the expectation the

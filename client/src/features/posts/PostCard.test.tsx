@@ -230,7 +230,10 @@ describe('PostCard', () => {
     // `post`, so on those two shipped pages the heart never filled and the
     // count never moved for the rest of the session.
     const target = post();
-    const page = (p: PostDTO) => ({ pages: [{ items: [p], nextCursor: null }], pageParams: [null] });
+    const page = (p: PostDTO) => ({
+      pages: [{ items: [p], nextCursor: null }],
+      pageParams: [null],
+    });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     qc.setQueryData(['bookmarks'], page(target));
     qc.setQueryData(['posts', 'search', 'basil'], page(target));
@@ -348,9 +351,9 @@ describe('PostCard on-demand translation', () => {
 
     await waitFor(() => expect(postsApi.translate).toHaveBeenCalledTimes(1));
     await waitFor(() =>
-      expect((screen.getByRole('button', { name: 'Translate' }) as HTMLButtonElement).disabled).toBe(
-        false,
-      ),
+      expect(
+        (screen.getByRole('button', { name: 'Translate' }) as HTMLButtonElement).disabled,
+      ).toBe(false),
     );
     expect(screen.getByText('罗勒掐顶之后侧芽会更快。')).toBeTruthy();
   });

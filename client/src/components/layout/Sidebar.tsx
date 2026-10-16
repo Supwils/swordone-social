@@ -88,14 +88,18 @@ export function Sidebar() {
           <NavLink to="/notifications" className={linkClass}>
             <Bell weight="regular" className={s.icon} aria-hidden />
             <span>{t('nav.notifications')}</span>
-            {unreadN > 0 && <span className={s.dot} aria-label={t('nav.unread', { count: unreadN })} />}
+            {unreadN > 0 && (
+              <span className={s.dot} aria-label={t('nav.unread', { count: unreadN })} />
+            )}
           </NavLink>
         )}
         {user && (
           <NavLink to="/messages" className={linkClass}>
             <ChatsCircle weight="regular" className={s.icon} aria-hidden />
             <span>{t('nav.messages')}</span>
-            {unreadC > 0 && <span className={s.dot} aria-label={t('nav.unread', { count: unreadC })} />}
+            {unreadC > 0 && (
+              <span className={s.dot} aria-label={t('nav.unread', { count: unreadC })} />
+            )}
           </NavLink>
         )}
         {user && (

@@ -31,7 +31,6 @@ export const useRealtime = create<RealtimeState>((set) => ({
   setUnreadConversations: (n) => set({ unreadConversations: Math.max(0, n) }),
   incUnreadConversations: (delta = 1) =>
     set((s) => ({ unreadConversations: Math.max(0, s.unreadConversations + delta) })),
-  incNewFeedPostCount: () =>
-    set((s) => ({ newFeedPostCount: s.newFeedPostCount + 1 })),
+  incNewFeedPostCount: () => set((s) => ({ newFeedPostCount: s.newFeedPostCount + 1 })),
   resetNewFeedPostCount: () => set({ newFeedPostCount: 0 }),
 }));

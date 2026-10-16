@@ -73,5 +73,7 @@ if (typeof window !== 'undefined') {
     if (document.visibilityState === 'hidden') void flush();
   });
   // Fallback: if the browser bypasses visibilitychange (rare), 'pagehide' fires
-  window.addEventListener('pagehide', () => { void flush(); });
+  window.addEventListener('pagehide', () => {
+    void flush();
+  });
 }
