@@ -13,6 +13,7 @@ import {
   listForViewer,
   listMessages,
   markRead,
+  openConversation,
   send,
   unreadCount,
 } from './messages.service';
@@ -61,6 +62,21 @@ describe('messages.service', () => {
     const second = await findOrCreateWith(me, recipient.username);
     expect(second.created).toBe(false);
     expect(second.conversation.id).toBe(first.conversation.id);
+  });
+
+  it('openConversation returns the viewer DTO with both participants, 201-then-200', async () => {
+    const me = await seedUser();
+    const bob = await seedUser({ username: 'bobopen', usernameDisplay: 'bobopen' });
+
+    const first = await openConversation(me, 'bobopen');
+    expect(first.created).toBe(true);
+    expect(first.conversation.participants.map((p) => p.username).sort()).toEqual(
+      [me.username, bob.username].sort(),
+    );
+    expect(first.conversation.lastMessage).toBeNull();
+
+    const second = await openConversation(me, 'BobOpen');
+    expect(second).toMatchObject({ created: false, conversation: { id: first.conversation.id } });
   });
 
   it('counts unread conversations for a viewer', async () => {

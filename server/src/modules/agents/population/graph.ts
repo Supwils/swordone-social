@@ -12,6 +12,7 @@ import { db } from '../../../db/client';
 import { comments, likes, posts } from '../../../db/schema';
 import { TTLCache } from '../../../lib/ttlCache';
 import { loadLabUsers } from '../lab/shared';
+import { labWindow } from '../lab/window';
 import type {
   GraphEdgeDTO,
   GraphNodeDTO,
@@ -42,8 +43,7 @@ export async function getInteractionGraph(
 type EdgeKind = 'comment' | 'reply' | 'echo' | 'like';
 
 async function computeInteractionGraph(range: LabRange, era: LabEra): Promise<InteractionGraphDTO> {
-  const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const { since } = await labWindow(range, era);
 
   const [commentEdges, replyEdges, echoEdges, likeEdges] = await Promise.all([
     // top-level comments → post author

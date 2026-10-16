@@ -13,7 +13,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import clsx from 'clsx';
 import { ArrowLeft } from '@phosphor-icons/react';
@@ -27,15 +27,23 @@ import { emit, emitTyping, emitTypingEnd, on, onConnect } from '@/api/realtime';
 import { useRealtime } from '@/stores/realtime.store';
 import { formatRelative } from '@/lib/formatDate';
 import type { ApiError, MessageDTO, Paginated } from '@/api/types';
+import { ID_RE, LIMITS } from '@/contract/limits';
 import s from './messages.module.css';
 import { usePageTitle } from '@/lib/usePageTitle';
+
+/** How long a `typing` frame shows the indicator without a follow-up. */
+const TYPING_EXPIRY_MS = 5000;
 
 export default function ConversationRoute() {
   const { t } = useTranslation();
   usePageTitle(t('messages.title'));
-  const { id = '' } = useParams<{ id: string }>();
+  const { id: rawId = '' } = useParams<{ id: string }>();
+  // Route params arrive DECODED: `/messages/..%2Fusers%2Fx%2Ffollow%3F` hands
+  // this route `../users/x/follow?`, and the mount-time markRead used to turn
+  // that into a zero-click POST elsewhere. Only an ObjectId reaches any request
+  // or socket emit; anything else bounces to the inbox.
+  const id = ID_RE.test(rawId) ? rawId : '';
   const me = useSession((st) => st.user);
-  const nav = useNavigate();
   const qc = useQueryClient();
   const [text, setText] = useState('');
   const [typingUserId, setTypingUserId] = useState<string | null>(null);
@@ -110,20 +118,34 @@ export default function ConversationRoute() {
     });
   }, [id, me?.id, setUnreadC]);
 
-  // Typing indicator listeners
+  // Typing indicator listeners. A `typing:end` can be lost (the peer's tab
+  // closed, a reconnect), so each `typing` arms a client-side expiry too.
   useEffect(() => {
     if (!id) return;
+    let expiry: ReturnType<typeof setTimeout> | null = null;
+    const clearExpiry = () => {
+      if (expiry) clearTimeout(expiry);
+      expiry = null;
+    };
     const offTyping = on('typing', (payload) => {
       const { userId: uid } = payload as { userId: string };
       setTypingUserId(uid);
+      clearExpiry();
+      expiry = setTimeout(() => {
+        setTypingUserId((prev) => (prev === uid ? null : prev));
+      }, TYPING_EXPIRY_MS);
     });
     const offTypingEnd = on('typing:end', (payload) => {
       const { userId: uid } = payload as { userId: string };
+      clearExpiry();
       setTypingUserId((prev) => (prev === uid ? null : prev));
     });
     return () => {
       offTyping();
       offTypingEnd();
+      clearExpiry();
+      // A new thread starts with nobody typing in it.
+      setTypingUserId(null);
     };
   }, [id]);
 
@@ -194,10 +216,7 @@ export default function ConversationRoute() {
     messages.find((m) => m.sender.id !== me?.id)?.sender ??
     null;
 
-  if (!id) {
-    nav('/messages');
-    return null;
-  }
+  if (!id) return <Navigate to="/messages" replace />;
 
   return (
     <div className={s.thread}>
@@ -259,7 +278,7 @@ export default function ConversationRoute() {
           onChange={onTextChange}
           onKeyDown={onKeyDown}
           placeholder={t('messages.messagePlaceholder')}
-          maxLength={4000}
+          maxLength={LIMITS.messageText}
           rows={1}
           aria-label="Your message"
         />

@@ -6,7 +6,7 @@
  * module split; there is no barrel.
  */
 import type { LabRange } from '../../../contract/lab/era';
-import { and, asc, eq, gte, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../../db/client';
 import {
@@ -18,8 +18,17 @@ import {
   posts,
 } from '../../../db/schema';
 import { cosineSim } from '../../../lib/vector';
+import { meanOf } from '../../../lib/numeric';
 import { TTLCache } from '../../../lib/ttlCache';
-import { dayBuckets, findAgentByUsername, isoDay, loadLabUsers } from '../lab/shared';
+import {
+  findLabAccount,
+  isoDay,
+  likeOnPublicTarget,
+  loadLabUsers,
+  loadLabUsersByIds,
+  onPublicPost,
+} from '../lab/shared';
+import { accountWindow, labWindow, windowDayKeys } from '../lab/window';
 import type {
   AlertsDTO,
   AnomalyAlertDTO,
@@ -53,14 +62,12 @@ export async function getPulse(range: LabRange = '30d', era: LabEra = 3): Promis
   return pulseCache.getOrLoad(`${range}:${era}`, () => computePulse(range, era));
 }
 async function computePulse(range: LabRange, era: LabEra): Promise<PulseDTO> {
-  const { since } = dayBuckets(range);
+  const window = await labWindow(range, era);
+  const { since } = window;
   const labIds = (await loadLabUsers(era)).map((u) => u.id);
 
   const byDay = new Map<string, PulsePointDTO>();
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  for (let d = new Date(since); d <= today; d.setUTCDate(d.getUTCDate() + 1)) {
-    const key = isoDay(d);
+  for (const key of windowDayKeys(window)) {
     byDay.set(key, {
       date: key,
       posts: 0,
@@ -149,7 +156,7 @@ async function computePulse(range: LabRange, era: LabEra): Promise<PulseDTO> {
     }
     for (const [k, arr] of fidByDay) {
       const row = byDay.get(k);
-      if (row && arr.length) row.meanFidelity = arr.reduce((a, b) => a + b, 0) / arr.length;
+      if (row) row.meanFidelity = meanOf(arr);
     }
 
     const driftByDay = new Map<string, number[]>();
@@ -161,7 +168,7 @@ async function computePulse(range: LabRange, era: LabEra): Promise<PulseDTO> {
     }
     for (const [k, arr] of driftByDay) {
       const row = byDay.get(k);
-      if (row && arr.length) row.meanDriftVelocity = arr.reduce((a, b) => a + b, 0) / arr.length;
+      if (row) row.meanDriftVelocity = meanOf(arr);
     }
   }
 
@@ -189,8 +196,7 @@ export async function getAlerts(range: LabRange = '30d', era: LabEra = 3): Promi
   return alertsCache.getOrLoad(`${range}:${era}`, () => computeAlerts(range, era));
 }
 async function computeAlerts(range: LabRange, era: LabEra): Promise<AlertsDTO> {
-  const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const { since } = await labWindow(range, era);
   const idToUser = new Map((await loadLabUsers(era)).map((u) => [u.id, u]));
   const ids = Array.from(idToUser.keys());
   // Every query below is scoped to the era's accounts, so the Era 3 default
@@ -199,24 +205,33 @@ async function computeAlerts(range: LabRange, era: LabEra): Promise<AlertsDTO> {
 
   const [personaSnaps, behaviorSnaps, dreamFailRows, echoFlagRows, ruleFlagRows] =
     await Promise.all([
+      // Latest persona / behavior sample per user, one row each (DISTINCT ON).
       db
-        .select({
+        .selectDistinctOn([personalitySnapshots.userId], {
           userId: personalitySnapshots.userId,
           driftFromPrev: personalitySnapshots.driftFromPrev,
           capturedAt: personalitySnapshots.capturedAt,
         })
         .from(personalitySnapshots)
         .where(inArray(personalitySnapshots.userId, ids))
-        .orderBy(asc(personalitySnapshots.capturedAt)),
+        .orderBy(
+          personalitySnapshots.userId,
+          desc(personalitySnapshots.capturedAt),
+          desc(personalitySnapshots.id),
+        ),
       db
-        .select({
+        .selectDistinctOn([behaviorSnapshots.userId], {
           userId: behaviorSnapshots.userId,
           fidelity: behaviorSnapshots.fidelity,
           capturedAt: behaviorSnapshots.capturedAt,
         })
         .from(behaviorSnapshots)
         .where(inArray(behaviorSnapshots.userId, ids))
-        .orderBy(asc(behaviorSnapshots.capturedAt)),
+        .orderBy(
+          behaviorSnapshots.userId,
+          desc(behaviorSnapshots.capturedAt),
+          desc(behaviorSnapshots.id),
+        ),
       db
         .select({ userId: agentEvents.userId, createdAt: agentEvents.createdAt })
         .from(agentEvents)
@@ -257,7 +272,6 @@ async function computeAlerts(range: LabRange, era: LabEra): Promise<AlertsDTO> {
         .orderBy(asc(agentEvents.createdAt)),
     ]);
 
-  // Latest persona / behavior sample per user (rows arrive capturedAt asc).
   const latestPersona = new Map<string, { driftFromPrev: number; capturedAt: Date }>();
   for (const r of personaSnaps) {
     latestPersona.set(r.userId, { driftFromPrev: r.driftFromPrev, capturedAt: r.capturedAt });
@@ -382,18 +396,25 @@ async function computeAlerts(range: LabRange, era: LabEra): Promise<AlertsDTO> {
  * engagement + high proximity is the signal that a partner is shaping this agent.
  */
 const influencesCache = new TTLCache<string, InfluencesDTO>(60_000);
+/** Test hook — the 60s TTL would otherwise replay one test's payload in the next. */
+export function clearInfluencesCache(): void {
+  influencesCache.clear();
+}
 export async function getInfluences(
   username: string,
   range: LabRange = '30d',
 ): Promise<InfluencesDTO> {
-  return influencesCache.getOrLoad(`${username}:${range}`, () =>
-    computeInfluences(username, range),
-  );
+  // Keyed on the canonical (lowercased) username, the same normalisation the
+  // account lookup applies, so `XiaoMan` and `xiaoman` share one entry instead
+  // of each casing being a fresh miss.
+  const key = username.toLowerCase();
+  return influencesCache.getOrLoad(`${key}:${range}`, () => computeInfluences(key, range));
 }
 async function computeInfluences(username: string, range: LabRange): Promise<InfluencesDTO> {
-  const agent = await findAgentByUsername(username);
+  const agent = await findLabAccount(username);
   const uid = agent.id;
-  const { since, days } = dayBuckets(range);
+  const window = accountWindow(range, agent);
+  const { since } = window;
 
   const snaps = await db
     .select({
@@ -409,88 +430,94 @@ async function computeInfluences(username: string, range: LabRange): Promise<Inf
   }));
 
   // Outbound interactions, one row per interaction (partner = the account engaged).
-  const [cOut, rOut, eOut, lOut, postDates, commentDates, likeDates, behaviorRows] =
-    await Promise.all([
-      db
-        .select({ partner: posts.authorId })
-        .from(comments)
-        .innerJoin(posts, eq(comments.postId, posts.id))
-        .where(
-          and(
-            eq(comments.authorId, uid),
-            eq(comments.status, 'active'),
-            isNull(comments.parentId),
-            gte(comments.createdAt, since),
-            eq(posts.status, 'active'),
-            ne(comments.authorId, posts.authorId),
-          ),
+  const [cOut, rOut, eOut, lOut, postDates, commentDates, likeDates] = await Promise.all([
+    db
+      .select({ partner: posts.authorId })
+      .from(comments)
+      .innerJoin(posts, eq(comments.postId, posts.id))
+      .where(
+        and(
+          eq(comments.authorId, uid),
+          eq(comments.status, 'active'),
+          isNull(comments.parentId),
+          gte(comments.createdAt, since),
+          eq(posts.status, 'active'),
+          eq(posts.visibility, 'public'),
+          ne(comments.authorId, posts.authorId),
         ),
-      db
-        .select({ partner: parentComments.authorId })
-        .from(comments)
-        .innerJoin(parentComments, eq(comments.parentId, parentComments.id))
-        .where(
-          and(
-            eq(comments.authorId, uid),
-            eq(comments.status, 'active'),
-            isNotNull(comments.parentId),
-            gte(comments.createdAt, since),
-            eq(parentComments.status, 'active'),
-            ne(comments.authorId, parentComments.authorId),
-          ),
+      ),
+    db
+      .select({ partner: parentComments.authorId })
+      .from(comments)
+      .innerJoin(parentComments, eq(comments.parentId, parentComments.id))
+      .where(
+        and(
+          eq(comments.authorId, uid),
+          eq(comments.status, 'active'),
+          isNotNull(comments.parentId),
+          gte(comments.createdAt, since),
+          eq(parentComments.status, 'active'),
+          ne(comments.authorId, parentComments.authorId),
+          onPublicPost(comments.postId),
         ),
-      db
-        .select({ partner: origPosts.authorId })
-        .from(posts)
-        .innerJoin(origPosts, eq(posts.echoOf, origPosts.id))
-        .where(
-          and(
-            eq(posts.authorId, uid),
-            eq(posts.status, 'active'),
-            isNotNull(posts.echoOf),
-            gte(posts.createdAt, since),
-            eq(origPosts.status, 'active'),
-            ne(posts.authorId, origPosts.authorId),
-          ),
+      ),
+    db
+      .select({ partner: origPosts.authorId })
+      .from(posts)
+      .innerJoin(origPosts, eq(posts.echoOf, origPosts.id))
+      .where(
+        and(
+          eq(posts.authorId, uid),
+          eq(posts.status, 'active'),
+          isNotNull(posts.echoOf),
+          gte(posts.createdAt, since),
+          eq(origPosts.status, 'active'),
+          eq(posts.visibility, 'public'),
+          eq(origPosts.visibility, 'public'),
+          ne(posts.authorId, origPosts.authorId),
         ),
-      db
-        .select({ partner: posts.authorId })
-        .from(likes)
-        .innerJoin(posts, eq(likes.targetId, posts.id))
-        .where(
-          and(
-            eq(likes.userId, uid),
-            eq(likes.targetType, 'post'),
-            gte(likes.createdAt, since),
-            eq(posts.status, 'active'),
-            ne(likes.userId, posts.authorId),
-          ),
+      ),
+    db
+      .select({ partner: posts.authorId })
+      .from(likes)
+      .innerJoin(posts, eq(likes.targetId, posts.id))
+      .where(
+        and(
+          eq(likes.userId, uid),
+          eq(likes.targetType, 'post'),
+          gte(likes.createdAt, since),
+          eq(posts.status, 'active'),
+          eq(posts.visibility, 'public'),
+          ne(likes.userId, posts.authorId),
         ),
-      db
-        .select({ createdAt: posts.createdAt })
-        .from(posts)
-        .where(
-          and(eq(posts.authorId, uid), eq(posts.status, 'active'), gte(posts.createdAt, since)),
+      ),
+    db
+      .select({ createdAt: posts.createdAt })
+      .from(posts)
+      .where(
+        and(
+          eq(posts.authorId, uid),
+          eq(posts.status, 'active'),
+          eq(posts.visibility, 'public'),
+          gte(posts.createdAt, since),
         ),
-      db
-        .select({ createdAt: comments.createdAt })
-        .from(comments)
-        .where(
-          and(
-            eq(comments.authorId, uid),
-            eq(comments.status, 'active'),
-            gte(comments.createdAt, since),
-          ),
+      ),
+    db
+      .select({ createdAt: comments.createdAt })
+      .from(comments)
+      .where(
+        and(
+          eq(comments.authorId, uid),
+          eq(comments.status, 'active'),
+          gte(comments.createdAt, since),
+          onPublicPost(comments.postId),
         ),
-      db
-        .select({ createdAt: likes.createdAt })
-        .from(likes)
-        .where(and(eq(likes.userId, uid), gte(likes.createdAt, since))),
-      db
-        .select({ userId: behaviorSnapshots.userId, embedding: behaviorSnapshots.embedding })
-        .from(behaviorSnapshots)
-        .orderBy(asc(behaviorSnapshots.capturedAt)),
-    ]);
+      ),
+    db
+      .select({ createdAt: likes.createdAt })
+      .from(likes)
+      .where(and(eq(likes.userId, uid), gte(likes.createdAt, since), likeOnPublicTarget())),
+  ]);
 
   // Merge outbound counts per partner id.
   const counts = new Map<string, number>();
@@ -502,7 +529,26 @@ async function computeInfluences(username: string, range: LabRange): Promise<Inf
   addCounts(eOut);
   addCounts(lOut);
 
-  const idToUser = new Map((await loadLabUsers()).map((u) => [u.id, u]));
+  // Only the partners in hand and this account: their lab membership, and the
+  // latest behaviour vector of each (one row per user). This used to load the
+  // whole lab population and every behaviour embedding ever filed, per miss.
+  const partnerIds = [...counts.keys()];
+  const [partnerUsers, behaviorRows] = await Promise.all([
+    loadLabUsersByIds(partnerIds),
+    db
+      .selectDistinctOn([behaviorSnapshots.userId], {
+        userId: behaviorSnapshots.userId,
+        embedding: behaviorSnapshots.embedding,
+      })
+      .from(behaviorSnapshots)
+      .where(inArray(behaviorSnapshots.userId, [uid, ...partnerIds]))
+      .orderBy(
+        behaviorSnapshots.userId,
+        desc(behaviorSnapshots.capturedAt),
+        desc(behaviorSnapshots.id),
+      ),
+  ]);
+  const idToUser = new Map(partnerUsers.map((u) => [u.id, u]));
   const vecById = new Map<string, number[]>();
   for (const r of behaviorRows) if (r.embedding?.length) vecById.set(r.userId, r.embedding);
   const selfVec = vecById.get(uid) ?? null;
@@ -534,13 +580,7 @@ async function computeInfluences(username: string, range: LabRange): Promise<Inf
   bumpAct(postDates);
   bumpAct(commentDates);
   bumpAct(likeDates);
-  const activity: Array<{ date: string; actions: number }> = [];
-  for (let i = 0; i < days; i++) {
-    const d = new Date(since);
-    d.setUTCDate(since.getUTCDate() + i);
-    const key = isoDay(d);
-    activity.push({ date: key, actions: byDay.get(key) ?? 0 });
-  }
+  const activity = windowDayKeys(window).map((date) => ({ date, actions: byDay.get(date) ?? 0 }));
 
-  return { username, range, drift, activity, partners: partners.slice(0, 10) };
+  return { username: agent.username, range, drift, activity, partners: partners.slice(0, 10) };
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import clsx from 'clsx';
 import {
   HouseSimple,
@@ -9,18 +9,27 @@ import {
   NotePencil,
   UsersThree,
   Atom,
+  DotsThree,
+  ChatsCircle,
+  BookmarkSimple,
+  Gear,
+  SignOut,
 } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import { useSession } from '@/stores/session.store';
 import { useRealtime } from '@/stores/realtime.store';
 import { Dialog } from '@/components/primitives/Dialog';
 import { PostComposer } from '@/features/posts/PostComposer';
+import { useLogout } from '@/lib/useLogout';
 import s from './MobileTabBar.module.css';
 
 export function MobileTabBar() {
   const { t } = useTranslation();
   const user = useSession((st) => st.user);
   const unreadN = useRealtime((st) => st.unreadNotifications);
+  const unreadC = useRealtime((st) => st.unreadConversations);
+  const logout = useLogout();
+  const [moreOpen, setMoreOpen] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
 
   const linkClass = ({ isActive }: { isActive: boolean }) => clsx(s.tab, isActive && s.tabActive);
@@ -66,6 +75,20 @@ export function MobileTabBar() {
               <UserIcon weight="regular" className={s.tabIcon} aria-hidden />
               <span>{t('nav.profile')}</span>
             </NavLink>
+            {/* The sidebar is hidden on mobile, so Messages, Bookmarks,
+                Settings and Sign out live behind this tab. */}
+            <button
+              type="button"
+              className={s.tab}
+              onClick={() => setMoreOpen(true)}
+              aria-haspopup="dialog"
+            >
+              <DotsThree weight="bold" className={s.tabIcon} aria-hidden />
+              <span>{t('nav.more')}</span>
+              {unreadC > 0 && (
+                <span className={s.dot} aria-label={t('nav.unread', { count: unreadC })} />
+              )}
+            </button>
           </>
         ) : (
           <>
@@ -88,6 +111,38 @@ export function MobileTabBar() {
           </>
         )}
       </nav>
+      {user && (
+        <Dialog open={moreOpen} onOpenChange={setMoreOpen} title={t('nav.more')} titleHidden>
+          <nav className={s.moreList} aria-label={t('nav.more')}>
+            <Link to="/messages" className={s.moreItem} onClick={() => setMoreOpen(false)}>
+              <ChatsCircle weight="regular" size={22} aria-hidden />
+              <span>{t('nav.messages')}</span>
+              {unreadC > 0 && (
+                <span className={s.moreDot} aria-label={t('nav.unread', { count: unreadC })} />
+              )}
+            </Link>
+            <Link to="/bookmarks" className={s.moreItem} onClick={() => setMoreOpen(false)}>
+              <BookmarkSimple weight="regular" size={22} aria-hidden />
+              <span>{t('nav.bookmarks')}</span>
+            </Link>
+            <Link to="/settings" className={s.moreItem} onClick={() => setMoreOpen(false)}>
+              <Gear weight="regular" size={22} aria-hidden />
+              <span>{t('nav.settings')}</span>
+            </Link>
+            <button
+              type="button"
+              className={s.moreItem}
+              onClick={() => {
+                setMoreOpen(false);
+                void logout();
+              }}
+            >
+              <SignOut weight="regular" size={22} aria-hidden />
+              <span>{t('nav.signOut')}</span>
+            </button>
+          </nav>
+        </Dialog>
+      )}
       {user && (
         <Dialog
           open={composerOpen}

@@ -1,4 +1,4 @@
-import { http, unwrap } from './client';
+import { apiPath, http, unwrap } from './client';
 import type { Locale, PostDTO, TranslationDTO, Visibility, Paginated } from './types';
 
 export async function getById(id: string, lang?: string): Promise<PostDTO> {
@@ -6,7 +6,7 @@ export async function getById(id: string, lang?: string): Promise<PostDTO> {
   // is set: resolveLang falls back to the query param, and only a signed-in
   // reader has a stored preference to fall back to instead.
   const out = await unwrap<{ post: PostDTO }>(
-    http.get(`/posts/${id}`, { params: lang ? { lang } : undefined }),
+    http.get(apiPath`/posts/${id}`, { params: lang ? { lang } : undefined }),
   );
   return out.post;
 }
@@ -37,16 +37,16 @@ export async function update(
   id: string,
   patch: { text?: string; visibility?: Visibility },
 ): Promise<PostDTO> {
-  const out = await unwrap<{ post: PostDTO }>(http.patch(`/posts/${id}`, patch));
+  const out = await unwrap<{ post: PostDTO }>(http.patch(apiPath`/posts/${id}`, patch));
   return out.post;
 }
 
 export async function remove(id: string): Promise<void> {
-  await http.delete(`/posts/${id}`);
+  await http.delete(apiPath`/posts/${id}`);
 }
 
 export async function translate(id: string, to: Locale): Promise<TranslationDTO> {
-  return unwrap<TranslationDTO>(http.get(`/posts/${id}/translation`, { params: { to } }));
+  return unwrap<TranslationDTO>(http.get(apiPath`/posts/${id}/translation`, { params: { to } }));
 }
 
 export async function getShowcase(lang?: string): Promise<PostDTO[]> {
@@ -60,12 +60,14 @@ export async function searchPosts(params: {
   q?: string;
   cursor?: string;
   limit?: number;
+  lang?: string;
   signal?: AbortSignal;
 }): Promise<Paginated<PostDTO>> {
   const p: Record<string, string | number> = {};
   if (params.q?.trim()) p.q = params.q.trim();
   if (params.cursor) p.cursor = params.cursor;
   if (params.limit) p.limit = params.limit;
+  if (params.lang) p.lang = params.lang;
   return unwrap<Paginated<PostDTO>>(
     http.get('/posts/search', { params: p, signal: params.signal }),
   );

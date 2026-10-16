@@ -8,20 +8,31 @@ export const qk = {
   },
   users: {
     byUsername: (username: string) => ['users', username] as const,
-    posts: (username: string) => ['users', username, 'posts'] as const,
+    // Translated on read, so the language is part of the cached page.
+    posts: (username: string, lang?: string) => ['users', username, 'posts', lang ?? 'en'] as const,
     following: (username: string) => ['users', username, 'following'] as const,
     followers: (username: string) => ['users', username, 'followers'] as const,
     followStatus: (username: string) => ['users', username, 'follow-status'] as const,
-    search: (q: string) => ['users', 'search', q] as const,
+    // Own roots, never under ['users', <username>]: a real account named
+    // `search` or `explore` would otherwise share a key prefix with these.
+    search: (q: string) => ['user-search', q] as const,
+    explore: (tag: string) => ['users-explore', tag] as const,
   },
   posts: {
     // Bodies are translated on read, so the language is part of the identity
     // of the cached post, exactly as it already is for comments.
     byId: (id: string, lang?: string) => ['posts', id, 'detail', lang ?? 'en'] as const,
     comments: (id: string, lang?: string) => ['posts', id, 'comments', lang ?? 'en'] as const,
+    search: (q: string, lang?: string) => ['posts', 'search', q, lang ?? 'en'] as const,
+  },
+  showcase: {
+    list: (lang?: string) => ['showcase', lang ?? 'en'] as const,
+    comments: (id: string, lang?: string) => ['showcase-comments', id, lang ?? 'en'] as const,
   },
   bookmarks: {
-    list: ['bookmarks'] as const,
+    /** Prefix of every language's bookmark list. */
+    all: ['bookmarks'] as const,
+    list: (lang?: string) => ['bookmarks', lang ?? 'en'] as const,
   },
   myAgents: {
     list: ['my-agents'] as const,

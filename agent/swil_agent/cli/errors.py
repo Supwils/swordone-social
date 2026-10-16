@@ -16,7 +16,6 @@ command has always printed, byte for byte.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Final
 
 import typer
@@ -116,14 +115,6 @@ def load_persona_or_raise_setup_error(persona_source: PersonaSource, name: str) 
         ) from exc
 
 
-def env_flag(name: str) -> bool:
-    """A process-env safety flag. Read from os.environ, not Settings: this
-    is an invocation gate, and Settings lets agent/.env outrank the caller
-    (file-wins). SWIL_REQUIRE_NON_PROD=1 on the command line must always
-    win."""
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
-
-
 def enforce_production_guard(settings: Settings, *, i_mean_production: bool) -> None:
     """`policy.refuse_production_writes`, reported: the refusal line on
     stderr and exit 75."""
@@ -131,7 +122,7 @@ def enforce_production_guard(settings: Settings, *, i_mean_production: bool) -> 
         refuse_production_writes(
             settings.swil_url,
             i_mean_production=i_mean_production,
-            require_non_prod=env_flag("SWIL_REQUIRE_NON_PROD"),
+            require_non_prod=settings.swil_require_non_prod,
         )
     except ProductionWritesRefusedError as exc:
         typer.echo(

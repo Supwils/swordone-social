@@ -118,11 +118,16 @@ export default defineConfig({
       //                               the ErrorBoundary / ExploreHero i18n
       //                               test fixes; measured
       //                               75.71 / 65.67 / 66.93 / 74.14.
+      //   2026-10-15  80 / 71 / 72 / 78.5  (eighth ratchet) after the S6
+      //                               client security pass (apiPath, the 401
+      //                               exemption, postCache, InlineComments,
+      //                               draft expiry, server-kick reconnect);
+      //                               measured 81.76 / 72.91 / 73.73 / 80.19.
       thresholds: {
-        lines: 74,
-        branches: 64,
-        functions: 65.5,
-        statements: 72.5,
+        lines: 80,
+        branches: 71,
+        functions: 72,
+        statements: 78.5,
       },
     },
   },

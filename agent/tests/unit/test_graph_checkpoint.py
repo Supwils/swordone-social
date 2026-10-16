@@ -11,9 +11,10 @@ registrations, removed, corrupts a distinct field this suite catches.
 from __future__ import annotations
 
 import logging
+import sqlite3
 from enum import Enum
 from pathlib import Path
-from typing import get_args, get_origin, get_type_hints
+from typing import Any, get_args, get_origin, get_type_hints
 
 import pytest
 from langgraph.graph import END, START, StateGraph
@@ -40,8 +41,8 @@ from swil_agent.models import (
     VetoedAction,
 )
 
-from ._runners import make_persona
-from ._sqlite import open_saver
+from ._runners import FakeResources, ScriptedBackend, make_cycle_deps, make_persona
+from ._sqlite import open_saver, track
 
 
 def _persona(tmp_path: Path) -> Persona:
@@ -394,3 +395,148 @@ def test_a_corrupt_database_closes_the_connection_it_opened(
         opened[0].execute("SELECT 1")
     opened.clear()
     gc.collect()
+
+
+# ── --resume never re-enters `execute` or `write` (S6 ruling 3) ─────────────
+
+
+_DREAM_REPLY = '{"recent": ["一件新事"]}'
+
+
+class _InterruptedError(Exception):
+    """Not a `TransportError`, so no node's retry policy re-runs the step."""
+
+
+def _interrupted_cycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, step: str
+) -> tuple[Persona, Any, sqlite3.Connection]:
+    """A cycle that died inside the node calling `step`, checkpointed."""
+    from swil_agent.graph.cycle import run_cycle
+
+    from ._node_modules import caller_of
+
+    root = tmp_path / "agent_root"
+    root.mkdir()
+    persona = make_persona(username="zenith", directory=root / "agents" / "zenith")
+    persona.directory.mkdir(parents=True)
+    saver = open_saver(tmp_path / "ckpt" / CHECKPOINT_DB_NAME)
+    db = track(sqlite3.connect(str(tmp_path / "leases.sqlite"), check_same_thread=False))
+
+    def _explode(**_kwargs: object) -> object:
+        raise _InterruptedError(step)
+
+    module = caller_of(step)
+    monkeypatch.setattr(module, step, _explode)
+    with pytest.raises(_InterruptedError):
+        run_cycle(
+            persona=persona,
+            deps=_deps(root, backend=ScriptedBackend(_PLAN, _DREAM_REPLY)),
+            lease_db=db,
+            checkpointer=saver,
+            round_id=_ROUND,
+        )
+    monkeypatch.undo()
+    return persona, saver, db
+
+
+_ROUND = "20261015T080000Z-m"
+
+
+def _deps(root: Path, **overrides: Any) -> Any:
+    """The rhythm always lets the planned post through, so every run reaches
+    `execute` -- an unseeded 60% roll would route around it some of the time."""
+    from swil_agent.config import Settings
+
+    settings = Settings(agent_root=root, post_probability=100, post_ceiling_per_day=10)
+    return make_cycle_deps(root, settings=settings, **overrides)
+
+
+_PLAN = '{"plan":[{"action":"post","text":"你好世界"}]}'
+
+
+@pytest.mark.parametrize(("step", "node"), [("execute_step", "execute"), ("write_step", "write")])
+def test_a_resume_into_execute_or_write_is_refused_before_any_lease_or_node(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, step: str, node: str
+) -> None:
+    from swil_agent.graph.cycle import run_cycle
+    from swil_agent.graph.run import UnsafeResumeError
+
+    persona, saver, db = _interrupted_cycle(tmp_path, monkeypatch, step)
+    resources = FakeResources()
+    backend = ScriptedBackend(_PLAN, _DREAM_REPLY)
+
+    with pytest.raises(UnsafeResumeError, match=f"stopped inside `{node}`") as caught:
+        run_cycle(
+            persona=persona,
+            deps=_deps(persona.directory.parents[1], resources=resources, backend=backend),
+            lease_db=db,
+            checkpointer=saver,
+            round_id=_ROUND,
+            resume=True,
+            finish_deps=lambda deps: pytest.fail("finish_deps ran on a refused resume"),
+        )
+    assert caught.value.node == node
+    assert caught.value.round_id == _ROUND
+    assert backend.calls == []
+    assert resources.created_posts == []
+    assert list(db.execute("SELECT COUNT(*) FROM run_leases")) == [(0,)]
+
+
+def test_a_resume_into_any_other_node_continues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The refusal is node-specific: a cycle stopped inside `snapshot` (the
+    write already done) resumes and finishes without acting again."""
+    from swil_agent.graph.cycle import run_cycle
+
+    persona, saver, db = _interrupted_cycle(tmp_path, monkeypatch, "snapshot_step")
+    resources = FakeResources()
+
+    final = run_cycle(
+        persona=persona,
+        deps=_deps(persona.directory.parents[1], resources=resources),
+        lease_db=db,
+        checkpointer=saver,
+        round_id=_ROUND,
+        resume=True,
+    )
+    assert final["written"] is True
+    # The checkpointed act outcome is kept, and the snapshot node ran again.
+    assert final["outcome"] is ActOutcome.LANDED_ALL
+    assert "snapshot_ok" in final
+    assert resources.created_posts == []
+
+
+def test_the_unsafe_resume_check_is_repeated_under_the_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A thread safe to resume when first read can be moved into `execute` by
+    a run whose lease was reclaimed just before ours was taken, so the check
+    runs again once the lease is held -- and a refusal THERE still runs no
+    node and leaves no lease behind."""
+    from swil_agent.graph import run as run_module
+    from swil_agent.graph.cycle import run_cycle
+    from swil_agent.graph.run import UnsafeResumeError
+
+    persona, saver, db = _interrupted_cycle(tmp_path, monkeypatch, "snapshot_step")
+    calls: list[int] = []
+
+    def _second_call_refuses(app: Any, config: Any, name: str, round_key: str) -> None:
+        calls.append(len(list(db.execute("SELECT 1 FROM run_leases"))))
+        if len(calls) == 2:
+            raise UnsafeResumeError(name, round_key, "execute")
+
+    monkeypatch.setattr(run_module, "_refuse_unsafe_resume", _second_call_refuses)
+    backend = ScriptedBackend(_PLAN, _DREAM_REPLY)
+    with pytest.raises(UnsafeResumeError):
+        run_cycle(
+            persona=persona,
+            deps=_deps(persona.directory.parents[1], backend=backend),
+            lease_db=db,
+            checkpointer=saver,
+            round_id=_ROUND,
+            resume=True,
+        )
+    assert calls == [0, 2]  # once before the leases, once holding both
+    assert backend.calls == []
+    assert list(db.execute("SELECT COUNT(*) FROM run_leases")) == [(0,)]

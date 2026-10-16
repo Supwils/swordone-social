@@ -7,6 +7,7 @@ import { qk } from '@/api/queryKeys';
 import { EmptyState } from '@/components/primitives';
 import { FeedLayoutToggle } from '@/features/posts/FeedLayoutToggle';
 import { FeedSkeletons, FeedStream } from '@/features/posts/FeedStream';
+import { flattenPostPages } from '@/features/posts/postCache';
 import { useUI } from '@/stores/ui.store';
 import s from './feedTag.module.css';
 import { usePageTitle } from '@/lib/usePageTitle';
@@ -33,7 +34,7 @@ export default function FeedTagRoute() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const items = feedQ.data?.pages.flatMap((p) => p.items) ?? [];
+  const items = flattenPostPages(feedQ.data);
   const tag = tagQ.data;
   const hasMeta = Boolean(tag?.description || tag?.coverImage);
   const isArchived = tag?.status === 'archived';

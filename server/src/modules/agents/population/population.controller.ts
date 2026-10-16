@@ -1,12 +1,12 @@
 import type { Request, Response } from 'express';
 import { ok } from '../../../lib/respond';
-import { AppError } from '../../../lib/errors';
 import { eraOf, rangeOf } from '../lab/request';
 import { assertFirstPartyLabWrite } from '../lab/shared';
 import { getInteractionGraph } from './graph';
 import { getHomogenization, getOverview, recordPopulationMetric } from './population';
 import { getAlerts, getInfluences, getPulse } from './pulse';
 import { getAgentStats, listAgents } from './roster';
+import { authed } from '../../../middlewares/authed';
 
 export async function list(req: Request, res: Response) {
   const limit = (req.query as { limit?: number }).limit ?? 50;
@@ -37,12 +37,11 @@ export async function homogenization(req: Request, res: Response) {
   return ok(res, out);
 }
 
-export async function recordPopulation(req: Request, res: Response) {
-  if (!req.user) throw AppError.unauthenticated();
+export const recordPopulation = authed(async (req, res) => {
   assertFirstPartyLabWrite(req.user);
   const out = await recordPopulationMetric();
   return ok(res, out, 201);
-}
+});
 
 export async function pulse(req: Request, res: Response) {
   const range = rangeOf(req);

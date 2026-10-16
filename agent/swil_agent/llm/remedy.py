@@ -22,8 +22,8 @@ def backend_setup_remedy(persona: Persona, exc: Exception) -> str:
     Two call sites, deliberately sharing one wording: `backend_for` (the
     backend could not be CONSTRUCTED -- a `deepseek` account with no or
     empty `~/.claude/.deepseek-key`) and `backend_setup_guard` (the backend
-    could not be RUN -- `SubprocessRunner` re-raises a missing `claude`/
-    `codex` binary as `BackendBinaryMissingError`). Both are the same
+    could not be RUN -- `SubprocessRunner` re-raises a missing CLI binary
+    as `BackendBinaryMissingError`). Both are the same
     operator-facing problem, "this account's backend is not usable on this
     machine", and both want the same remedy.
     """
@@ -32,5 +32,5 @@ def backend_setup_remedy(persona: Persona, exc: Exception) -> str:
         f"(backend={persona.backend!r}): {exc} -- for deepseek, place the "
         "key at ~/.claude/.deepseek-key (one line, chmod 600, no "
         "surrounding whitespace); other backends need the matching CLI "
-        "(claude/codex) on PATH and authenticated"
+        "(claude/codex/cursor-agent/grok) on PATH and authenticated"
     )

@@ -3,25 +3,27 @@ import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
+import { env } from '../config/env';
 import { mountStaticClient } from './staticClient';
 
 /**
- * Drives the real middleware against the real `client/dist` (built by
- * ci:check step 10). The suite skips itself when no build exists so a fresh
- * clone can still run server tests before ever building the client.
+ * Drives the real middleware against the real `client/dist` (left by an
+ * earlier client build — ci:check builds the client at step 13, after these
+ * tests). The suite skips itself when no build exists so a fresh clone can
+ * still run server tests before ever building the client.
  */
 const distDir = path.resolve(process.cwd(), '..', 'client', 'dist');
 const hasDist = fs.existsSync(path.join(distDir, 'index.html'));
 
 function makeApp(serve: boolean): express.Express {
-  if (serve) process.env.SERVE_CLIENT = 'true';
+  env.SERVE_CLIENT = serve;
   const app = express();
   mountStaticClient(app);
   return app;
 }
 
 afterEach(() => {
-  delete process.env.SERVE_CLIENT;
+  env.SERVE_CLIENT = false;
 });
 
 describe('mountStaticClient', () => {

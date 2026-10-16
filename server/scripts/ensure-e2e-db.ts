@@ -2,6 +2,7 @@ import { Client, Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { truncateStatement } from '../src/db/tables';
+import { assertDisposableDb } from '../src/db/target';
 
 /**
  * Prepare the dedicated E2E database: create it if missing, apply Drizzle
@@ -15,6 +16,7 @@ const url =
   `postgresql://${process.env.USER ?? 'postgres'}@127.0.0.1:5432/swil_e2e_pg`;
 
 async function main(): Promise<void> {
+  assertDisposableDb(url);
   const dbName = new URL(url).pathname.slice(1);
   const adminUrl = new URL(url);
   adminUrl.pathname = '/postgres';

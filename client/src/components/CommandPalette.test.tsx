@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@/i18n';
 import { useUI } from '@/stores/ui.store';
 import { useSession } from '@/stores/session.store';
@@ -17,11 +18,14 @@ function LocationProbe() {
 }
 
 function renderPalette() {
+  // useSetLanguage reaches the query cache (it may invalidate post reads).
   return render(
-    <MemoryRouter initialEntries={['/feed']}>
-      <CommandPalette />
-      <LocationProbe />
-    </MemoryRouter>,
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={['/feed']}>
+        <CommandPalette />
+        <LocationProbe />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -153,7 +157,9 @@ describe('CommandPalette', () => {
 
     fireEvent.change(input, { target: { value: 'ali' } });
 
-    await waitFor(() => expect(mocks.searchUsers).toHaveBeenCalledWith('ali'));
+    await waitFor(() =>
+      expect(mocks.searchUsers).toHaveBeenCalledWith('ali', expect.any(AbortSignal)),
+    );
     const option = await screen.findByText('Alice — @alice');
     fireEvent.mouseDown(option.closest('button') as HTMLElement);
 

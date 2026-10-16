@@ -13,9 +13,9 @@ these tests can see, and no earlier suite can, is:
     `retry_on` widened to bare `Exception` re-runs `execute_step` from the
     top after a 404, and `execute_step` is not idempotent -- every action
     that already landed lands again.
-  * **The loop.** Loop 3 (multi-round) is OFF by default. A graph that loops
-    by default doubles every account's LLM spend, and nothing in the node
-    layer can tell.
+  * **No loop.** One act round per cycle. A graph that looped back into the
+    act phase would double every account's LLM spend, and nothing in the
+    node layer can tell.
   * **The lease and its heartbeat.** The lease keyed on the wrong name locks
     a path no Bash round reads, and an unbeaten lease is reclaimed at 1800s
     by a Bash round while this cycle still holds it -- both invisible unless
@@ -58,7 +58,6 @@ from swil_agent.graph.cycle import (
     POPULATION_METRIC,
     SNAPSHOT,
     WRITE,
-    CycleConfig,
     build_cycle,
     run_cycle,
 )
@@ -75,6 +74,7 @@ from ._runners import (
     FakePersonaSource,
     FakeResources,
     FakeState,
+    make_cycle_deps,
     make_persona,
 )
 from ._sqlite import open_saver, track
@@ -193,23 +193,15 @@ def _deps(tmp_path: Path, **overrides: Any) -> CycleDeps:
     """`CycleDeps` with every collaborator a harmless double, every moment
     frozen, and a backend scripted for a full accepted cycle."""
     defaults: dict[str, Any] = {
-        "resources": FakeResources(),
         "backend": ScriptedBackend(_plan_json(), DREAM_REPLY),
-        "persona_source": FakePersonaSource(),
         "embedder": FakeEmbedder(vectors=[[1.0], [1.0]]),
-        "dream_state": FakeState(),
         "settings": Settings(),
-        "agent_root": _agent_root(tmp_path),
-        "health_check": lambda: True,
-        "memory_text": "",
-        "llm_backend": "claude",
         "llm_model": "opus",
         "rng": random.Random(0),
         "now": NOW,
         "captured_at": CAPTURED_AT,
     }
-    defaults.update(overrides)
-    return CycleDeps(**defaults)
+    return make_cycle_deps(_agent_root(tmp_path), **(defaults | overrides))
 
 
 def _trace_steps(monkeypatch: pytest.MonkeyPatch) -> list[str]:
@@ -260,7 +252,7 @@ def _run(
     tmp_path: Path,
     *,
     persona: Persona | None = None,
-    deps: CycleDeps | Callable[[int], CycleDeps] | None = None,
+    deps: CycleDeps | None = None,
     db: sqlite3.Connection | None = None,
     **kwargs: Any,
 ) -> CycleState:
@@ -325,7 +317,6 @@ def test_the_topology_matches_the_spec(tmp_path: Path) -> None:
         (GUARDRAIL, LOGOUT),
         (EXECUTE, BEHAVIOR_SNAPSHOT),
         (BEHAVIOR_SNAPSHOT, DREAM),
-        (BEHAVIOR_SNAPSHOT, LOGIN),
         (BEHAVIOR_SNAPSHOT, LOGOUT),
         (DREAM, WRITE),
         (DREAM, LOGOUT),
@@ -340,6 +331,8 @@ def test_the_topology_matches_the_spec(tmp_path: Path) -> None:
         (POPULATION_METRIC, "__end__"),
     ):
         assert (source, target) in edges, f"missing edge {source} -> {target}"
+    # One act round per cycle: nothing routes back into the act phase.
+    assert {source for source, target in edges if target == LOGIN} == {"__start__"}
 
 
 def test_only_the_act_phase_enters_the_dream_and_only_the_dream_enters_write() -> None:
@@ -658,14 +651,15 @@ def test_a_transport_failure_mid_loop_is_absorbed_and_never_reaches_the_boundary
     assert final["outcome"] is ActOutcome.LANDED_PARTIAL
 
 
-# ── the loop, OFF by default ────────────────────────────────────────────────
+# ── one act round per cycle ─────────────────────────────────────────────────
 
 
 def test_the_default_configuration_does_not_loop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`MAX_ROUNDS=1` is the default; a graph that loops by default doubles
-    every account's LLM spend. A FAILED dream is not retried either."""
+    """One act round, one dream: a graph that looped back into the act phase
+    would double every account's LLM spend. A FAILED dream is not retried
+    either."""
     backend = ScriptedBackend(_plan_json(), BAD_DREAM_REPLY)
     trace = _trace_steps(monkeypatch)
     _run(tmp_path, deps=_deps(tmp_path, backend=backend))
@@ -674,71 +668,6 @@ def test_the_default_configuration_does_not_loop(
     assert trace.count("execute_step") == 1
     assert trace.count("dream_step") == 1
     assert len(backend.calls) == 2
-
-
-def test_loop_three_reruns_the_act_phase_against_rebuilt_deps(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Loop 3, enabled. Round 2 must be planned against REBUILT deps: reusing
-    round 1's `memory_text` hides round 1's own posts from
-    `ActContext.today_post_count`, and the rhythm gate would let the account
-    post again over its ceiling.
-
-    The two rounds' deps carry different `memory_text`, so a graph that
-    resolved deps once and reused them shows up as round 2 planning against
-    round 1's memory.
-    """
-    root = _agent_root(tmp_path)
-    persona = _persona(root)
-    # Round 2's deps carry a DIFFERENT moment as well, so the one read
-    # `run_cycle` makes for itself -- `provider(0)`, for the round id and the
-    # dry-run flag -- is distinguishable from a read of any later round's.
-    per_round = {
-        0: _deps(tmp_path, memory_text="round-one-memory"),
-        1: _deps(
-            tmp_path,
-            memory_text="round-two-memory",
-            now=NOW + timedelta(hours=3),
-            captured_at=CAPTURED_AT + timedelta(hours=3),
-        ),
-    }
-    seen: list[str] = []
-    real_context = nodes_act.context_step
-
-    def spy(**kwargs: Any) -> Any:
-        seen.append(str(kwargs["memory_text"]))
-        return real_context(**kwargs)
-
-    monkeypatch.setattr(nodes_act, "context_step", spy)
-    final = _run(
-        tmp_path,
-        persona=persona,
-        deps=lambda index: per_round[min(index, 1)],
-        config=CycleConfig(max_rounds=2),
-    )
-    assert seen == ["round-one-memory", "round-two-memory"]
-    assert final["thread_id"] == f"builtin:{DIR_NAME}:20260817T020000Z-m"
-
-
-def test_loop_three_refuses_to_run_against_frozen_deps(tmp_path: Path) -> None:
-    """`CycleDeps` is frozen for the whole cycle, so enabling loop 3 with a
-    single instance would silently plan round 2 against round 1's snapshot of
-    `memory.md`, `context/now.md` and the follow-topic feed. Refused at the
-    call rather than left to be discovered as an over-ceiling post."""
-    with pytest.raises(ValueError, match="rebuilt"):
-        _run(tmp_path, config=CycleConfig(max_rounds=2))
-
-
-def test_the_dream_retry_loop_is_gone() -> None:
-    """Era 2's loop 2 retried a gate-rejected dream. There is no gate, so
-    there is nothing to retry and no knob for it."""
-    with pytest.raises(TypeError):
-        CycleConfig(max_dream_attempts=2)  # type: ignore[call-arg]
-
-
-def test_a_cycle_must_run_at_least_one_round() -> None:
-    with pytest.raises(ValueError, match="at least one"):
-        CycleConfig(max_rounds=0)
 
 
 # ── routing ─────────────────────────────────────────────────────────────────
@@ -891,30 +820,6 @@ def test_an_empty_reply_skips_write_although_the_dream_proceeded(
     assert final["proceeded"] is True
     assert final.get("recent") is None
     assert "write_step" not in trace
-
-
-def test_a_many_round_configuration_does_not_hit_the_recursion_limit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """LangGraph's default recursion limit is 25 supersteps, and one act round
-    costs four. A five-round cycle needs more than the default, so the limit
-    has to be DERIVED from the config -- otherwise the first operator to turn
-    loop 3 up meets a `GraphRecursionError` with nothing explaining it."""
-    per_round = {index: _deps(tmp_path) for index in range(5)}
-    # Index 5 is the DREAM phase's deps -- resolved after the last act round,
-    # exactly as `CycleContext.deps_for_round` documents -- so its backend is
-    # scripted for the dream, not for a plan.
-    per_round[5] = _deps(tmp_path, backend=ScriptedBackend(DREAM_REPLY))
-    trace = _trace_steps(monkeypatch)
-    final = _run(
-        tmp_path,
-        deps=lambda index: per_round[index],
-        config=CycleConfig(max_rounds=5),
-    )
-    assert trace.count("login_step") == 5
-    assert trace.count("execute_step") == 5
-    assert final["round_index"] == 5
-    assert final["written"] is True
 
 
 def test_the_final_state_is_the_whole_cycles_state(tmp_path: Path) -> None:

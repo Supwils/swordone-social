@@ -71,6 +71,26 @@ describe('comments.service', () => {
     expect(postRow.commentCount).toBe(0);
   });
 
+  it('decrements the post count once when the same comment is deleted twice concurrently', async () => {
+    const actor = await seedUser();
+    const post = await seedPost(actor.id, { commentCount: 2 });
+    const [comment] = await db
+      .insert(comments)
+      .values({ postId: post.id, authorId: actor.id, text: 'twice' })
+      .returning();
+
+    const results = await Promise.allSettled([
+      deleteComment(actor, comment.id),
+      deleteComment(actor, comment.id),
+    ]);
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(lost.reason).toMatchObject({ code: 'NOT_FOUND' });
+    const [postRow] = await db.select().from(posts).where(eq(posts.id, post.id));
+    expect(postRow.commentCount).toBe(1);
+  });
+
   it('does not notify a mention on a private post the recipient cannot see', async () => {
     const author = await seedUser();
     const mentioned = await seedUser({ username: 'mona', usernameDisplay: 'mona' });

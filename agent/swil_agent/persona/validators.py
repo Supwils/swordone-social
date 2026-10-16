@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from swil_agent.llm.selection import KNOWN_BACKENDS
 from swil_agent.persona.format import (
     MAX_CARD_CHARS,
     MAX_FILE_BYTES,
@@ -45,6 +46,13 @@ def meta_problems(meta: Mapping[str, Any]) -> list[str]:
         backend = str(meta["model"]).split(":", 1)[0].strip()
         if not backend:
             problems.append("frontmatter 'model' must start with a backend (backend:model)")
+        elif backend.lower().replace("-", "_") not in KNOWN_BACKENDS:
+            # A typo here used to run the account on claude, silently: the
+            # arm's model family is the experiment's independent variable.
+            problems.append(
+                f"frontmatter 'model' backend {backend!r} is not one of "
+                f"{', '.join(sorted(KNOWN_BACKENDS))}"
+            )
 
     if "topics" not in missing:
         topics = meta["topics"]

@@ -17,6 +17,8 @@ import { useDrafts } from '@/stores/draft.store';
 import { useAutocomplete, applySelection } from './useAutocomplete';
 import { AutocompleteDropdown } from './AutocompleteDropdown';
 import s from './PostComposer.module.css';
+import { invalidatePostLists } from './postCache';
+import { LIMITS } from '@/contract/limits';
 
 const DRAFT_KEY = 'post.new';
 const AUTOSAVE_MS = 600;
@@ -161,7 +163,8 @@ export function PostComposer({ onSuccess, bare }: PostComposerProps = {}) {
       setVideoFile(null);
       clearDraft(DRAFT_KEY);
       toast.success(t('post.post'));
-      qc.invalidateQueries({ queryKey: ['feed'] });
+      // Not just ['feed']: the author's own profile list holds it too.
+      invalidatePostLists(qc);
       onSuccess?.();
     },
     onError: (err) => {
@@ -260,7 +263,7 @@ export function PostComposer({ onSuccess, bare }: PostComposerProps = {}) {
           onClick={(e) => setCursorPos((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
           onKeyDown={handleTextareaKeyDown}
           placeholder={t('post.placeholder')}
-          maxLength={5000}
+          maxLength={LIMITS.postText}
           showCounter
           serif
           autoResize

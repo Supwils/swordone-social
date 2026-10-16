@@ -21,7 +21,7 @@ if (!process.env.SWIL_API_KEY) {
 
 const transport = new StdioClientTransport({
   command: 'npx',
-  args: ['tsx', 'src/index.ts'],
+  args: ['tsx', 'src/bin.ts'],
   cwd: mcpDir,
   env: { ...process.env } as Record<string, string>,
 });

@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { and, arrayContains, desc, eq, inArray, lt, not, or, sql } from 'drizzle-orm';
+import { and, arrayContains, desc, eq, inArray, not, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { conversations, messages, users } from '../../db/schema';
 import { AppError } from '../../lib/errors';
-import { type Cursor, encodeCursor } from '../../lib/pagination';
+import { type Cursor, buildNextCursor, cursorConditionDesc } from '../../lib/pagination';
 import {
   toMessageDTO,
   toConversationDTO,
@@ -69,31 +69,41 @@ export async function findOrCreateWith(
   return { conversation: raced, created: false };
 }
 
+/**
+ * `POST /conversations`: find or create the pair's conversation and return it
+ * as the viewer's DTO, participants loaded — the route used to query `users`
+ * itself. A fresh conversation has no last message.
+ */
+export async function openConversation(
+  me: UserRow,
+  recipientUsername: string,
+): Promise<{ conversation: ConversationDTO; created: boolean }> {
+  const { conversation, created } = await findOrCreateWith(me, recipientUsername);
+  const participants = await db
+    .select()
+    .from(users)
+    .where(inArray(users.id, conversation.participantIds));
+  return { conversation: toConversationDTO(conversation, participants, me.id, null), created };
+}
+
 export async function listForViewer(
   viewer: UserRow,
   cursor: Cursor | null,
   limit: number,
 ): Promise<{ items: ConversationDTO[]; nextCursor: string | null }> {
-  const conds = [arrayContains(conversations.participantIds, [viewer.id])];
-  if (cursor) {
-    const t = new Date(cursor.t);
-    conds.push(
-      or(
-        lt(conversations.lastMessageAt, t),
-        and(eq(conversations.lastMessageAt, t), lt(conversations.id, cursor.id)),
-      )!,
-    );
-  }
-
   const docs = await db
     .select()
     .from(conversations)
-    .where(and(...conds))
+    .where(
+      and(
+        arrayContains(conversations.participantIds, [viewer.id]),
+        cursorConditionDesc(cursor, conversations.lastMessageAt, conversations.id),
+      ),
+    )
     .orderBy(desc(conversations.lastMessageAt), desc(conversations.id))
     .limit(limit + 1);
 
-  const pageSlice = docs.length > limit ? docs.slice(0, limit) : docs;
-  const hasMore = docs.length > limit;
+  const { items: pageSlice, nextCursor } = buildNextCursor(docs, limit, 'lastMessageAt');
 
   const participantIds = new Set<string>();
   const lastMessageIds = new Set<string>();
@@ -135,11 +145,6 @@ export async function listForViewer(
     return toConversationDTO(c, people, viewer.id, lastMessage);
   });
 
-  const nextCursor =
-    hasMore && pageSlice.length > 0
-      ? encodeLastMessageCursor(pageSlice[pageSlice.length - 1])
-      : null;
-
   return { items, nextCursor };
 }
 
@@ -151,10 +156,6 @@ export async function unreadCount(viewer: UserRow): Promise<number> {
       arrayContains(conversations.unreadBy, [viewer.id]),
     ),
   );
-}
-
-function encodeLastMessageCursor(c: ConversationRow): string {
-  return encodeCursor({ t: c.lastMessageAt.toISOString(), id: c.id });
 }
 
 export async function getById(viewer: UserRow, conversationId: string): Promise<ConversationDTO> {
@@ -187,25 +188,20 @@ export async function listMessages(
 ): Promise<{ items: MessageDTO[]; nextCursor: string | null }> {
   const convo = await assertMember(viewer, conversationId);
 
-  const conds = [
-    eq(messages.conversationId, convo.id),
-    not(arrayContains(messages.deletedFor, [viewer.id])),
-  ];
-  if (cursor) {
-    const t = new Date(cursor.t);
-    conds.push(
-      or(lt(messages.createdAt, t), and(eq(messages.createdAt, t), lt(messages.id, cursor.id)))!,
-    );
-  }
-
   const docs = await db
     .select()
     .from(messages)
-    .where(and(...conds))
+    .where(
+      and(
+        eq(messages.conversationId, convo.id),
+        not(arrayContains(messages.deletedFor, [viewer.id])),
+        cursorConditionDesc(cursor, messages.createdAt, messages.id),
+      ),
+    )
     .orderBy(desc(messages.createdAt), desc(messages.id))
     .limit(limit + 1);
 
-  const { items, nextCursor } = buildMessageCursorPage(docs, limit);
+  const { items, nextCursor } = buildNextCursor(docs, limit);
 
   const senderIds = Array.from(new Set(items.map((m) => m.senderId)));
   const senders = senderIds.length
@@ -315,21 +311,6 @@ export async function markRead(viewer: UserRow, conversationId: string): Promise
     userId: viewer.id,
     at: new Date().toISOString(),
   });
-}
-
-function buildMessageCursorPage(
-  docs: MessageRow[],
-  limit: number,
-): { items: MessageRow[]; nextCursor: string | null } {
-  if (docs.length <= limit) {
-    return { items: docs, nextCursor: null };
-  }
-  const page = docs.slice(0, limit);
-  const last = page[page.length - 1];
-  return {
-    items: page,
-    nextCursor: encodeCursor({ t: last.createdAt.toISOString(), id: last.id }),
-  };
 }
 
 async function assertMember(viewer: UserRow, conversationId: string): Promise<ConversationRow> {

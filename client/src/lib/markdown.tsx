@@ -14,6 +14,7 @@ import { type ReactElement, type ReactNode, createElement, Fragment } from 'reac
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { Link } from 'react-router-dom';
+import { MENTION_SOURCE, TAG_SOURCE } from '@/contract/limits';
 
 // Configure marked once.
 marked.setOptions({
@@ -141,7 +142,11 @@ function nodeToReact(node: Node, ctx: WalkCtx): ReactNode {
   return createElement(tag, props, ...children);
 }
 
-const MENTION_OR_TAG_RE = /([#@])([\p{L}\p{N}_][\p{L}\p{N}_-]{0,63})/gu;
+// The server extractor's own patterns (`@/contract/limits`), so what links is
+// exactly what was resolved and notified: no `a@example.com` mention, no
+// `foo#bar` tag, but `你好@bob` and `看了#摄影` do link. Group 1 = mention name,
+// group 2 = tag name.
+const MENTION_OR_TAG_RE = new RegExp(`${MENTION_SOURCE}|${TAG_SOURCE}`, 'gu');
 
 function linkifyText(text: string, keyPrefix: string): ReactNode {
   const out: ReactNode[] = [];
@@ -152,7 +157,9 @@ function linkifyText(text: string, keyPrefix: string): ReactNode {
   const re = new RegExp(MENTION_OR_TAG_RE.source, MENTION_OR_TAG_RE.flags);
 
   while ((match = re.exec(text)) !== null) {
-    const [full, sigil, name] = match;
+    const full = match[0];
+    const sigil = match[1] !== undefined ? '@' : '#';
+    const name = match[1] ?? match[2];
     const start = match.index;
     if (start > lastIndex) out.push(text.slice(lastIndex, start));
     const slug = name.toLowerCase();

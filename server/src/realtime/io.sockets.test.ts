@@ -25,6 +25,8 @@ import { resetDb } from '../test/db-reset';
 import type { ConversationRow, UserRow } from '../lib/dto';
 import {
   conversationRoom,
+  dropSessionSockets,
+  dropUserSockets,
   emitToConversation,
   emitToUser,
   getIO,
@@ -38,7 +40,7 @@ vi.mock('./adapter', () => ({
 }));
 
 let seq = 0;
-async function seedUser(): Promise<UserRow> {
+async function seedUser(over: Partial<typeof users.$inferInsert> = {}): Promise<UserRow> {
   seq += 1;
   const [u] = await db
     .insert(users)
@@ -47,6 +49,7 @@ async function seedUser(): Promise<UserRow> {
       usernameDisplay: `sock${seq}`,
       email: `sock${seq}@example.com`,
       displayName: `Sock ${seq}`,
+      ...over,
     })
     .returning();
   return u;
@@ -61,13 +64,17 @@ async function seedConversation(participantIds: string[]): Promise<ConversationR
   return c;
 }
 
-type SessionCarrier = { session?: { userId?: string } };
+type SessionCarrier = { session?: { userId?: string }; sessionID?: string };
 
-/** Stand-in for the express-session middleware: header -> session.userId. */
+/** Stand-in for the express-session middleware: headers -> session.userId / sessionID. */
 const fakeSession: RequestHandler = (req, _res, next) => {
   const header = req.headers['x-test-user'];
   if (typeof header === 'string' && header.length > 0) {
     (req as unknown as SessionCarrier).session = { userId: header };
+  }
+  const sid = req.headers['x-test-sid'];
+  if (typeof sid === 'string' && sid.length > 0) {
+    (req as unknown as SessionCarrier).sessionID = sid;
   }
   next();
 };
@@ -97,13 +104,17 @@ describe('realtime socket server', () => {
     for (const socket of clients.splice(0)) socket.disconnect();
   });
 
-  function connect(userId?: string): Promise<ClientSocket> {
+  function connect(userId?: string, sid?: string, origin?: string): Promise<ClientSocket> {
     return new Promise((resolve, reject) => {
+      const headers: Record<string, string> = {};
+      if (userId) headers['x-test-user'] = userId;
+      if (sid) headers['x-test-sid'] = sid;
+      if (origin) headers.origin = origin;
       const socket = ioc(base, {
         transports: ['websocket'],
         reconnection: false,
         timeout: 3000,
-        extraHeaders: userId ? { 'x-test-user': userId } : undefined,
+        extraHeaders: Object.keys(headers).length ? headers : undefined,
       });
       clients.push(socket);
       socket.on('connect', () => resolve(socket));
@@ -126,8 +137,81 @@ describe('realtime socket server', () => {
     return ioServer.sockets.adapter.rooms.get(room)?.has(socketId) ?? false;
   }
 
+  it('admits a same-host Origin that is not on CORS_ORIGINS (allowRequest, real handshake)', async () => {
+    const u = await seedUser();
+    // `base` is the Host the client dials, so this Origin is the server's own.
+    const socket = await connect(u.id, undefined, base);
+    expect(socket.connected).toBe(true);
+  });
+
+  it('refuses a disallowed Origin at the handshake, before any session check', async () => {
+    const u = await seedUser();
+    await expect(connect(u.id, undefined, 'https://evil.example')).rejects.toBeTruthy();
+    await expect(connect(u.id, undefined, `https://127.0.0.1.evil.example`)).rejects.toBeTruthy();
+  });
+
   it('rejects a connection with no session userId', async () => {
     await expect(connect()).rejects.toThrow('unauthenticated');
+  });
+
+  it('rejects a session whose account is no longer active', async () => {
+    // HTTP drops such a session per request; the socket used to accept it at
+    // the handshake because it never loaded the user row.
+    const suspended = await seedUser({ status: 'suspended' });
+    await expect(connect(suspended.id)).rejects.toThrow('unauthenticated');
+    const deleted = await seedUser({ status: 'deleted' });
+    await expect(connect(deleted.id)).rejects.toThrow('unauthenticated');
+  });
+
+  it('rejects a session naming an account that does not exist', async () => {
+    await expect(connect('no-such-user')).rejects.toThrow('unauthenticated');
+  });
+
+  it('still admits an archived (Era 2) account: sealed accounts keep reading', async () => {
+    const archived = await seedUser({ archivedAt: new Date('2026-10-14T00:00:00.000Z') });
+    const socket = await connect(archived.id);
+    expect(inRoom(socket.id as string, userRoom(archived.id))).toBe(true);
+  });
+
+  it('logout drops only the sockets of the ended session; the other device stays live', async () => {
+    const u1 = await seedUser();
+    const laptop = await connect(u1.id, 'sess-laptop');
+    const phone = await connect(u1.id, 'sess-phone');
+
+    const laptopGone = nextEvent<string>(laptop, 'disconnect');
+    await dropSessionSockets(u1.id, 'sess-laptop');
+    expect(await laptopGone).toBe('io server disconnect');
+
+    // Sync point for the negative: the drop has fully run (awaited above); an
+    // event emitted after it still reaches the phone, so it was not dropped.
+    const received = nextEvent(phone, 'notification:new');
+    emitToUser(u1.id, 'notification:new', { kind: 'like' });
+    expect(await received).toEqual({ kind: 'like' });
+    expect(phone.connected).toBe(true);
+    expect(inRoom(phone.id as string, userRoom(u1.id))).toBe(true);
+  });
+
+  it('a session drop never reaches another account holding the same sid value', async () => {
+    const u1 = await seedUser();
+    const u2 = await seedUser();
+    const other = await connect(u2.id, 'sess-shared');
+
+    await dropSessionSockets(u1.id, 'sess-shared');
+
+    const received = nextEvent(other, 'notification:new');
+    emitToUser(u2.id, 'notification:new', { kind: 'follow' });
+    expect(await received).toEqual({ kind: 'follow' });
+    expect(other.connected).toBe(true);
+  });
+
+  it('a password change drops every socket of the account', async () => {
+    const u1 = await seedUser();
+    const laptop = await connect(u1.id, 'sess-laptop');
+    const phone = await connect(u1.id, 'sess-phone');
+
+    const gone = Promise.all([nextEvent(laptop, 'disconnect'), nextEvent(phone, 'disconnect')]);
+    dropUserSockets(u1.id);
+    expect(await gone).toEqual(['io server disconnect', 'io server disconnect']);
   });
 
   it('auto-joins the personal user room and receives emitToUser events', async () => {

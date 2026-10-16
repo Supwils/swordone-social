@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { ReactElement } from 'react';
 import '@/i18n';
 import type { PostDTO } from '@/api/types';
-import { makePost, makeUserLite } from '@/test/fixtures';
+import { qk } from '@/api/queryKeys';
+import { useDrafts } from '@/stores/draft.store';
+import { useSession } from '@/stores/session.store';
+import { makePost, makeUser, makeUserLite } from '@/test/fixtures';
 
 vi.mock('@/api/likes.api', () => ({ likePost: vi.fn(), unlikePost: vi.fn() }));
 vi.mock('@/api/posts.api', () => ({ update: vi.fn(), remove: vi.fn(), translate: vi.fn() }));
@@ -43,7 +46,23 @@ function renderCard(node: ReactElement) {
   );
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useDrafts.getState().clearAll();
+  vi.clearAllMocks();
+  useSession.setState({ user: null });
+});
+
+/** Sign in as the card's author so the owner menu renders. */
+function signInAsAuthor() {
+  useSession.setState({ user: makeUser({ id: QIUSAI.id, username: QIUSAI.username }) });
+}
+
+/** Open the owner menu (Radix opens on keyboard in jsdom) and pick an item. */
+async function pickOwnerAction(name: string) {
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Post actions' }), { key: 'Enter' });
+  fireEvent.click(await screen.findByRole('menuitem', { name }));
+}
 
 describe('PostCard', () => {
   it('renders the author, body, and agent badge', () => {
@@ -356,5 +375,93 @@ describe('PostCard on-demand translation', () => {
       ).toBe(false),
     );
     expect(screen.getByText('罗勒掐顶之后侧芽会更快。')).toBeTruthy();
+  });
+
+  it('edits the original text of an own post that arrived translated', async () => {
+    // The server translates the viewer's own posts too; prefilling post.text
+    // saved the machine translation over what the author wrote.
+    signInAsAuthor();
+    renderCard(
+      <PostCard
+        post={post({
+          text: 'Pinching basil makes side shoots faster.',
+          originalText: '罗勒掐顶之后侧芽会更快。',
+          originalLang: 'zh',
+        })}
+      />,
+    );
+
+    await pickOwnerAction('Edit');
+
+    const box = (await screen.findByLabelText('Edit post text')) as HTMLTextAreaElement;
+    expect(box.value).toBe('罗勒掐顶之后侧芽会更快。');
+    // Unchanged original → nothing to save. (`hidden`: the Radix menu keeps the
+    // rest of the document aria-hidden until it closes.)
+    const save = screen.getByRole('button', { name: 'Save', hidden: true }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+  });
+
+  it('keeps an unsaved edit when the card unmounts and mounts again (virtualized rows)', async () => {
+    signInAsAuthor();
+    const view = renderCard(<PostCard post={post()} />);
+    await pickOwnerAction('Edit');
+    const box = (await screen.findByLabelText('Edit post text')) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: 'half-typed edit' } });
+
+    view.unmount();
+    renderCard(<PostCard post={post()} />);
+
+    const again = (await screen.findByLabelText('Edit post text')) as HTMLTextAreaElement;
+    expect(again.value).toBe('half-typed edit');
+  });
+
+  it('removes a deleted post from the bookmarks list it was rendered from', async () => {
+    signInAsAuthor();
+    vi.mocked(postsApi.remove).mockResolvedValue(undefined);
+    const target = post({ id: '64b7f0c2a1d3e4f5a6b7c8d9' });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(qk.bookmarks.list('en'), {
+      pages: [{ items: [target], nextCursor: null }],
+      pageParams: [null],
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <PostCard post={target} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await pickOwnerAction('Delete');
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      const cached = qc.getQueryData<{ pages: { items: PostDTO[] }[] }>(qk.bookmarks.list('en'));
+      expect(cached?.pages[0].items).toEqual([]);
+    });
+  });
+
+  it('leaves the detail page after deleting the post shown on it', async () => {
+    signInAsAuthor();
+    vi.mocked(postsApi.remove).mockResolvedValue(undefined);
+    const id = '64b7f0c2a1d3e4f5a6b7c8d9';
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={[`/p/${id}`]}>
+          <Routes>
+            <Route path="/p/:id" element={<PostCard post={post({ id })} />} />
+            <Route path="/feed" element={<div>FEED-DEST</div>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await pickOwnerAction('Delete');
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByText('FEED-DEST')).toBeTruthy();
   });
 });

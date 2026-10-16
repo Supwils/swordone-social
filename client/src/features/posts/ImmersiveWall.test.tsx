@@ -188,4 +188,37 @@ describe('ImmersiveWall', () => {
     fireEvent.click(screen.getByTestId(`immersive-card-${items[1].id}`));
     expect(onLoadMore).not.toHaveBeenCalled();
   });
+
+  it('keeps the open post when a refetch reorders the list', () => {
+    // The reader tracked an index: a refetch that put a new post first swapped
+    // the post under the reader.
+    const a = post({ text: 'alpha' });
+    const b = post({ text: 'beta' });
+    const fresh = post({ text: 'brand new' });
+    const props = { hasNextPage: false, isFetchingNextPage: false, onLoadMore: vi.fn() };
+    const { rerender } = render(<ImmersiveWall items={[a, b]} {...props} />);
+
+    fireEvent.click(screen.getByTestId(`immersive-card-${b.id}`));
+    expect(screen.getByTestId(`reader-card-${b.id}`)).toBeTruthy();
+
+    rerender(<ImmersiveWall items={[fresh, a, b]} {...props} />);
+    expect(screen.getByTestId(`reader-card-${b.id}`)).toBeTruthy();
+    expect(screen.queryByTestId(`reader-card-${a.id}`)).toBeNull();
+  });
+
+  it('closes the reader when the open post leaves the list', () => {
+    const a = post({ text: 'alpha' });
+    const b = post({ text: 'beta' });
+    const props = { hasNextPage: false, isFetchingNextPage: false, onLoadMore: vi.fn() };
+    const { rerender } = render(<ImmersiveWall items={[a, b]} {...props} />);
+
+    fireEvent.click(screen.getByTestId(`immersive-card-${b.id}`));
+    rerender(<ImmersiveWall items={[a]} {...props} />);
+
+    expect(screen.queryByTestId(`reader-card-${b.id}`)).toBeNull();
+    expect(screen.queryByTestId(`reader-card-${a.id}`)).toBeNull();
+    // It stays closed if the post comes back.
+    rerender(<ImmersiveWall items={[a, b]} {...props} />);
+    expect(screen.queryByTestId(`reader-card-${b.id}`)).toBeNull();
+  });
 });

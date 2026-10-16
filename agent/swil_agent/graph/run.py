@@ -22,9 +22,17 @@ lease after every superstep -- so each beat immediately precedes the next
 node's execution and the 1800s staleness window restarts at that node's start.
 Without any caller, a run longer than `LEASE_TTL_SECONDS` has its lock file
 reclaimed by the next round WHILE STILL HOLDING IT. No single node outruns the
-window on its own: the longest is one LLM call capped at 300s. The dream's
-`write_recent` holds no lock of its own and relies on this lease for
-`dream_lock_<name>`.
+window on its own: the longest is one LLM call, capped at 600s on grok
+(`llm/backends/grok.py`) and 300s on every other backend (`llm/runner.py`).
+The dream's `write_recent` holds no lock of its own and relies on this lease
+for `dream_lock_<name>`.
+
+**A resume never re-enters `execute` or `write`.** Neither is idempotent: a
+cycle that died inside `execute` may already have landed some of its actions,
+and one that died inside `write` may already have rewritten `personality.md`
+and archived the old file. Re-running either from the top would post twice or
+archive twice, so `--resume` refuses (`UnsafeResumeError`, exit 64) and the
+operator runs a fresh cycle instead.
 """
 
 from __future__ import annotations
@@ -45,23 +53,12 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 # the `eff_request_host` ignore in `api/client.py`.
 from langgraph.types import RunnableConfig  # type: ignore[attr-defined]
 
-from swil_agent.graph.cycle import (
-    CycleConfig,
-    CycleContext,
-    DepsProvider,
-    Phases,
-    build_graph,
-)
-from swil_agent.graph.deps import CycleDeps, agent_dir_name
+from swil_agent.graph.cycle import EXECUTE, WRITE, CycleContext, Phases, build_graph
+from swil_agent.graph.deps import CycleDeps, FinishDeps, agent_dir_name
 from swil_agent.graph.state import BUILTIN_TENANT, CycleState, thread_id
 from swil_agent.locks.lease import LeaseKind, RunLease
 from swil_agent.models import Persona
 from swil_agent.round_id import manual_round_id
-
-# LangGraph's own default. Every extra act round costs 5 supersteps, so the
-# derived limit only ever exceeds this for a configuration that turns loop 3
-# on.
-_DEFAULT_RECURSION_LIMIT: Final = 25
 
 # What each phase locks, act before dream: one fixed order, so two runs racing
 # for the same account cannot deadlock against each other.
@@ -71,7 +68,28 @@ _LEASE_KINDS: Final[dict[Phases, tuple[LeaseKind, ...]]] = {
     Phases.DREAM: ("dream",),
 }
 
-FinishDeps = Callable[[CycleDeps], CycleDeps]
+# The nodes a resume must not re-enter, and why (module docstring).
+_UNSAFE_TO_RESUME: Final[dict[str, str]] = {
+    EXECUTE: "some of its actions may already have landed, and re-running it would post them again",
+    WRITE: "personality.md may already be rewritten, and re-running it would archive it twice",
+}
+
+
+class UnsafeResumeError(RuntimeError):
+    """`--resume` of a thread whose next node is `execute` or `write`.
+
+    Raised before any lease is taken or node runs. The CLI exits 64: the
+    invocation is what is wrong, and the remedy is a fresh cycle."""
+
+    def __init__(self, agent: str, round_id: str, node: str) -> None:
+        self.agent = agent
+        self.round_id = round_id
+        self.node = node
+        super().__init__(
+            f"{agent}: refusing to --resume round {round_id} -- it stopped inside "
+            f"`{node}`, and {_UNSAFE_TO_RESUME[node]}. Run a fresh "
+            f"`swil-agent cycle {agent} --auto` (without --resume) instead"
+        )
 
 
 def lease_kinds(phases: Phases) -> tuple[LeaseKind, ...]:
@@ -80,44 +98,13 @@ def lease_kinds(phases: Phases) -> tuple[LeaseKind, ...]:
     return _LEASE_KINDS[phases]
 
 
-def _recursion_limit(config: CycleConfig) -> int:
-    """Five supersteps per act round (`login`, `plan`, `guardrail`, `execute`,
-    `behavior_snapshot`), plus the `dream` / `write` / `snapshot` / `logout` /
-    `population_metric` tail and START."""
-    needed = 5 * config.max_rounds + 6
-    return max(_DEFAULT_RECURSION_LIMIT, needed)
-
-
-def _deps_provider(deps: CycleDeps | DepsProvider, config: CycleConfig) -> DepsProvider:
-    """A single frozen `CycleDeps` is only sound for a single act round.
-
-    `memory_text`, `context_now` and `feed_context` are snapshots taken before
-    the cycle starts. Reusing them for round 2 hides round 1's own posts from
-    `ActContext.today_post_count`, and the rhythm gate then lets the account
-    post again over its ceiling -- a real over-posting round, invisible in
-    every unit test, which is why this is refused at the call instead of
-    documented.
-    """
-    if isinstance(deps, CycleDeps):
-        if config.max_rounds > 1:
-            raise ValueError(
-                "max_rounds > 1 needs deps rebuilt per round: pass a "
-                "Callable[[int], CycleDeps], not a single frozen CycleDeps "
-                "(round 2 would plan against round 1's memory_text)"
-            )
-        frozen = deps
-        return lambda _round_index: frozen
-    return deps
-
-
 def run_graph(
-    deps: CycleDeps | DepsProvider,
+    deps: CycleDeps,
     *,
     phases: Phases,
     persona: Persona,
     lease_db: sqlite3.Connection,
     checkpointer: BaseCheckpointSaver[Any] | None = None,
-    config: CycleConfig | None = None,
     tenant: str = BUILTIN_TENANT,
     round_id: str | None = None,
     run_id: str | None = None,
@@ -132,15 +119,15 @@ def run_graph(
     exception, `SystemExit(141)`. A busy lease raises `LeaseBusy` before any
     node runs, with no LLM call spent; the caller SKIPs, as Bash does.
 
-    `dry_run` (read off the round-0 deps) takes NO lease: a dry run executes
+    `dry_run` takes NO lease: a dry run executes
     nothing and writes nothing, so it needs no mutual exclusion -- and taking
     the lock would cost a concurrent real round its whole turn (F4).
 
-    `finish_deps`, when given, completes the round-0 deps AFTER the leases are
-    held and before the first node runs. `act` builds its world context (the
-    feed and search reads, the `news-fetch.sh` refresh) and reads `memory.md`
-    there, so an account another run holds costs no reads at all (S3
-    §12.2(f)). It takes a single `CycleDeps` only.
+    `finish_deps`, when given, completes the deps AFTER the leases are held
+    and before the first node runs. `act` and `cycle` build their world
+    context (the feed and search reads, the `news-fetch.sh` refresh) and read
+    `memory.md` there, so an account another run holds costs no reads at all
+    (S3 §12.2(f)) and the memory snapshot cannot race that run's appends.
 
     Identity: the lease, the log lines and `CycleState["agent"]` all use the
     persona DIRECTORY name (`agent_dir_name`), never the `Username` bullet --
@@ -168,23 +155,20 @@ def run_graph(
     `deps.captured_at`, which is a different moment in the resuming process.
     The resumed state keeps the `round_id` it was checkpointed with.
 
-    Two consequences of resuming worth knowing: a thread whose previous run
-    completed runs no nodes at all and returns its stored final state, and a
-    thread that was never checkpointed raises langgraph's `EmptyInputError`.
+    Three consequences of resuming worth knowing: a thread whose previous run
+    completed runs no nodes at all and returns its stored final state, a
+    thread that was never checkpointed raises langgraph's `EmptyInputError`,
+    and a thread whose next node is `execute` or `write` raises
+    `UnsafeResumeError` before any lease is taken (module docstring).
     """
-    cfg = config or CycleConfig()
     if phases is not Phases.CYCLE and (checkpointer is not None or resume):
         raise ValueError(f"a {phases.value} run is not checkpointed: --resume is a cycle option")
     if resume and checkpointer is None:
         raise ValueError("resume=True needs a checkpointer: there is nothing to continue from")
-    if finish_deps is not None and not isinstance(deps, CycleDeps):
-        raise ValueError("finish_deps completes a single CycleDeps, not a per-round provider")
-    provider = _deps_provider(deps, cfg)
-    first = provider(0)
-    if first.probe_board and not first.dry_run:
+    if deps.probe_board and not deps.dry_run:
         raise ValueError("--probe-board requires --dry-run")
     name = agent_dir_name(persona)
-    round_key = round_id if round_id is not None else manual_round_id(first.captured_at)
+    round_key = round_id if round_id is not None else manual_round_id(deps.captured_at)
     run_key = run_id if run_id is not None else uuid.uuid4().hex
     thread = thread_id(tenant, name, round_key)
 
@@ -206,39 +190,48 @@ def run_graph(
         "round_id": round_key,
         "run_id": run_key,
         "round_index": 0,
-        # Read off the ROUND-0 deps, the same instance `_acquire` asks about
-        # the lease. A provider that flipped `dry_run` between rounds would be
-        # a contradiction in terms, and the routers need one answer.
-        "dry_run": first.dry_run,
-        "started_monotonic": first.monotonic(),
+        "dry_run": deps.dry_run,
+        "started_monotonic": deps.monotonic(),
     }
     # `None` on a resume: see this function's docstring. The seed is still
     # BUILT on that path, because it is also this function's return value if
     # the resumed thread has nothing left to run.
     stream_input = None if resume else state
-    app = build_graph(phases, cfg).compile(checkpointer=checkpointer)
-    run_config: RunnableConfig = {
-        "configurable": {"thread_id": thread},
-        "recursion_limit": _recursion_limit(cfg),
-    }
+    app = build_graph(phases).compile(checkpointer=checkpointer)
+    run_config: RunnableConfig = {"configurable": {"thread_id": thread}}
+    if resume:
+        # Before the lease, so a refused resume takes none ...
+        _refuse_unsafe_resume(app, run_config, name, round_key)
 
     with contextlib.ExitStack() as stack:
         leases = _acquire(
-            stack, lease_db, first, tenant, name, run_key, lease_clock, lease_kinds(phases)
+            stack, lease_db, deps, tenant, name, run_key, lease_clock, lease_kinds(phases)
         )
+        if resume:
+            # ... and again under it: a run that held this thread until a
+            # moment ago (its lease reclaimed) may have moved it on since.
+            _refuse_unsafe_resume(app, run_config, name, round_key)
         if finish_deps is not None:
-            provider = _deps_provider(finish_deps(first), cfg)
-        context = CycleContext(deps_for_round=provider, lease_db=lease_db, lease_clock=lease_clock)
+            deps = finish_deps(deps)
+        context = CycleContext(deps=deps, lease_db=lease_db, lease_clock=lease_clock)
         for chunk in app.stream(
             stream_input, config=run_config, context=context, stream_mode="values"
         ):
             state = cast(CycleState, chunk)
             for lease in leases:
                 # Between nodes, so every beat immediately precedes the next
-                # node's execution and Bash's 1800s staleness window restarts
+                # node's execution and the 1800s staleness window restarts
                 # at that node's start.
                 lease.heartbeat()
     return state
+
+
+def _refuse_unsafe_resume(app: Any, run_config: RunnableConfig, name: str, round_key: str) -> None:
+    """Raise `UnsafeResumeError` if the thread's next node is one a resume
+    must not re-enter (module docstring)."""
+    for pending in app.get_state(run_config).next:
+        if pending in _UNSAFE_TO_RESUME:
+            raise UnsafeResumeError(name, round_key, pending)
 
 
 def _acquire(

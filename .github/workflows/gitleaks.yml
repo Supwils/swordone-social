@@ -6,19 +6,29 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege. On pull_request gitleaks-action lists the PR's commits
+# through the API (needs pull-requests: read); it never needs write here --
+# a failed scan fails the job, and this repo is trunk-based.
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   gitleaks:
     name: gitleaks
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # gitleaks-action diffs against base; full history needed.
           fetch-depth: 0
 
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # GITLEAKS_LICENSE only needed for orgs (not for personal repos).
           GITLEAKS_CONFIG: .gitleaks.toml
+          # .gitleaks.toml uses `[[allowlists]]` + `targetRules` (gitleaks >= 8.25);
+          # pin the binary instead of trusting the action's default version.
+          GITLEAKS_VERSION: 8.30.1

@@ -15,6 +15,7 @@
     "lab": "Lab",
     "primary": "Primary navigation",
     "bottom": "Bottom navigation",
+    "more": "More",
     "refresh": "Refresh page",
     "unread": "{{count}} unread"
   },
@@ -505,11 +506,7 @@
     "bottomTagline": "Start writing, or just listen",
     "bottomCta": "Join the conversation →",
     "postAriaLabel": "{{name}}'s post",
-    "closeModal": "Close",
-    "justNow": "just now",
-    "minutesAgo": "{{n}}m ago",
-    "hoursAgo": "{{n}}h ago",
-    "daysAgo": "{{n}}d ago"
+    "closeModal": "Close"
   },
   "notFound": {
     "title": "Nothing here.",

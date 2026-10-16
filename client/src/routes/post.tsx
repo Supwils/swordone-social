@@ -1,32 +1,30 @@
-import { type FormEvent, useEffect, useState } from 'react';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { toast } from 'sonner';
 import { ArrowLeft } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import * as postsApi from '@/api/posts.api';
-import * as commentsApi from '@/api/comments.api';
 import { qk } from '@/api/queryKeys';
 import { PostCard } from '@/features/posts/PostCard';
 import { useSession } from '@/stores/session.store';
 import { useUI } from '@/stores/ui.store';
 import { track } from '@/lib/analytics';
 import type { ApiError } from '@/api/types';
-import { Avatar, Button, Card, EmptyState, Skeleton, Textarea } from '@/components/primitives';
-import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
-import { MarkdownBody } from '@/features/posts/MarkdownBody';
-import { formatRelative } from '@/lib/formatDate';
+import { Button, EmptyState, Skeleton } from '@/components/primitives';
+import { ID_RE } from '@/contract/limits';
 import s from './post.module.css';
 import { usePageTitle } from '@/lib/usePageTitle';
 
 export default function PostRoute() {
   const { t } = useTranslation();
-  const { id = '' } = useParams<{ id: string }>();
+  const { id: rawId = '' } = useParams<{ id: string }>();
+  // Route params arrive decoded, so a crafted link could otherwise smuggle
+  // `../` into an API path. Anything that is not an id renders as not-found
+  // without a single request.
+  const id = ID_RE.test(rawId) ? rawId : '';
   const me = useSession((st) => st.user);
   const language = useUI((st) => st.language);
-  const qc = useQueryClient();
   const nav = useNavigate();
-  const [commentText, setCommentText] = useState('');
 
   const post = useQuery({
     queryKey: qk.posts.byId(id, language),
@@ -40,35 +38,7 @@ export default function PostRoute() {
     if (id) track('post_view', { postId: id });
   }, [id]);
 
-  const comments = useInfiniteQuery({
-    queryKey: qk.posts.comments(id, language),
-    queryFn: ({ pageParam }) =>
-      commentsApi.listForPost(id, { cursor: pageParam, limit: 50, lang: language }),
-    initialPageParam: null as string | null,
-    getNextPageParam: (last) => last.nextCursor,
-    enabled: Boolean(id),
-  });
-
-  const submit = useMutation({
-    mutationFn: () => commentsApi.create(id, { text: commentText }),
-    onSuccess: () => {
-      setCommentText('');
-      toast.success(t('post.commentPosted'));
-      qc.invalidateQueries({ queryKey: ['posts', id, 'comments'] });
-      // Prefix, not the language-scoped key: the comment count moved for
-      // every rendering of this post, not just the one on screen.
-      qc.invalidateQueries({ queryKey: ['posts', id, 'detail'] });
-    },
-    onError: (err) => toast.error((err as unknown as ApiError).message),
-  });
-
-  const onSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    if (!commentText.trim()) return;
-    submit.mutate();
-  };
-
-  if (post.isLoading) {
+  if (id && post.isLoading) {
     return (
       <div className={s.page}>
         <Skeleton variant="text-lg" width={240} />
@@ -78,9 +48,9 @@ export default function PostRoute() {
     );
   }
   const home = me ? '/feed' : '/global';
-  if (post.isError || !post.data) {
+  if (!id || post.isError || !post.data) {
     const status = (post.error as ApiError | null)?.status;
-    const missing = status === 404;
+    const missing = !id || status === 404;
     return (
       <EmptyState
         title={missing ? t('post.notFound') : t('post.loadFailed')}
@@ -90,84 +60,16 @@ export default function PostRoute() {
     );
   }
 
-  const items = comments.data?.pages.flatMap((p) => p.items) ?? [];
-
   return (
     <div className={s.page}>
       <Link to={home} className={s.backLink}>
         <ArrowLeft size={14} weight="regular" aria-hidden /> {t('post.back')}
       </Link>
 
-      <PostCard post={post.data} />
-
-      <h2 className={s.commentsHeader}>
-        {post.data.commentCount > 0
-          ? t('post.commentsCount', { count: post.data.commentCount })
-          : t('post.noComments')}
-      </h2>
-
-      {me ? (
-        <Card>
-          <form onSubmit={onSubmit} className={s.composeCard}>
-            <Textarea
-              value={commentText}
-              onChange={(e) => setCommentText(e.target.value)}
-              placeholder={t('post.commentPlaceholder')}
-              maxLength={2000}
-              showCounter
-              autoResize
-              aria-label="Your comment"
-            />
-            <div className={s.composeActions}>
-              <Button
-                variant="primary"
-                type="submit"
-                disabled={submit.isPending || !commentText.trim()}
-              >
-                {submit.isPending ? t('post.commentPosting') : t('post.postComment')}
-              </Button>
-            </div>
-          </form>
-        </Card>
-      ) : (
-        <Card>
-          <p className={s.signInPrompt}>
-            <Link to="/login">{t('post.signInToComment')}</Link>
-            {t('post.toJoinConversation')}
-          </p>
-        </Card>
-      )}
-
-      {items.map((c) => (
-        <article key={c.id} className={s.comment}>
-          <Avatar
-            src={c.author.avatarUrl}
-            name={c.author.displayName || c.author.username}
-            size="sm"
-            alt=""
-          />
-          <div className={s.commentBody}>
-            <header className={s.commentHeader}>
-              <Link to={`/u/${c.author.username}`} className={s.commentAuthor}>
-                {c.author.displayName || c.author.username}
-              </Link>
-              <span className={s.commentHandle}>@{c.author.username}</span>
-              <time dateTime={c.createdAt} className={s.commentDate}>
-                {formatRelative(c.createdAt)}
-              </time>
-            </header>
-            <div className={s.commentText}>
-              <MarkdownBody source={c.text} compact />
-            </div>
-          </div>
-        </article>
-      ))}
-
-      <InfiniteScrollSentinel
-        hasNextPage={comments.hasNextPage}
-        isFetching={comments.isFetchingNextPage}
-        onLoadMore={() => comments.fetchNextPage()}
-      />
+      {/* One comment thread: the card's own, open. A second page-level thread
+          over the same cache key with a different page size fought it for
+          the cache entry and showed two compose boxes. */}
+      <PostCard post={post.data} defaultCommentsOpen />
     </div>
   );
 }

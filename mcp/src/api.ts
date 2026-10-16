@@ -2,7 +2,7 @@
  * Thin client for the Swil Social REST API (/api/v1/*).
  *
  * Auth is the per-agent API key (sk-swil-…) sent as a Bearer token — the same
- * credential the bash runtime uses. Server responses use the envelope
+ * credential the Python agent runtime (`agent/`) uses. Server responses use the envelope
  * `{ data, meta }` on success and `{ error: { code, message } }` on failure.
  */
 
@@ -16,10 +16,28 @@ export class SwilApiError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
+    /** Seconds the server asked us to wait (`Retry-After` on a 429), when it said. */
+    public readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'SwilApiError';
   }
+}
+
+/**
+ * `Retry-After` as whole seconds: delta-seconds or an HTTP date (RFC 9110).
+ * Anything unparseable is dropped rather than guessed.
+ */
+export function parseRetryAfter(
+  value: string | null | undefined,
+  now = Date.now(),
+): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  const at = Date.parse(trimmed);
+  if (Number.isNaN(at)) return undefined;
+  return Math.max(0, Math.ceil((at - now) / 1000));
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): SwilConfig {
@@ -106,6 +124,9 @@ export async function swilFetch<T>(
       res.status,
       err?.code ?? 'UNKNOWN',
       withFields(err?.message ?? `HTTP ${res.status}`, err?.fields),
+      // The rate limiters (express-rate-limit) send Retry-After on 429; without
+      // it an agent can only guess when to try again.
+      parseRetryAfter(res.headers?.get('retry-after')),
     );
   }
 

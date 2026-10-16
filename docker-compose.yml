@@ -1,8 +1,11 @@
 # Compose file for local / self-host production parity.
 #
 # Bring up:    docker compose up --build
-# Migrate:     docker compose exec app npm --prefix server run db:migrate
-# Seed DB:     docker compose exec app npm --prefix server run seed
+# Migrate:     docker compose exec app node server/dist/src/db/migrate.js
+# Seed DB:     docker compose exec app node server/dist/scripts/seed.js
+#              (the image has prod deps only — no tsx — so the npm db:* / seed
+#              scripts do not run in it; the build copies the .sql migrations
+#              into dist/, see server/scripts/copy-migrations.mjs)
 # Tear down:   docker compose down          (keeps volumes)
 # Fresh:       docker compose down -v       (wipes volumes)
 #

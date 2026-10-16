@@ -8,15 +8,31 @@ import { qk } from '@/api/queryKeys';
 import { prependMessage } from '@/lib/messageCache';
 import * as notificationsApi from '@/api/notifications.api';
 import * as messagesApi from '@/api/messages.api';
+import * as authApi from '@/api/auth.api';
 import { connectRealtime, disconnectRealtime, getSocket } from '@/api/realtime';
+import { notificationVerb } from '@/lib/notificationVerb';
 import type { NotificationDTO, MessageDTO, Paginated } from '@/api/types';
+
+/**
+ * A server-initiated disconnect (`io server disconnect`) is the one reason
+ * Socket.IO does not retry by itself. The server sends it when a session's
+ * sockets are dropped: on logout only that session's, on a password change
+ * all of them — and the tab that changed the password got a regenerated
+ * session, so it should come back. Each reconnect is gated on `/auth/me`
+ * still answering for this user, and bounded so a session the server keeps
+ * refusing cannot loop.
+ */
+const SERVER_KICK_WINDOW_MS = 60_000;
+const MAX_SERVER_KICK_RECONNECTS = 3;
 
 /**
  * Connects the socket once we know who the user is, subscribes to events,
  * and bridges them into TanStack Query cache + Zustand unread counts.
  */
 export function RealtimeBridge() {
-  const user = useSession((s) => s.user);
+  // The id, not the user object: every profile save replaces the object, and
+  // depending on it tore down and re-registered every socket handler.
+  const userId = useSession((s) => s.user?.id ?? null);
   const setConnected = useRealtime((s) => s.setConnected);
   const setUnreadN = useRealtime((s) => s.setUnreadNotifications);
   const incUnreadN = useRealtime((s) => s.incUnreadNotifications);
@@ -27,7 +43,7 @@ export function RealtimeBridge() {
   const qc = useQueryClient();
 
   useEffect(() => {
-    if (!user) {
+    if (!userId) {
       disconnectRealtime();
       setConnected(false);
       setUnreadN(0);
@@ -37,9 +53,29 @@ export function RealtimeBridge() {
     }
 
     const socket = connectRealtime();
+    let disposed = false;
+    let kicks: number[] = [];
 
     const onConnect = () => setConnected(true);
-    const onDisconnect = () => setConnected(false);
+    const onDisconnect = (reason?: unknown) => {
+      setConnected(false);
+      // Every other reason is retried by Socket.IO's own reconnection.
+      if (reason !== 'io server disconnect') return;
+      if (useSession.getState().user?.id !== userId) return;
+      const now = Date.now();
+      kicks = kicks.filter((at) => now - at < SERVER_KICK_WINDOW_MS);
+      if (kicks.length >= MAX_SERVER_KICK_RECONNECTS) return;
+      kicks.push(now);
+      authApi
+        .me()
+        .then((me) => {
+          // Gone (me is null → the 401 path ends the session) or switched.
+          if (disposed || !me || me.id !== userId) return;
+          if (useSession.getState().user?.id !== userId) return;
+          socket.connect();
+        })
+        .catch(() => undefined);
+    };
 
     const onNotification = (raw: unknown) => {
       const payload = raw as NotificationDTO;
@@ -91,7 +127,7 @@ export function RealtimeBridge() {
       qc.invalidateQueries({ queryKey: qk.conversations.list });
       // Suppress toast if user is already viewing this conversation
       const onThisThread = window.location.pathname === `/messages/${payload.conversationId}`;
-      if (payload.sender.id !== user.id && !onThisThread) {
+      if (payload.sender.id !== userId && !onThisThread) {
         toast(`@${payload.sender.username}: ${preview(payload.text)}`);
         // Local-only bump — server count reseeded on focus / read.
         incUnreadC(1);
@@ -158,6 +194,7 @@ export function RealtimeBridge() {
     window.addEventListener('focus', onFocus);
 
     return () => {
+      disposed = true;
       const s = getSocket();
       s?.off('connect', onConnect);
       s?.off('disconnect', onDisconnect);
@@ -170,7 +207,7 @@ export function RealtimeBridge() {
       window.removeEventListener('focus', onFocus);
     };
   }, [
-    user,
+    userId,
     qc,
     setConnected,
     setUnreadN,
@@ -184,25 +221,10 @@ export function RealtimeBridge() {
   return null;
 }
 
-/** Same verbs the notifications page uses, so a toast and its row read alike. */
+/** The notifications page's own verbs, so a toast and its row read alike. */
 function summarizeNotification(n: NotificationDTO): string {
   const name = n.actor.displayName || n.actor.username;
-  switch (n.type) {
-    case 'like':
-      return `${name} ${i18n.t(n.comment ? 'notifications.likedComment' : 'notifications.likedPost')}`;
-    case 'comment':
-      return `${name} ${i18n.t('notifications.commentedOn')}`;
-    case 'reply':
-      return `${name} ${i18n.t('notifications.replied')}`;
-    case 'follow':
-      return `${name} ${i18n.t('notifications.followed')}`;
-    case 'mention':
-      return `${name} ${i18n.t('notifications.mentioned')}`;
-    case 'message':
-      return `${name} ${i18n.t('notifications.messagedYou')}`;
-    default:
-      return `${name}`;
-  }
+  return `${name} ${notificationVerb(n, (key) => i18n.t(key))}`;
 }
 
 function preview(text: string): string {

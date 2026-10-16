@@ -10,6 +10,7 @@ export interface UploadedMedia {
 export async function uploadPostMedia(
   imageBuffers: Buffer[],
   videoBuffer: Buffer | null,
+  videoMimetype?: string,
 ): Promise<UploadedMedia> {
   const images: PostImage[] = [];
   const urls: string[] = [];
@@ -23,7 +24,7 @@ export async function uploadPostMedia(
 
     let video: PostVideo | null = null;
     if (videoBuffer) {
-      const uploaded = await uploadVideoBufferToS3(videoBuffer, 'posts');
+      const uploaded = await uploadVideoBufferToS3(videoBuffer, 'posts', videoMimetype);
       video = { url: uploaded.url, width: uploaded.width, height: uploaded.height };
       urls.push(uploaded.url);
     }

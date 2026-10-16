@@ -46,10 +46,9 @@ from swil_agent.models import Action, ActOutcome, ActSimilarity, Persona, Plan
 
 from ._phases import run_act_phase
 from ._runners import (
-    FakePersonaSource,
     FakeResources,
-    FakeState,
     StubBackend,
+    make_cycle_deps,
     make_persona,
 )
 
@@ -938,27 +937,19 @@ def test_the_graph_execute_node_takes_the_sample_too(tmp_path: Path) -> None:
     direct-path test stayed green. The window and threshold come from
     `deps.settings`, pinned at 5 and 0.4 here: neither default.
     """
-    from swil_agent.graph.deps import CycleDeps
     from swil_agent.graph.nodes_act import make_execute_node
 
     resources = TracingResources()
     resources.user_post_items = _own_posts(NEAR, FAR)
     embedder = RecordingEmbedder()
     persona = _persona(tmp_path)
-    deps = CycleDeps(
+    deps = make_cycle_deps(
+        tmp_path,
         resources=resources,
-        backend=StubBackend('{"plan":[{"action":"nothing"}]}'),
-        persona_source=FakePersonaSource(),
         embedder=embedder,
-        dream_state=FakeState(),
         settings=Settings(
             agent_root=tmp_path, post_duplicate_window=5, post_duplicate_threshold=0.4
         ),
-        agent_root=tmp_path,
-        health_check=lambda: True,
-        memory_text="",
-        llm_backend="claude",
-        llm_model=None,
         now=NOW,
         captured_at=CAPTURED_AT,
     )
@@ -1093,6 +1084,7 @@ def test_the_plan_type_still_carries_no_similarity(tmp_path: Path) -> None:
 # `server/src/modules/agents/persona/collapse.test.ts` reaches back.
 
 _COLLAPSE_TS = Path(__file__).resolve().parents[3] / "server/src/modules/agents/persona/collapse.ts"
+_METRICS_TS = Path(__file__).resolve().parents[3] / "server/src/modules/agents/arms/metrics.ts"
 
 
 def _executable_ts(source: str) -> str:
@@ -1124,9 +1116,17 @@ def test_the_summary_the_server_queries_on_is_the_summary_this_module_files(
     summary = _similarity_events(resources)[0].summary
     assert summary == "act self-similarity measured"
 
-    executable = _executable_ts(_COLLAPSE_TS.read_text(encoding="utf-8"))
-    pattern = rf"^export const \w+ = '{re.escape(summary)}';$"
-    assert re.search(pattern, executable, re.MULTILINE), (
+    # collapse.ts takes the literal from `SIMILARITY_SUMMARIES[0]` in arms/metrics.ts
+    # (one copy since S6), so both links of that chain are pinned.
+    collapse = _executable_ts(_COLLAPSE_TS.read_text(encoding="utf-8"))
+    assert re.search(
+        r"^export const ACT_SIMILARITY_SUMMARY = SIMILARITY_SUMMARIES\[0\];$",
+        collapse,
+        re.MULTILINE,
+    ), f"{_COLLAPSE_TS.name} no longer selects on SIMILARITY_SUMMARIES[0]"
+    metrics = _executable_ts(_METRICS_TS.read_text(encoding="utf-8"))
+    pattern = rf"^export const SIMILARITY_SUMMARIES = \[\n\s*'{re.escape(summary)}',$"
+    assert re.search(pattern, metrics, re.MULTILINE), (
         f'{_COLLAPSE_TS.name} no longer selects on "{summary}". That endpoint joins '
         "post length against the rows similarity_step files under this summary: if "
         "the rename was deliberate, change ACT_SIMILARITY_SUMMARY there in the same "

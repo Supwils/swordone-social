@@ -66,18 +66,29 @@ export function cursorConditionAsc(
   return or(gt(tsCol, t), and(eq(tsCol, t), gt(idCol, cursor.id)));
 }
 
-export function buildNextCursor<T extends { createdAt: Date; id: string }>(
+/** The keys of `T` whose values are Dates — what a time cursor can be built on. */
+type DateKey<T> = { [K in keyof T]: T[K] extends Date ? K : never }[keyof T];
+
+/**
+ * Trim a `limit + 1` fetch to one page and encode the cursor at its last row.
+ * `key` names the timestamp the query orders by (`createdAt` unless a list sorts
+ * by `updatedAt` / `lastMessageAt`), and must match the column the WHERE built
+ * by `cursorConditionDesc` / `Asc` compares.
+ */
+export function buildNextCursor<T extends { id: string }>(
   items: T[],
   limit: number,
+  key: DateKey<T> = 'createdAt' as DateKey<T>,
 ): { items: T[]; nextCursor: string | null } {
   if (items.length <= limit) {
     return { items, nextCursor: null };
   }
   const page = items.slice(0, limit);
   const last = page[page.length - 1];
+  const t = last[key] as unknown as Date;
   return {
     items: page,
-    nextCursor: encodeCursor({ t: last.createdAt.toISOString(), id: last.id }),
+    nextCursor: encodeCursor({ t: t.toISOString(), id: last.id }),
   };
 }
 

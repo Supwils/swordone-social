@@ -1,16 +1,12 @@
 import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
+import { escapeLike } from '../../lib/sql';
 import { users } from '../../db/schema';
 import type { UserPreferences } from '../../contract/users';
 import { AppError } from '../../lib/errors';
 import { uploadBufferToS3, deleteFromS3 } from '../../config/s3';
 import type { UserRow } from '../../lib/dto';
 import type { UpdateMeInput } from './users.schemas';
-
-/** Escape LIKE/ILIKE wildcards so user input can't inject `%` / `_` patterns. */
-function escapeLike(s: string): string {
-  return s.replace(/[\\%_]/g, '\\$&');
-}
 
 export async function findByUsername(username: string): Promise<UserRow> {
   const [user] = await db

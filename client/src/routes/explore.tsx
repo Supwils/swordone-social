@@ -11,6 +11,7 @@ import { ExplorePeopleTab } from './explore/ExplorePeopleTab';
 import { ExplorePostsTab } from './explore/ExplorePostsTab';
 import s from './explore.module.css';
 import { usePageTitle } from '@/lib/usePageTitle';
+import { useUI } from '@/stores/ui.store';
 
 // Explore is an OpenRoute. Summary, people, and post search all hit
 // optionalUser endpoints (`/feed/explore-summary`, `GET /users`,
@@ -21,9 +22,10 @@ export default function ExploreRoute() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') ?? 'posts';
 
+  const language = useUI((st) => st.language);
   const summaryQuery = useQuery({
-    queryKey: ['explore-summary'],
-    queryFn: feedApi.getExploreSummary,
+    queryKey: ['explore-summary', language],
+    queryFn: () => feedApi.getExploreSummary(language),
     staleTime: 5 * 60_000,
   });
 

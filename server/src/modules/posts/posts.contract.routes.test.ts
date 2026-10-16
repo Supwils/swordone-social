@@ -324,6 +324,9 @@ describe('write bodies (mutating)', () => {
     const page = expectContract(postPage, envelopeData(saved.body));
     expect(page.items.map((p) => p.id)).toEqual([rich.id]);
     expect(page.items[0].bookmarkedByMe).toBe(true);
+    // GET /posts/:id hydrates through the same path as the lists, so it agrees.
+    const single = await agent.get(`/api/v1/posts/${rich.id}`).expect(200);
+    expect(expectContract(postBody, envelopeData(single.body)).post.bookmarkedByMe).toBe(true);
   });
 
   it('POST /posts/:id/comments returns { comment }', async () => {

@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -79,16 +80,89 @@ def test_boundary_post_settings_are_accepted(tmp_path: Path) -> None:
     assert (s.post_duplicate_threshold, s.post_duplicate_window) == (1.0, 63)
 
 
-def test_env_file_wins_over_process_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The Bash runtime sources agent/.env with `set -a` AFTER the caller's env,
-    so the file wins. Preserve that precedence or operators will be surprised."""
+def test_process_env_wins_over_the_env_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One precedence everywhere: the caller's export outranks agent/.env, so a
+    one-off `SWIL_URL=... swil-agent ...` (or the round script's restored
+    caller value) is the URL the workers actually use."""
     env = tmp_path / ".env"
     env.write_text("SWIL_URL=https://from-file.test\nPOST_PROBABILITY=30\n", encoding="utf-8")
     monkeypatch.setenv("SWIL_URL", "https://from-process.test")
     monkeypatch.setenv("POST_PROBABILITY", "90")
     s = load_settings(env)
-    assert s.swil_url == "https://from-file.test"
-    assert s.post_probability == 30
+    assert s.swil_url == "https://from-process.test"
+    assert s.post_probability == 90
+
+
+def test_the_env_file_fills_keys_the_process_env_lacks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = tmp_path / ".env"
+    env.write_text("SWIL_URL=https://from-file.test\n", encoding="utf-8")
+    monkeypatch.delenv("SWIL_URL", raising=False)
+    assert load_settings(env).swil_url == "https://from-file.test"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("1", True),
+        ("TRUE", True),
+        (" yes ", True),
+        ("on", True),
+        ("0", False),
+        ("", False),
+        ("False", False),
+        (" no ", False),
+        ("OFF", False),
+        ("maybe", True),
+    ],
+)
+def test_require_non_prod_reads_its_spellings_and_never_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str, expected: bool
+) -> None:
+    env = tmp_path / ".env"
+    env.write_text("SWIL_URL=https://example.test\n", encoding="utf-8")
+    monkeypatch.setenv("SWIL_REQUIRE_NON_PROD", value)
+    assert load_settings(env).swil_require_non_prod is expected
+
+
+def test_an_unrecognised_require_non_prod_is_on_with_one_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Fail safe: a value nobody recognises still refuses production."""
+    env = tmp_path / ".env"
+    env.write_text("SWIL_URL=https://example.test\n", encoding="utf-8")
+    monkeypatch.setenv("SWIL_REQUIRE_NON_PROD", "maybe")
+    with caplog.at_level(logging.WARNING, logger="swil_agent.config"):
+        assert load_settings(env).swil_require_non_prod is True
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "'maybe'" in warnings[0].getMessage()
+
+
+def test_a_recognised_require_non_prod_logs_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    env = tmp_path / ".env"
+    env.write_text("SWIL_URL=https://example.test\n", encoding="utf-8")
+    for value in ("1", "off", ""):
+        monkeypatch.setenv("SWIL_REQUIRE_NON_PROD", value)
+        with caplog.at_level(logging.WARNING, logger="swil_agent.config"):
+            load_settings(env)
+    assert caplog.records == []
+
+
+def test_require_non_prod_export_outranks_the_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = tmp_path / ".env"
+    env.write_text("SWIL_REQUIRE_NON_PROD=0\n", encoding="utf-8")
+    monkeypatch.setenv("SWIL_REQUIRE_NON_PROD", "1")
+    assert load_settings(env).swil_require_non_prod is True
+    monkeypatch.delenv("SWIL_REQUIRE_NON_PROD")
+    assert load_settings(env).swil_require_non_prod is False
 
 
 def test_trailing_slash_is_stripped_from_swil_url(tmp_path: Path) -> None:
@@ -134,11 +208,19 @@ def test_a_round_id_in_the_env_file_is_ignored(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The round script exports a fresh id per sweep; one written into `.env`
-    would be permanently stale and -- the file winning over process env --
-    would relabel every later sweep. Only the caller's environment counts."""
+    would be permanently stale and would label every manual cycle with an old
+    sweep's id. Only the caller's environment counts."""
     env = tmp_path / ".env"
     env.write_text("SWIL_ROUND_ID=20261001T000000Z-r\n", encoding="utf-8")
     monkeypatch.delenv("SWIL_ROUND_ID", raising=False)
     assert load_settings(env).swil_round_id is None
     monkeypatch.setenv("SWIL_ROUND_ID", "20261014T091500Z-r")
     assert load_settings(env).swil_round_id == "20261014T091500Z-r"
+
+
+def test_every_test_starts_without_a_settings_env_var() -> None:
+    """`tests/conftest.py` clears every env name `Settings` reads, derived
+    from the model: an exported SWIL_URL/SWIL_PASS cannot reach a test."""
+    import os
+
+    assert [n for n in (f.upper() for f in Settings.model_fields) if n in os.environ] == []

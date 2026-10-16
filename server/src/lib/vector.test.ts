@@ -14,13 +14,17 @@ describe('cosineSim', () => {
     expect(cosineSim([1, 0], [-1, 0])).toBeCloseTo(-1);
   });
 
-  it('returns 0 on length mismatch or empty', () => {
-    expect(cosineSim([1, 0], [1])).toBe(0);
-    expect(cosineSim([], [])).toBe(0);
+  it('returns null on length mismatch or empty — not a fabricated 0', () => {
+    expect(cosineSim([1, 0], [1])).toBeNull();
+    expect(cosineSim([], [])).toBeNull();
   });
 });
 
 describe('cosineDist', () => {
+  it('is null when the similarity is undefined', () => {
+    expect(cosineDist([1, 0], [1])).toBeNull();
+  });
+
   it('is 0 for identical vectors and clamps to [0,2]', () => {
     expect(cosineDist([1, 0], [1, 0])).toBe(0);
     expect(cosineDist([1, 0], [-1, 0])).toBeCloseTo(2);
@@ -81,6 +85,10 @@ describe('meanPairwiseCosine', () => {
 
   it('ignores empty vectors', () => {
     expect(meanPairwiseCosine([[1, 0], [1, 0], []])).toBeCloseTo(1);
+  });
+
+  it('skips a length-mismatched pair instead of averaging in a 0', () => {
+    expect(meanPairwiseCosine([[1, 0], [1, 0], [1]])).toBeCloseTo(1);
   });
 });
 

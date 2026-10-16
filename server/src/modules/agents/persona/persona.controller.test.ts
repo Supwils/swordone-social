@@ -4,7 +4,6 @@ const mocks = vi.hoisted(() => ({
   getDrift: vi.fn(),
   getDriftCountdown: vi.fn(),
   getCollapseWatch: vi.fn(),
-  collapseWindow: vi.fn(),
   ingestSnapshot: vi.fn(),
   getFidelity: vi.fn(),
   ingestBehaviorSnapshot: vi.fn(),
@@ -37,15 +36,16 @@ describe('persona.controller range-defaulting reads', () => {
     expect(mocks.getDriftCountdown).toHaveBeenLastCalledWith('zed', '7d');
   });
 
-  it('collapse resolves the range into an explicit window before the service', async () => {
-    const window = { from: 'sentinel-from', to: 'sentinel-to' };
-    mocks.collapseWindow.mockReturnValue(window);
+  it('collapse hands the requested range to the service, which owns the window', async () => {
+    // The window's end depends on the account (its seal, or now), which only
+    // the service knows after the lookup — so the controller passes the range.
     mocks.getCollapseWatch.mockResolvedValue({ ok: 1 });
 
     await ctrl.collapse(req({ params: { username: 'zed' }, query: { range: '90d' } }), makeRes());
+    expect(mocks.getCollapseWatch).toHaveBeenLastCalledWith('zed', '90d');
 
-    expect(mocks.collapseWindow).toHaveBeenCalledWith('90d', expect.any(Date));
-    expect(mocks.getCollapseWatch).toHaveBeenCalledWith('zed', window);
+    await ctrl.collapse(req({ params: { username: 'zed' } }), makeRes());
+    expect(mocks.getCollapseWatch).toHaveBeenLastCalledWith('zed', '30d');
   });
 });
 

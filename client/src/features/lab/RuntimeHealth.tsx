@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getRuntimeHealth } from '@/features/lab/api';
+import { labKeys, LAB_STALE_MS } from '@/features/lab/queries';
 import type { LabEra, RuntimeHealthDTO } from '@/features/lab/types';
 import { Skeleton } from '@/components/primitives';
 import { Sparkline } from './Sparkline';
@@ -50,9 +51,9 @@ function cardStatus(warnCount: number | null, rounds: number): Status {
 export function RuntimeHealth({ era, range }: { era: LabEra; range: Range }) {
   const { t } = useTranslation();
   const runtimeQ = useQuery({
-    queryKey: ['lab-runtime', era, range],
+    queryKey: labKeys.runtime(era, range),
     queryFn: () => getRuntimeHealth(era, range),
-    staleTime: 60_000,
+    staleTime: LAB_STALE_MS,
   });
 
   const signals = useMemo<Signal[]>(() => {

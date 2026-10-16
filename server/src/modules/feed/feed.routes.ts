@@ -4,14 +4,14 @@ import { validate } from '../../middlewares/validate';
 import { optionalUser, requireUser } from '../../middlewares/auth';
 import { asyncHandler } from '../../middlewares/asyncHandler';
 import { ok } from '../../lib/respond';
-import { AppError } from '../../lib/errors';
 import { decodeCursor, decodeScoreCursor, parseLimit } from '../../lib/pagination';
 import type { FeedSort } from './feed.service';
-import { toPostDTO, type PostDTOContext, type PostRow } from '../../lib/dto';
-import { translatePosts } from '../../lib/translate';
-import { autoTranslateOn, resolveLang } from '../../lib/lang';
+import { toPostDTOs } from '../posts/posts.hydrate';
+import { translatePostsForRead } from '../../lib/translate';
+import { readTranslation } from '../../lib/lang';
 import { LIMITS, LOCALES, usernameLookupSchema } from '../../contract/common';
 import * as feed from './feed.service';
+import { authed } from '../../middlewares/authed';
 
 const pagingQuery = z.object({
   cursor: z.string().optional(),
@@ -26,32 +26,26 @@ const pagingQuery = z.object({
   since: z.coerce.date().optional(),
 });
 
-function pageToDtos(items: PostRow[], ctxById: Map<string, PostDTOContext>) {
-  return items
-    .map((p) => {
-      const ctx = ctxById.get(p.id);
-      return ctx ? toPostDTO(p, ctx) : null;
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null);
-}
-
 export const feedRouter = Router();
 
 feedRouter.get(
   '/',
   requireUser,
   validate(pagingQuery, 'query'),
-  asyncHandler(async (req: Request, res: Response) => {
-    if (!req.user) throw AppError.unauthenticated();
-    const sort: FeedSort = req.query.sort === 'latest' ? 'latest' : 'recommended';
-    const cursor =
-      sort === 'latest' ? decodeCursor(req.query.cursor) : decodeScoreCursor(req.query.cursor);
-    const limit = parseLimit(req.query.limit, 20);
-    const since = req.query.since as Date | undefined;
-    const page = await feed.following(req.user, cursor, limit, sort, since);
-    await translatePosts(page.items, page.ctxById, req.user.preferences?.language ?? 'en');
-    return ok(res, { items: pageToDtos(page.items, page.ctxById), nextCursor: page.nextCursor });
-  }),
+  asyncHandler(
+    authed(async (req, res) => {
+      const sort: FeedSort = req.query.sort === 'latest' ? 'latest' : 'recommended';
+      const cursor =
+        sort === 'latest' ? decodeCursor(req.query.cursor) : decodeScoreCursor(req.query.cursor);
+      const limit = parseLimit(req.query.limit, 20);
+      const since = req.query.since as Date | undefined;
+      const page = await feed.following(req.user, cursor, limit, sort, since);
+      // Same language + auto-translate rules as every other feed (the following
+      // feed used to read the stored preference alone and ignore `?lang=`).
+      await translatePostsForRead(page.items, page.ctxById, readTranslation(req));
+      return ok(res, { items: toPostDTOs(page.items, page.ctxById), nextCursor: page.nextCursor });
+    }),
+  ),
 );
 
 feedRouter.get(
@@ -65,10 +59,8 @@ feedRouter.get(
     const limit = parseLimit(req.query.limit, 20);
     const since = req.query.since as Date | undefined;
     const page = await feed.global(req.user ?? null, cursor, limit, sort, since);
-    await translatePosts(page.items, page.ctxById, resolveLang(req), {
-      content: autoTranslateOn(req),
-    });
-    return ok(res, { items: pageToDtos(page.items, page.ctxById), nextCursor: page.nextCursor });
+    await translatePostsForRead(page.items, page.ctxById, readTranslation(req));
+    return ok(res, { items: toPostDTOs(page.items, page.ctxById), nextCursor: page.nextCursor });
   }),
 );
 
@@ -85,10 +77,8 @@ feedRouter.get(
     const limit = parseLimit(req.query.limit, 20);
     const since = req.query.since as Date | undefined;
     const page = await feed.byTag(req.params.slug, req.user ?? null, cursor, limit, sort, since);
-    await translatePosts(page.items, page.ctxById, resolveLang(req), {
-      content: autoTranslateOn(req),
-    });
-    return ok(res, { items: pageToDtos(page.items, page.ctxById), nextCursor: page.nextCursor });
+    await translatePostsForRead(page.items, page.ctxById, readTranslation(req));
+    return ok(res, { items: toPostDTOs(page.items, page.ctxById), nextCursor: page.nextCursor });
   }),
 );
 
@@ -106,10 +96,8 @@ feedRouter.get(
     const limit = parseLimit(req.query.limit, 20);
     const since = req.query.since as Date | undefined;
     const page = await feed.byBoard(req.params.slug, req.user ?? null, cursor, limit, sort, since);
-    await translatePosts(page.items, page.ctxById, resolveLang(req), {
-      content: autoTranslateOn(req),
-    });
-    return ok(res, { items: pageToDtos(page.items, page.ctxById), nextCursor: page.nextCursor });
+    await translatePostsForRead(page.items, page.ctxById, readTranslation(req));
+    return ok(res, { items: toPostDTOs(page.items, page.ctxById), nextCursor: page.nextCursor });
   }),
 );
 
@@ -119,7 +107,7 @@ feedRouter.get(
   '/explore-summary',
   optionalUser,
   asyncHandler(async (req: Request, res: Response) => {
-    const summary = await feed.getExploreSummary(req.user ?? null);
+    const summary = await feed.getExploreSummary(req.user ?? null, readTranslation(req));
     return ok(res, summary);
   }),
 );
@@ -137,9 +125,7 @@ userPostsRouter.get(
     const limit = parseLimit(req.query.limit, 20);
     const since = req.query.since as Date | undefined;
     const page = await feed.byAuthor(req.params.username, req.user ?? null, cursor, limit, since);
-    await translatePosts(page.items, page.ctxById, resolveLang(req), {
-      content: autoTranslateOn(req),
-    });
-    return ok(res, { items: pageToDtos(page.items, page.ctxById), nextCursor: page.nextCursor });
+    await translatePostsForRead(page.items, page.ctxById, readTranslation(req));
+    return ok(res, { items: toPostDTOs(page.items, page.ctxById), nextCursor: page.nextCursor });
   }),
 );

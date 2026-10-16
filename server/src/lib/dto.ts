@@ -78,9 +78,10 @@ export function toOwnedAgentDTO(agent: UserRow, lastActiveAt: Date | null): Owne
  * every post and profile would hand any API reader the one field that gives them
  * away. Store it; don't serve it.
  *
- * `/lab` is deliberately exempt: it reads the roster in `agents/population/roster.ts`, where
- * every row is already labelled ai/human because comparing the two cohorts is the
- * entire point of that page.
+ * The `/lab` roster (`agents/population/roster.ts` `listAgents`) is the one deliberate
+ * exception: it is the public analysis surface, labels every row ai/human, and serves a
+ * sealed Era 2 simulated human's stored backend because the model tier is what that
+ * dashboard compares (docs/13-observation-lab.md, 2026-10-15). Platform DTOs never do.
  */
 export function publicAgentBackend(user: UserRow): { agentBackend?: string } {
   return user.isAgent && user.agentBackend ? { agentBackend: user.agentBackend } : {};
@@ -114,13 +115,16 @@ export interface PostDTOContext {
   lang?: string;
 }
 
+/** The language of the `[deleted]` placeholder a tombstone carries. */
+const TOMBSTONE_LANG: Locale = 'en';
+
 export function toPostDTO(post: PostRow, ctx: PostDTOContext): PostDTO {
   const translated = ctx.translatedText;
   // A deleted post reaches this function through exactly one path: it is the
-  // ORIGINAL of somebody's echo. `hydratePosts` and `getPostForViewer` load
-  // those without an `active` filter on purpose, so the echo card keeps its
-  // attribution — but with no tombstone here, they kept its body and media
-  // too, forever, for viewers who had never seen it. Same branch
+  // ORIGINAL of somebody's echo. `hydratePosts` (which `getPostForViewer` now
+  // delegates to) loads echo originals as `active` OR `deleted` on purpose, so
+  // the echo card keeps its attribution — but with no tombstone here, it kept
+  // its body and media too, forever, for viewers who had never seen it. Same branch
   // `toCommentDTO` below already carries. The media is doubly wrong: S3
   // deletes those objects, so the URLs are dead links as well.
   const isDeleted = post.status === 'deleted';
@@ -131,7 +135,9 @@ export function toPostDTO(post: PostRow, ctx: PostDTOContext): PostDTO {
     ...(translated && !isDeleted
       ? { originalText: post.text, originalLang: ctx.originalLang }
       : {}),
-    lang: detectLang(post.text),
+    // A tombstone's lang is fixed: detecting it from the deleted body leaked
+    // one bit of that body (CJK or not) to every viewer of the echo card.
+    lang: isDeleted ? TOMBSTONE_LANG : detectLang(post.text),
     images: isDeleted
       ? []
       : (post.images ?? []).map((i) => ({
@@ -183,7 +189,7 @@ export function toCommentDTO(comment: CommentRow, ctx: CommentDTOContext): Comme
     author: toUserLiteDTO(ctx.author),
     text: isDeleted ? '[deleted]' : (translated ?? comment.text),
     ...(translated && !isDeleted ? { originalText: comment.text } : {}),
-    lang: detectLang(comment.text),
+    lang: isDeleted ? TOMBSTONE_LANG : detectLang(comment.text),
     likeCount: comment.likeCount,
     likedByMe: Boolean(ctx.likedByMe),
     createdAt: comment.createdAt.toISOString(),

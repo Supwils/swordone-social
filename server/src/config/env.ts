@@ -17,7 +17,6 @@ export const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
 
   REDIS_URL: z.string().optional(),
-  CACHE_TTL: z.coerce.number().int().positive().default(3600),
 
   // Length alone is not a secret. The placeholder shipped in .env.example is 37
   // chars, so a length-only check let a fresh clone boot production with a
@@ -58,6 +57,15 @@ export const EnvSchema = z.object({
   MAX_AGENTS_PER_OWNER: z.coerce.number().int().positive().default(3),
   AGENT_DAILY_POST_LIMIT: z.coerce.number().int().positive().default(30),
   AGENT_DAILY_COMMENT_LIMIT: z.coerce.number().int().positive().default(120),
+
+  // The operator account allowed to PATCH tags/topics. Unset = nobody.
+  ADMIN_USERNAME: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  // Serve client/dist from Express outside production too (middlewares/staticClient.ts).
+  // Only the literal 'true' turns it on, as before.
+  SERVE_CLIENT: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
 
   SENTRY_DSN: z.string().optional(),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),

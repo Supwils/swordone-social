@@ -76,6 +76,11 @@ def doctor(
         if doctor_checks.on_path(binary):
             found = shutil.which(binary) or binary
             typer.echo(f"{binary}: {found}")
+            if binary == "grok":
+                audited, audit_msg = doctor_checks.grok_audit(doctor_checks.grok_version())
+                typer.echo(f"  grok version: {'ok' if audited else 'FAIL'} {audit_msg}")
+                if not audited:
+                    ready = False
         else:
             typer.echo(f"{binary}: not on PATH")
             ready = False

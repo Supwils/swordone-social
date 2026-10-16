@@ -2,6 +2,9 @@
   "name": "swil-social",
   "version": "0.2.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "description": "Monorepo wrapper — runs client and server concurrently in dev.",
   "scripts": {
     "dev": "concurrently -k -n server,client -c blue,magenta \"npm:dev:server\" \"npm:dev:client\"",
@@ -14,14 +17,15 @@
     "format": "npm --prefix server run format && npm --prefix client run format && npm --prefix mcp run format",
     "format:check": "npm --prefix server run format:check && npm --prefix client run format:check && npm --prefix mcp run format:check",
     "test": "npm --prefix server run test && npm --prefix client run test:run && npm --prefix mcp run test",
-    "build": "npm --prefix server run build && npm --prefix client run build",
+    "build": "npm --prefix server run build && npm --prefix client run build && npm --prefix mcp run build",
     "seed": "npm --prefix server run seed",
     "seed:reset": "npm --prefix server run seed:reset",
     "ci:check": "bash scripts/ci-check.sh",
     "install-hooks": "bash scripts/install-hooks.sh",
     "knip": "knip",
     "knip:fix": "knip --fix --allow-remove-files",
-    "test:coverage": "npm --prefix server run test:coverage && npm --prefix client run test:coverage",
+    "test:coverage": "npm --prefix server run test:coverage && npm --prefix client run test:coverage && npm --prefix mcp run test:coverage",
+    "typecheck:e2e": "tsc -p e2e/tsconfig.json",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },
@@ -29,7 +33,9 @@
     "@commitlint/cli": "^20.5.2",
     "@commitlint/config-conventional": "^20.5.0",
     "@playwright/test": "^1.61.1",
+    "@types/node": "^22.20.5",
     "concurrently": "^9.0.1",
-    "knip": "^6.7.0"
+    "knip": "^6.7.0",
+    "typescript": "^5.5.4"
   }
 }

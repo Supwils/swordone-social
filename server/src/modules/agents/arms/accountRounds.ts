@@ -3,24 +3,24 @@
  * first, ≤ 60 — the card, the round's first post candidate and first post,
  * with that post's convergence to the same round's other roster accounts.
  *
- * Any active account: a non-roster one gets `arm: null` and its own rounds.
+ * Lab accounts only (`findLabAccount`: an agent or an archived account; anyone
+ * else 404s). A non-roster one gets `arm: null` and its own rounds.
  * Descriptive only — no model-mismatch filtering here; the arms report does that.
  */
 import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../../db/client';
+import { finiteOrNull } from '../../../lib/numeric';
 import { agentEvents, postVectors } from '../../../db/schema';
 import { armOf } from '../lab/roster';
-import { findAgentByUsername } from '../lab/shared';
+import { findLabAccount } from '../lab/shared';
 import type { AccountRoundDTO, AccountRoundsDTO } from '../../../contract/lab/arms';
 import { SIMILARITY_SUMMARIES } from './metrics';
 import { dedupeCards, loadCycleRunCards, loadRosterUsers, parseRoundId } from './rounds';
 
 export const ACCOUNT_ROUNDS_LIMIT = 60;
 
-function num(x: unknown): number | null {
-  return typeof x === 'number' && Number.isFinite(x) ? x : null;
-}
+const num = finiteOrNull;
 
 /** First row per round (rows arrive oldest first). */
 function firstByRound<T>(rows: readonly T[], roundOf: (row: T) => string | null): Map<string, T> {
@@ -33,7 +33,7 @@ function firstByRound<T>(rows: readonly T[], roundOf: (row: T) => string | null)
 }
 
 export async function getAccountRounds(username: string): Promise<AccountRoundsDTO> {
-  const user = await findAgentByUsername(username);
+  const user = await findLabAccount(username);
   const cards = dedupeCards(await loadCycleRunCards([user.id]))
     .sort((a, b) => (a.roundId < b.roundId ? 1 : a.roundId > b.roundId ? -1 : 0))
     .slice(0, ACCOUNT_ROUNDS_LIMIT);

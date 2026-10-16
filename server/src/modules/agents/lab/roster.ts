@@ -46,6 +46,9 @@ const ARM_ROWS: Readonly<Record<ArmId, Omit<Arm, 'id'>>> = {
 /** The arms in `ARM_IDS` order. */
 export const ARMS: readonly Arm[] = ARM_IDS.map((id) => ({ id, ...ARM_ROWS[id] }));
 
+/** Every roster username, in arm order. */
+export const ROSTER_USERNAMES: readonly string[] = ARMS.flatMap((a) => [...a.usernames]);
+
 /** Home board → its roster accounts (for cross-board homophily). */
 export const BOARDS: Readonly<Record<string, readonly string[]>> = {
   making: ['agen', 'xiangsu', 'zhenxian', 'dashu'],

@@ -56,7 +56,7 @@ The half of the project that is not a CRUD app.
 | [`06-security.md`](./06-security.md) | Security checklist and threat model. |
 | [`07-setup.md`](./07-setup.md) | Local dev setup; local → cloud DB switching. |
 | [`08-deployment.md`](./08-deployment.md) | Production deploy playbook — Railway (server) + Vercel (client) + Neon, env, smoke checks. Push does **not** auto-deploy; deploys are CLI-manual. |
-| [`09-contributing.md`](./09-contributing.md) | Branch, commit, PR conventions; the 17-step `ci:check`, the format / knip / mcp-lint gates, the e2e CI job. |
+| [`09-contributing.md`](./09-contributing.md) | Branch, commit, PR conventions; the 20-step `ci:check`, the format / knip / mcp-lint gates, the e2e CI job. |
 | [`11-decisions/`](./11-decisions/) | Architecture Decision Records (ADRs). |
 | [`13-feature-spec.md`](./13-feature-spec.md) | 全功能规格清单（中文）—— 每个功能的 UX 边界、字段、状态速查表。 |
 | [`14-bugs/`](./14-bugs/) | Bug Case Library — 真实 Bug 的发现、根因、修复与经验教训（含面试话术）。 |
@@ -97,7 +97,7 @@ When you change substantive content, bump `last-updated` and set `owner` to your
 
 ## CI
 
-`npm run ci:check` is the gate before any commit or push — **17 steps**, mirroring GitHub Actions: the API-contract sync check (`npm --prefix server run contract:check`), typecheck server + client, lint server + client, test server + client (with coverage thresholds), typecheck + lint `mcp/`, Prettier format check (server, client, mcp), test `mcp/`, build server + client, knip, then lint + typecheck + test `agent/` (pytest, coverage ≥ 97). It grew from 8 to 10 in Round 17 (MCP), 13 with the Python agent, 14 with the contract check (S4) and 17 in S5; older docs may still say "8-step" or "10-step". The Playwright suite (`npm run test:e2e`) is **not** part of `ci:check`, but CI runs it as its own `e2e` job.
+`npm run ci:check` is the gate before any commit or push — **20 steps**, mirroring GitHub Actions: the API-contract sync check (`npm --prefix server run contract:check`), typecheck server + client, lint server + client, test server + client (with coverage thresholds), typecheck + lint `mcp/`, Prettier format check (server, client, mcp), test `mcp/`, build server + client, knip, then lint + typecheck + test `agent/` (pytest, coverage ≥ 97). It grew from 8 to 10 in Round 17 (MCP), 13 with the Python agent, 14 with the contract check (S4) 17 in S5 and 20 in S6; older docs may still say "8-step" or "10-step". The Playwright suite (`npm run test:e2e`) is **not** part of `ci:check`, but CI runs it as its own `e2e` job.
 
 ## The report page and its generator
 

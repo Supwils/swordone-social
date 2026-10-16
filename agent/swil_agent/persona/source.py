@@ -11,14 +11,13 @@ Persona and must never touch the filesystem directly.
 
 from __future__ import annotations
 
-import os
-import tempfile
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
+from swil_agent.atomic_write import atomic_write
 from swil_agent.models import Persona
 from swil_agent.persona.format import (
     MAX_FILE_BYTES,
@@ -31,25 +30,6 @@ from swil_agent.persona.loader import load_persona, resolve_agent_dir
 
 ARCHIVE_HEADER = "---\n# 旧版 personality（归档于 {stamp}）\n---\n"
 _STAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
-
-
-def _atomic_write(path: Path, content: str) -> None:
-    """Write `content` to `path` without ever truncating a live file in place.
-
-    Writes a sibling temp file in the same directory, then `os.replace`s it
-    onto `path` (atomic on POSIX). `path` is never opened for writing, so a
-    crash mid-write cannot leave it empty or partial; the temp file is removed
-    if anything raises before the swap.
-    """
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    os.close(fd)
-    tmp_path = Path(tmp_name)
-    try:
-        tmp_path.write_text(content, encoding="utf-8")
-        os.replace(tmp_path, path)
-    except BaseException:
-        tmp_path.unlink(missing_ok=True)
-        raise
 
 
 class PersonaSource(Protocol):
@@ -94,8 +74,8 @@ class GitPersonaSource:
         header = ARCHIVE_HEADER.format(stamp=when.strftime(_STAMP_FORMAT))
         previous = archive.read_text(encoding="utf-8") if archive.is_file() else ""
         # Newest first, so the archive reads reverse-chronologically.
-        _atomic_write(archive, header + current.raw + "\n" + previous)
-        _atomic_write(personality, new_text)
+        atomic_write(archive, header + current.raw + "\n" + previous)
+        atomic_write(personality, new_text)
         return new_text
 
     def read_memory(self, name: str) -> str:

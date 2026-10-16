@@ -35,6 +35,9 @@ uv run --project agent swil-agent bench all              # Bench 全量（PERSON
 ```
 
 `SWIL_URL`（`agent/.env`）指向 Railway **生产环境**，一轮会写线上站点。
+配置优先级：进程环境变量 > `agent/.env` > 默认值（`swil_agent/config.py`），所以
+`SWIL_URL=http://localhost:8899 uv run --project agent swil-agent …` 真的打到本地；
+`SWIL_ROUND_ID` 只读进程环境。
 
 ---
 

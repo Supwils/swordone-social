@@ -7,8 +7,10 @@ one to build.
 
 **Precedence, highest first:**
 
-    kind:  --backend flag  >  personality.md `AI Backend:`  >  SWIL_LLM_BACKEND  >  claude
-    model: --model flag    >  personality.md `Model:`       >  SWIL_LLM_MODEL    >  backend default
+    kind:  --backend  >  `model:` before the ':'  >  SWIL_LLM_BACKEND  >  claude
+    model: --model    >  `model:` after the ':'   >  SWIL_LLM_MODEL    >  backend default
+
+(`model:` is the personality.md frontmatter line.)
 
 The persona file sitting ABOVE the environment is the load-bearing half. Each
 account's backend is the drift experiment's independent variable: an env var
@@ -18,12 +20,11 @@ series either side of that round would be two experiments wearing one name. So
 override -- and the explicit CLI flag, where the operator has named one
 account and one model in one command, is the only thing that outranks the file.
 
-That distinction needs "the file declares nothing" to be representable, which
-is why `Persona` carries `declared_backend` (the raw bullet, `None` when
-absent) beside `backend` (the same value defaulted to `"claude"`). Through
-2026-08-25 that was a live case for hodlge / lvchuang / zaofan; they now
-declare `codex`. The field stays, because a new account can still ship
-without the bullet.
+A v2 persona always declares its backend (`model:` is required frontmatter),
+so for a loaded account the env tier of `kind` is never reached; it still
+applies to a `Persona` built without one (`Persona.declared_backend` is
+`None`). The env tier of `model` does apply to a `model: <backend>` line with
+no ':'.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ ChoiceSource = Literal["flag", "persona", "env", "default"]
 
 DEFAULT_KIND: Final[BackendKind] = "claude_cli"
 
-# What a personality.md bullet or an env var may spell, and the kind it means.
+# What a `model:` backend half, a flag or an env var may spell, and the kind it means.
 # Both the short form the roster actually writes (`claude`) and the long form
 # the settings document (`claude_cli`) resolve to the same kind, so an operator
 # never has to remember which spelling a given surface wanted.
@@ -58,6 +59,10 @@ _KIND_ALIASES: Final[dict[str, BackendKind]] = {
     "grok_cli": "grok_cli",
     "api": "api",
 }
+
+# Every spelling a `model:` frontmatter backend, a flag or an env var may use.
+# `persona/validators.py` rejects any other at load time.
+KNOWN_BACKENDS: Final[frozenset[str]] = frozenset(_KIND_ALIASES)
 
 # The label half that goes on the wire, i.e. into `agentBackend`. It is NOT
 # the kind: the roster has recorded `claude` / `codex` / `deepseek` for the
@@ -152,15 +157,8 @@ class BackendChoice:
 
 
 def normalize_kind(raw: str) -> BackendKind | None:
-    """Map a spelling to a kind, or `None` if it is not one.
-
-    `None` rather than a raise: `mangniu`'s `AI Backend:` bullet says `haiku`,
-    which is a MODEL name in the backend slot. Every unrecognised name
-    goes to the claude CLI (the Bash runtime did the same), and this
-    runtime has always matched that (`build_backend`'s docstring). Turning it
-    into an error now would fail an account that has been running fine for
-    months; the caller warns instead.
-    """
+    """Map a spelling to a kind, or `None` if it is not one. Callers decide
+    what an unknown spelling means; `resolve_backend_choice` refuses it."""
     return _KIND_ALIASES.get(raw.strip().lower().replace("-", "_"))
 
 
@@ -179,7 +177,7 @@ def resolve_backend_choice(
     """
     warnings: list[str] = []
 
-    kind, kind_source = _resolve_kind(persona, settings, backend_override, warnings)
+    kind, kind_source = _resolve_kind(persona, settings, backend_override)
     model, model_source = _resolve_model(persona, settings, model_override)
 
     if kind == "cursor_cli" and model is None:
@@ -192,7 +190,7 @@ def resolve_backend_choice(
         # this.
         raise BackendConfigurationError(
             "the cursor backend requires an explicit model -- set SWIL_LLM_MODEL, "
-            "pass --model, or give the account a `- **Model:**` bullet "
+            "pass --model, or give the account a `model: <backend>:<model>` frontmatter line "
             "(`cursor-agent --list-models` shows the ids)"
         )
 
@@ -203,7 +201,7 @@ def resolve_backend_choice(
         # can move on a grok.com deploy.
         raise BackendConfigurationError(
             "the grok backend requires an explicit model -- set SWIL_LLM_MODEL, "
-            "pass --model, or give the account a `- **Model:**` bullet "
+            "pass --model, or give the account a `model: <backend>:<model>` frontmatter line "
             "(`grok models` shows the ids)"
         )
 
@@ -214,7 +212,7 @@ def resolve_backend_choice(
         if model is None:
             raise BackendConfigurationError(
                 "the api backend has no default model -- set SWIL_LLM_MODEL, pass "
-                "--model, or give the account a `- **Model:**` bullet"
+                "--model, or give the account a `model: <backend>:<model>` frontmatter line"
             )
         if settings.swil_llm_api_key is None:
             raise BackendConfigurationError(
@@ -237,7 +235,6 @@ def _resolve_kind(
     persona: Persona,
     settings: Settings,
     override: str | None,
-    warnings: list[str],
 ) -> tuple[BackendKind, ChoiceSource]:
     for raw, source in (
         (override, "flag"),
@@ -249,19 +246,20 @@ def _resolve_kind(
         kind = normalize_kind(raw)
         if kind is not None:
             return kind, source  # type: ignore[return-value]
-        if source == "flag":
-            # An operator who typed `--backend gork` gets told, not defaulted.
-            # The forgiving path below exists for the roster's own historical
-            # spellings, not for a typo made ten seconds ago.
-            raise BackendConfigurationError(
-                f"unknown backend {raw!r} -- expected one of "
-                f"{', '.join(sorted(set(_KIND_ALIASES)))}"
-            )
-        warnings.append(
-            f"{persona.username}: {source} declares backend {raw!r}, which is not a "
-            f"backend name -- falling back to {DEFAULT_KIND} (the claude default)"
+        # An unknown spelling is refused from every source. Defaulting it to
+        # claude would run an arm on the wrong model family while the round
+        # reported success -- the experiment's independent variable, lost
+        # silently. The loader already refuses one in `model:`
+        # (`persona/validators.py`); this is the same rule for a flag and env.
+        where = {
+            "flag": "--backend",
+            "persona": f"{persona.username}'s model:",
+            "env": "SWIL_LLM_BACKEND",
+        }[source]
+        raise BackendConfigurationError(
+            f"unknown backend {raw!r} ({where}) -- expected one of "
+            f"{', '.join(sorted(KNOWN_BACKENDS))}"
         )
-        return DEFAULT_KIND, source  # type: ignore[return-value]
     return DEFAULT_KIND, "default"
 
 
@@ -325,9 +323,9 @@ def apply_choice(persona: Persona, choice: BackendChoice) -> Persona:
         account moved off codex should stop carrying it, and one moved onto it
         should start.
 
-    `raw` is untouched, so the dream's structural validators still round-trip
-    the file's own `AI Backend` bullet (`persona/validators.py`) and a dream
-    can never write an overridden backend back into personality.md.
+    `raw` is untouched, so a dream rebuilds personality.md from the file's own
+    frontmatter (`model:` included) and can never write an overridden backend
+    back into it.
     """
     return persona.model_copy(update={"backend": choice.wire_name, "model": choice.model})
 
@@ -343,9 +341,8 @@ def cli_choice_for(persona: Persona) -> BackendChoice:
 
     Refuses an api persona rather than defaulting one. `persona.backend` for an
     api round is the PROVIDER's wire name (`xai`), which `normalize_kind` does
-    not recognise -- so the forgiving `*)`-style fallback that is correct for
-    `mangniu`'s `haiku` bullet would here silently route an xAI round to the
-    claude CLI. Loud is the only safe answer.
+    not recognise -- so a claude fallback would here silently route an xAI
+    round to the claude CLI. Loud is the only safe answer.
     """
     kind = normalize_kind(persona.backend)
     if kind == "api":

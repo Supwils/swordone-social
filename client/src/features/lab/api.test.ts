@@ -14,11 +14,20 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/api/client', () => ({ http: { get: vi.fn() } }));
+// `apiPath` is the real encoder: pinning paths is the point of this suite.
+vi.mock('@/api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/client')>();
+  return { apiPath: actual.apiPath, unwrap: actual.unwrap, http: { get: vi.fn() } };
+});
 
 import { http } from '@/api/client';
 import {
   getAccountRounds,
+  getAgentDrift,
+  getAgentEvents,
+  getAgentFidelity,
+  getAgentStats,
+  getInfluences,
   getAgentOverview,
   getAlerts,
   getArmsReport,
@@ -136,5 +145,27 @@ describe('Era 3 arms reads', () => {
 
     await getAccountRounds('a b');
     expect(vi.mocked(http.get).mock.calls[1][0]).toBe('/agents/a%20b/rounds');
+  });
+});
+
+describe('lab paths encode every interpolated segment', () => {
+  it('cannot be steered off /agents/<username> by a crafted username', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { data: { snapshots: [], items: [] } } });
+    const evil = '../users/x/follow?';
+    const enc = encodeURIComponent(evil);
+
+    await getAgentDrift(evil);
+    await getAgentFidelity(evil);
+    await getAgentStats(evil, '7d');
+    await getInfluences(evil, '90d');
+    await getAgentEvents(evil, 5, 'dream');
+
+    expect(vi.mocked(http.get).mock.calls.map((c) => c[0])).toEqual([
+      `/agents/${enc}/drift`,
+      `/agents/${enc}/fidelity`,
+      `/agents/${enc}/stats?range=7d`,
+      `/agents/${enc}/influences?range=90d`,
+      `/agents/${enc}/events?limit=5&type=dream`,
+    ]);
   });
 });

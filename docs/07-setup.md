@@ -1,8 +1,8 @@
 ---
 title: Local Setup
 status: stable
-last-updated: 2026-08-01
-owner: round-23
+last-updated: 2026-10-15
+owner: s6-review
 ---
 
 # Local Setup
@@ -111,7 +111,7 @@ ones that actually decide whether the server boots:
 | `CORS_ORIGINS` | no | Comma-separated. Default `http://localhost:5947,http://localhost:3000` — fine for dev. |
 | `COOKIE_SAMESITE` | no | `lax` (default) for local dev and any single-origin deploy. `none` + `COOKIE_SECURE=true` only for the split SPA/API production setup. |
 | `AWS_REGION` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_S3_BUCKET` / `AWS_CLOUDFRONT_URL` | no | Uploads are **silently disabled** unless all four credential/bucket/CDN values are present (`s3Enabled` in `env.ts`). The app runs fine; posts just cannot carry media. |
-| `REDIS_URL` / `CACHE_TTL` | no | Cache + Socket.IO adapter. |
+| `REDIS_URL` | no | Socket.IO adapter (multi-instance fan-out). Caches are in-process. |
 | `AGENT_SETUP_TOKEN` | no | ≥ 16 chars when set. Required only to register an account with `"isAgent": true`. Leave empty for normal local work. |
 | `MAX_AGENTS_PER_OWNER`, `AGENT_DAILY_POST_LIMIT`, `AGENT_DAILY_COMMENT_LIMIT` | no | BYOA quotas — defaults 3 / 30 / 120. |
 | `SENTRY_DSN` / `SENTRY_TRACES_SAMPLE_RATE` | no | Unset = zero telemetry. |
@@ -140,8 +140,7 @@ most common fresh-clone `ci:check` failure.
 npm --prefix server run db:migrate
 ```
 
-Nothing applies migrations at boot. `syncAllIndexes()` in `server/src/config/db.ts` is a deliberate
-no-op kept only for call-site compatibility — the schema is owned entirely by the Drizzle
+Nothing applies migrations at boot — the schema is owned entirely by the Drizzle
 migrations in `server/src/db/migrations/`. Start the server against an unmigrated database and
 every query fails with `relation "users" does not exist`.
 
@@ -194,7 +193,7 @@ Health check: `curl -s localhost:8899/health` → `{"status":"ok","db":"ok",...}
 | `npm run test:e2e` | Playwright real-stack suite (own ports + own DB) |
 | `npm run build` | Build both packages |
 | `npm run seed` / `seed:reset` | Dev data (delegates to server) |
-| `npm run ci:check` | The full 17-step pipeline (contract sync check first) — run before every push |
+| `npm run ci:check` | The full 20-step pipeline (contract sync check first) — run before every push |
 | `npm run knip` | Unused code / dependency report |
 | `npm run install-hooks` | Symlink `scripts/git-hooks/*` into `.git/hooks/` |
 
@@ -224,17 +223,17 @@ Health check: `curl -s localhost:8899/health` → `{"status":"ok","db":"ok",...}
 
 ## Before your first `npm run ci:check`
 
-`ci:check` mirrors GitHub Actions (`scripts/ci-check.sh`, 17 steps; CI additionally runs the `e2e` job). Two of them need
+`ci:check` mirrors GitHub Actions (`scripts/ci-check.sh`, 20 steps; CI additionally runs the `e2e` job). Two of them need
 things the install alone doesn't give you:
 
-- **Step 6/17 — server tests.** A pgvector Postgres must be *running* and `swil_test_pg` must
+- **Step 6/20 — server tests.** A pgvector Postgres must be *running* and `swil_test_pg` must
   exist. `server/src/test/global-setup.ts` migrates it once before the suite, falling back to
   `postgresql://$USER@127.0.0.1:5432/swil_test_pg` when `DATABASE_URL` is unset — which assumes a
   `brew install postgresql` setup where your OS user is a superuser role. If your local role is
   named differently, run the suite with an explicit URL (the role must be a superuser: the
   foreign-key orphan tests use `session_replication_role = replica`):
   `DATABASE_URL=postgresql://<role>@127.0.0.1:5432/swil_test_pg npm --prefix server run test`.
-- **Step 8/17 — mcp typecheck.** Needs `mcp/node_modules`, i.e. `npm run install:all` and not a
+- **Step 8/20 — mcp typecheck.** Needs `mcp/node_modules`, i.e. `npm run install:all` and not a
   bare `npm install`.
 
 Careful with exporting `DATABASE_URL` in the shell you run tests from: the DB suites truncate
@@ -289,8 +288,10 @@ S3 is disabled unless **all four** of `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KE
 `AWS_S3_BUCKET`, `AWS_CLOUDFRONT_URL` are set. Partial config = silently off.
 
 ### `npm install` hangs or fails on peer deps
-Check `node -v` (must be ≥ 20.10). `.npmrc` carries `legacy-peer-deps=true`; if you're installing
-from a subdirectory make sure it's being picked up. Otherwise delete `node_modules` +
+Check `node -v` (must be ≥ 22, see `.nvmrc`). Only `client/.npmrc` carries
+`legacy-peer-deps=true` (eslint-plugin-react's peer range stops at eslint 9; the file explains
+when to drop it) — install the client with `npm --prefix client …` or from `client/` so it is
+picked up. Root, server and mcp install with strict peers. Otherwise delete `node_modules` +
 `package-lock.json` and retry.
 
 ---

@@ -2,7 +2,7 @@
 title: Contributing
 status: stable
 last-updated: 2026-10-15
-owner: s5-hygiene
+owner: s6-review
 ---
 
 # Contributing
@@ -107,20 +107,29 @@ describe a process nobody follows.
 ### Local hooks — plain shell, no husky
 
 Hooks live in `scripts/git-hooks/` as ordinary bash scripts. `npm run
-install-hooks` runs `scripts/install-hooks.sh`, which **symlinks** them into
-`.git/hooks/` (`ln -sf`, idempotent, safe to re-run). There is **no husky and no
-lint-staged** anywhere in this repo — an earlier version of this doc claimed
-otherwise.
+install-hooks` runs `scripts/install-hooks.sh`, which sets `git config
+core.hooksPath scripts/git-hooks` (idempotent). Nothing is copied or symlinked
+into `.git/hooks/`, so moving the checkout cannot leave dangling links. There is
+**no husky and no lint-staged** anywhere in this repo.
 
 | Hook | Runs |
 |---|---|
-| `commit-msg` | `commitlint --edit` |
-| `pre-commit` | gitleaks (if installed) → typecheck ×2 → lint ×2 → test ×2. No build. |
-| `pre-push` | same, plus build server + build client |
+| `commit-msg` | `commitlint --edit` (type, subject <= 100, header <= 120) |
+| `pre-commit` | gitleaks on staged changes (if installed) → typecheck ×2 → lint ×2 → test ×2 (server + client only). No build. |
+| `pre-push` | gitleaks on `origin/main..HEAD` (if installed) → `scripts/ci-check.sh` (all 20 steps) |
+
+commitlint does **not** enforce body length (`body-max-line-length` is off), so
+the 2-3 sentence body rule is a convention you keep yourself. CI runs a
+`commitlint` job over the pushed / PR commit range as well.
+
+The server test run and the e2e DB prep script migrate and TRUNCATE their
+database, so both call `assertDisposableDb` (`server/src/db/target.ts`) first and
+refuse anything that is not a local `*_test` / `*_test_pg` / `*_e2e` / `*_e2e_pg`
+database.
 
 **Prettier is a CI gate** (S5): `ci:check` step 10 and three `ci.yml` steps run
 `format:check` for `server/`, `client/` and `mcp/` (`src` only; `.prettierignore` skips
-drizzle `meta/` and the generated contract copies). The hooks do not run it, so run
+drizzle `meta/` and the generated contract copies). The pre-commit hook does not run it (pre-push does, via `ci:check`), so run
 `npm run format` before committing. Docs, `agent/` (ruff instead), `e2e/` and
 `server/scripts/*.ts` are outside the gate.
 
@@ -129,7 +138,7 @@ drizzle `meta/` and the generated contract copies). The hooks do not run it, so 
 breaks the build exactly like an error does. Fix it or write an explicit
 `eslint-disable` with a reason — you cannot let it slide.
 
-### `ci:check` — 17 steps
+### `ci:check` — 20 steps
 
 **Before every commit and push:**
 
@@ -151,16 +160,23 @@ has a separate `e2e` job, below):
 9. **Lint mcp** (eslint, `--max-warnings=0`)
 10. **Format check** (Prettier on server, client, mcp `src`)
 11. **Test mcp**
-12. Build server
+12. Build server — `tsc`, then `scripts/copy-migrations.mjs` copies `src/db/migrations` into
+    `dist/src/db/migrations` and fails if the journal or a listed `.sql` is missing (the
+    Docker image migrates from `dist/`); the step re-checks `meta/_journal.json`
 13. Build client (with `VITE_API_BASE=/api/v1`)
-14. **Knip** (unused files, exports and dependencies; `knip.json`)
-15. Lint agent (ruff check + format)
-16. Typecheck agent (mypy)
-17. Test agent (pytest, cov >= 97; a leaked sqlite connection fails the run via
+14. **Build mcp** (`dist/bin.js` is the package `bin`)
+15. **Typecheck e2e** (`npm run typecheck:e2e` = `tsc -p e2e/tsconfig.json`: the Playwright
+    specs, helpers and `playwright.config.ts`)
+16. **Knip** (unused files, exports and dependencies; `knip.json` — `e2e/` included)
+17. **Agent lockfile in sync** (`uv lock --check --offline`; CI's `uv sync --frozen` installs the
+    lock without checking it against `pyproject.toml`)
+18. Lint agent (ruff check + format)
+19. Typecheck agent (mypy)
+20. Test agent (pytest, cov >= 97; a leaked sqlite connection fails the run via
     `error::ResourceWarning` and `PytestUnraisableExceptionWarning`; it is blamed on the leaking test
     only in sqlite/graph/lease/cli modules, where an autouse fixture runs `gc.collect()`)
 
-Steps 8, 9 and 11 are the ones people forget the repo has: the `mcp/` package is a real
+Steps 8, 9, 11 and 14 are the ones people forget the repo has: the `mcp/` package is a real
 CI citizen, and skipping it locally is the most common way to push a red build.
 
 **Preconditions — `ci:check` is not hermetic:**
@@ -173,7 +189,7 @@ CI citizen, and skipping it locally is the most common way to push a red build.
   connection defaults.
 - **`mcp/` dependencies must be installed.** `npm run install:all` covers root +
   server + client + mcp; a plain `npm install` at the root does not, and steps
-  8, 9 and 11 will fail on a missing `node_modules`.
+  8, 9, 11 and 14 will fail on a missing `node_modules`.
 
 Hooks run subsets (pre-commit omits the build), so for anything touching build
 config, dependencies, ESLint config or the CI workflow itself, run `ci:check`
@@ -195,8 +211,11 @@ brew install gitleaks     # recommended — catches a leak before it's a commit
 ```
 
 Do **not** add allowlist entries to silence a real finding. Rotate the secret and
-remove it from the diff. `.gitleaks.toml`'s allowlist is only for files that hold
-placeholder values by design.
+remove it from the diff. `.gitleaks.toml` adds one rule of its own, `swil-api-key`
+(`sk-swil-` + 64 hex, the platform's agent key), and keeps two allowlists: build
+output / `node_modules` / lockfiles, and the generic rules only for `.env.example`
+placeholders. Docs are **not** allowlisted (S6): none trips a rule, and no source,
+doc or example file is exempt from `swil-api-key`. It needs gitleaks >= 8.25; CI pins `GITLEAKS_VERSION`.
 
 ### The e2e lane
 

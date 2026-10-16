@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../db/client';
 import { resetDb } from '../../../test/db-reset';
-import { personalitySnapshots, populationMetrics, users } from '../../../db/schema';
+import {
+  behaviorSnapshots,
+  personalitySnapshots,
+  populationMetrics,
+  users,
+} from '../../../db/schema';
 import {
   clearHomogenizationCache,
+  clearOverviewCache,
   computeCohesion,
   getHomogenization,
   getOverview,
@@ -45,8 +51,20 @@ async function seedSnapshot(userId: string, embedding: number[], hash: string): 
   });
 }
 
+async function seedBehavior(userId: string, embedding: number[], hash: string): Promise<void> {
+  await db.insert(behaviorSnapshots).values({
+    userId,
+    capturedAt: new Date(),
+    contentHash: hash,
+    embedding,
+  });
+}
+
 describe('computeCohesion', () => {
-  beforeEach(resetDb);
+  beforeEach(async () => {
+    await resetDb();
+    clearOverviewCache();
+  });
 
   it('Era 3 covers roster accounts only — not archived users, not off-roster agents', async () => {
     const a = await seedAgent('agen', null);
@@ -81,13 +99,45 @@ describe('computeCohesion', () => {
 });
 
 describe('recordPopulationMetric', () => {
-  beforeEach(resetDb);
+  beforeEach(async () => {
+    await resetDb();
+    clearOverviewCache();
+  });
 
-  it('stores the sample as an Era 3 row computed over the roster', async () => {
+  it('stores no row from persona vectors alone: 2 persona + 0 behavior is a placeholder 1.0', async () => {
+    // Era 3 launch: every roster account has its anchor, none has a behavior
+    // snapshot yet. The guard used to read `n`, which falls back to the persona
+    // count, so this stored behaviorCohesion = 1 ("fully homogenised").
+    const a = await seedAgent('agen', null);
+    const b = await seedAgent('awen', null);
+    await seedSnapshot(a, vec(1, 0), 'h1');
+    await seedSnapshot(b, vec(0, 1), 'h2');
+
+    const point = await recordPopulationMetric();
+
+    expect(point.n).toBe(2); // the response still reports the live sample
+    expect(await db.select().from(populationMetrics)).toHaveLength(0);
+  });
+
+  it('stores no row from a single behavior vector', async () => {
     const a = await seedAgent('agen', null);
     const b = await seedAgent('awen', null);
     await seedSnapshot(a, vec(1, 0), 'h1');
     await seedSnapshot(b, vec(1, 0), 'h2');
+    await seedBehavior(a, vec(1, 0), 'b1');
+
+    await recordPopulationMetric();
+
+    expect(await db.select().from(populationMetrics)).toHaveLength(0);
+  });
+
+  it('stores an Era 3 row with n = 2 once two roster accounts have behavior vectors', async () => {
+    const a = await seedAgent('agen', null);
+    const b = await seedAgent('awen', null);
+    await seedSnapshot(a, vec(1, 0), 'h1');
+    await seedSnapshot(b, vec(1, 0), 'h2');
+    await seedBehavior(a, vec(1, 0), 'b1');
+    await seedBehavior(b, vec(0, 1), 'b2');
 
     const point = await recordPopulationMetric();
 
@@ -96,6 +146,7 @@ describe('recordPopulationMetric', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ era: 3, n: 2 });
     expect(rows[0].personaCohesion).toBeCloseTo(1, 5);
+    expect(rows[0].behaviorCohesion).toBeCloseTo(0, 5);
   });
 });
 
@@ -133,7 +184,23 @@ describe('getHomogenization era scoping', () => {
 });
 
 describe('getOverview era scoping', () => {
-  beforeEach(resetDb);
+  beforeEach(async () => {
+    await resetDb();
+    clearOverviewCache();
+  });
+
+  it('caches the overview per era for 60 s (it used to recompute on every request)', async () => {
+    await seedAgent('agen', null);
+    const first = await getOverview(3);
+    expect(first.cohorts.firstParty).toBe(1);
+
+    await seedAgent('awen', null);
+    expect(await getOverview(3)).toBe(first); // served from the cache
+    expect((await getOverview(2)).cohorts.firstParty).toBe(0); // its own key
+
+    clearOverviewCache();
+    expect((await getOverview(3)).cohorts.firstParty).toBe(2);
+  });
 
   it('Era 3 counts live first-party agents; Era 2 counts archived agents and humans', async () => {
     const [owner] = await db

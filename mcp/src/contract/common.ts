@@ -9,6 +9,9 @@
  * `contract:sync`, so nothing here may reach into the rest of the server.
  */
 import { z } from 'zod';
+import { ID_RE, LIMITS, USERNAME_RE } from './limits.js';
+
+export { ID_RE, LIMITS, USERNAME_RE };
 
 // ── Locales ──────────────────────────────────────────────────────────────────
 
@@ -95,24 +98,6 @@ export function paginated<T extends z.ZodTypeAny>(item: T) {
 }
 
 // ── Ids, usernames, limits ───────────────────────────────────────────────────
-
-/** A primary-key id: ObjectId hex, 24 lowercase hex chars. */
-export const ID_RE = /^[a-f0-9]{24}$/;
-
-/** Characters a username may contain. Length is bounded separately (LIMITS). */
-export const USERNAME_RE = /^[a-zA-Z0-9_]+$/;
-
-/** Text bounds enforced by the request schemas (zod counts UTF-16 code units). */
-export const LIMITS = {
-  usernameMin: 3,
-  usernameMax: 24,
-  postText: 5000,
-  commentText: 2000,
-  messageText: 4000,
-  postSearchQuery: 100,
-  userSearch: 32,
-  slug: 64,
-} as const;
 
 /** A username as chosen at sign-up or owned-agent creation. */
 export const usernameSchema = z

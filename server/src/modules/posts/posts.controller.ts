@@ -4,13 +4,13 @@ import { toPostDTO } from '../../lib/dto';
 import { AppError } from '../../lib/errors';
 import type { TranslationDTO } from '../../contract/posts';
 import { translateEnabled } from '../../config/env';
-import { translatePosts } from '../../lib/translate';
-import { autoTranslateOn, detectLang, resolveLang, type Locale } from '../../lib/lang';
+import { translatePosts, translatePostsForRead } from '../../lib/translate';
+import { detectLang, readTranslation, type Locale } from '../../lib/lang';
 import * as postsService from './posts.service';
 import type { SearchPostsQuery } from './posts.schemas';
+import { authed } from '../../middlewares/authed';
 
-export async function create(req: Request, res: Response) {
-  if (!req.user) throw AppError.unauthenticated();
+export const create = authed(async (req, res) => {
   const fields = (req.files ?? {}) as Record<string, Express.Multer.File[]>;
   const imageFiles = fields['images'] ?? [];
   const videoFile = fields['video']?.[0] ?? null;
@@ -19,14 +19,15 @@ export async function create(req: Request, res: Response) {
     req.body,
     imageFiles.map((f) => f.buffer),
     videoFile?.buffer ?? null,
+    videoFile?.mimetype,
   );
   return ok(res, { post: toPostDTO(post, ctx) }, 201);
-}
+});
 
 export async function getById(req: Request, res: Response) {
   const { post, ctx } = await postsService.getPostForViewer(req.params.id, req.user ?? null);
   const ctxById = new Map([[post.id, ctx]]);
-  await translatePosts([post], ctxById, resolveLang(req), { content: autoTranslateOn(req) });
+  await translatePostsForRead([post], ctxById, readTranslation(req));
   return ok(res, { post: toPostDTO(post, ctx) });
 }
 
@@ -51,31 +52,26 @@ export async function translation(req: Request, res: Response) {
   return ok(res, body satisfies TranslationDTO);
 }
 
-export async function update(req: Request, res: Response) {
-  if (!req.user) throw AppError.unauthenticated();
+export const update = authed(async (req, res) => {
   const { post, ctx } = await postsService.updatePost(req.params.id, req.user, req.body);
   return ok(res, { post: toPostDTO(post, ctx) });
-}
+});
 
-export async function remove(req: Request, res: Response) {
-  if (!req.user) throw AppError.unauthenticated();
+export const remove = authed(async (req, res) => {
   await postsService.deletePost(req.params.id, req.user);
   return noContent(res);
-}
+});
 
 export async function search(req: Request, res: Response) {
   const result = await postsService.searchPosts(
     req.query as unknown as SearchPostsQuery,
     req.user ?? null,
+    readTranslation(req),
   );
   return ok(res, result);
 }
 
 export async function showcase(req: Request, res: Response) {
-  const posts = await postsService.getShowcasePosts(
-    req.user ?? null,
-    resolveLang(req),
-    autoTranslateOn(req),
-  );
+  const posts = await postsService.getShowcasePosts(req.user ?? null, readTranslation(req));
   return ok(res, { posts });
 }

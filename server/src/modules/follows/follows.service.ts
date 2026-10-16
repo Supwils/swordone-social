@@ -1,8 +1,9 @@
-import { and, or, eq, lt, desc, inArray, ilike, sql } from 'drizzle-orm';
+import { and, or, eq, desc, inArray, ilike, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
+import { escapeLike } from '../../lib/sql';
 import { follows, users } from '../../db/schema';
 import { AppError } from '../../lib/errors';
-import { type Cursor, encodeCursor } from '../../lib/pagination';
+import { type Cursor, buildNextCursor, cursorConditionDesc } from '../../lib/pagination';
 import type { UserLiteDTO, UserRow } from '../../lib/dto';
 import { toUserLiteDTO } from '../../lib/dto';
 import { createNotification } from '../notifications/notifications.service';
@@ -74,11 +75,6 @@ export async function unfollow(follower: UserRow, targetUsername: string): Promi
 
 type Direction = 'following' | 'followers';
 
-/** Escape LIKE/ILIKE wildcards so user input can't inject `%` / `_` patterns. */
-function escapeLike(s: string): string {
-  return s.replace(/[\\%_]/g, '\\$&');
-}
-
 async function listEdges(
   username: string,
   direction: Direction,
@@ -123,25 +119,13 @@ async function listEdges(
 
   // Descending by createdAt, id breaking ties — cursor points at the last row
   // of the previous page; fetch rows strictly older.
-  const cursorCond = cursor
-    ? or(
-        lt(follows.createdAt, new Date(cursor.t)),
-        and(eq(follows.createdAt, new Date(cursor.t)), lt(follows.id, cursor.id)),
-      )
-    : undefined;
-
   const edges = await db
     .select({ id: follows.id, createdAt: follows.createdAt, peerId: peerCol })
     .from(follows)
-    .where(and(baseEdgeCond, cursorCond))
+    .where(and(baseEdgeCond, cursorConditionDesc(cursor, follows.createdAt, follows.id)))
     .orderBy(desc(follows.createdAt), desc(follows.id))
     .limit(limit + 1);
-
-  const hasMore = edges.length > limit;
-  const page = hasMore ? edges.slice(0, limit) : edges;
-  const last = page[page.length - 1];
-  const nextCursor =
-    hasMore && last ? encodeCursor({ t: last.createdAt.toISOString(), id: last.id }) : null;
+  const { items: page, nextCursor } = buildNextCursor(edges, limit);
 
   const peerIds = page.map((e) => e.peerId);
   const peerUsers = peerIds.length

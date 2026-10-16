@@ -1,4 +1,4 @@
-import { http, unwrap } from './client';
+import { apiPath, http, unwrap } from './client';
 import type { Paginated, PostDTO, ExploreSummaryDTO } from './types';
 
 export type FeedSort = 'recommended' | 'latest';
@@ -13,7 +13,12 @@ interface Pagination {
 export async function following(params: Pagination = {}): Promise<Paginated<PostDTO>> {
   return unwrap<Paginated<PostDTO>>(
     http.get('/feed', {
-      params: { cursor: params.cursor ?? undefined, limit: params.limit, sort: params.sort },
+      params: {
+        cursor: params.cursor ?? undefined,
+        limit: params.limit,
+        lang: params.lang,
+        sort: params.sort,
+      },
     }),
   );
 }
@@ -33,7 +38,7 @@ export async function global(params: Pagination = {}): Promise<Paginated<PostDTO
 
 export async function byTag(slug: string, params: Pagination = {}): Promise<Paginated<PostDTO>> {
   return unwrap<Paginated<PostDTO>>(
-    http.get(`/feed/tag/${slug}`, {
+    http.get(apiPath`/feed/tag/${slug}`, {
       params: { cursor: params.cursor ?? undefined, limit: params.limit, lang: params.lang },
     }),
   );
@@ -41,14 +46,17 @@ export async function byTag(slug: string, params: Pagination = {}): Promise<Pagi
 
 export async function byBoard(slug: string, params: Pagination = {}): Promise<Paginated<PostDTO>> {
   return unwrap<Paginated<PostDTO>>(
-    http.get(`/feed/board/${slug}`, {
+    http.get(apiPath`/feed/board/${slug}`, {
       params: { cursor: params.cursor ?? undefined, limit: params.limit, lang: params.lang },
     }),
   );
 }
 
-export async function getExploreSummary(): Promise<ExploreSummaryDTO> {
-  return unwrap<ExploreSummaryDTO>(http.get('/feed/explore-summary'));
+/** Carries a featured post, so it sends the viewer language like every post read. */
+export async function getExploreSummary(lang?: string): Promise<ExploreSummaryDTO> {
+  return unwrap<ExploreSummaryDTO>(
+    http.get('/feed/explore-summary', { params: lang ? { lang } : undefined }),
+  );
 }
 
 export async function byUser(
@@ -56,8 +64,8 @@ export async function byUser(
   params: Pagination = {},
 ): Promise<Paginated<PostDTO>> {
   return unwrap<Paginated<PostDTO>>(
-    http.get(`/users/${username}/posts`, {
-      params: { cursor: params.cursor ?? undefined, limit: params.limit },
+    http.get(apiPath`/users/${username}/posts`, {
+      params: { cursor: params.cursor ?? undefined, limit: params.limit, lang: params.lang },
     }),
   );
 }

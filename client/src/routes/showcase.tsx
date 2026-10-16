@@ -3,116 +3,27 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Heart, ChatCircle, X, Globe } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
 import { useUI } from '@/stores/ui.store';
 import * as postsApi from '@/api/posts.api';
 import * as commentsApi from '@/api/comments.api';
+import { qk } from '@/api/queryKeys';
+import { useSetLanguage } from '@/lib/useSetLanguage';
 import type { PostDTO } from '@/api/types';
 import { AccountBadge, Avatar, Spinner } from '@/components/primitives';
 import { Dialog } from '@/components/primitives/Dialog';
 import { MarkdownBody } from '@/features/posts/MarkdownBody';
+import { ImmersiveCard } from '@/features/posts/ImmersiveWall';
+import { formatRelative } from '@/lib/formatDate';
 import s from './showcase.module.css';
 import { usePageTitle } from '@/lib/usePageTitle';
 
-// Deterministic tilt + vertical shift per card — stable, never repeating in a visible pattern
-const CARD_TRANSFORMS = Array.from({ length: 24 }, (_, i) => {
-  const tilt = (((i * 137 + i * i * 3) % 130) - 65) / 10; // -6.5° to +6.5°
-  const dy = ((i * 37) % 24) - 12; // -12px to +12px
-  return { tilt, dy };
-});
-
-function relativeTime(iso: string, t: TFunction): string {
-  const s = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (s < 60) return t('showcase.justNow');
-  if (s < 3600) return t('showcase.minutesAgo', { n: Math.floor(s / 60) });
-  if (s < 86400) return t('showcase.hoursAgo', { n: Math.floor(s / 3600) });
-  return t('showcase.daysAgo', { n: Math.floor(s / 86400) });
-}
-
-function ShowcaseCard({
-  post,
-  index,
-  onClick,
-}: {
-  post: PostDTO;
-  index: number;
-  onClick: () => void;
-}) {
-  const { t } = useTranslation();
-  const { tilt, dy } = CARD_TRANSFORMS[index % CARD_TRANSFORMS.length];
-  const excerpt = post.text
-    .replace(/#+\s|[*`>]/g, '')
-    .replace(/\n+/g, ' ')
-    .trim();
-
-  return (
-    <button
-      type="button"
-      className={s.card}
-      style={
-        {
-          '--tilt': `${tilt}deg`,
-          '--dy': `${dy}px`,
-          '--i': String(index),
-        } as React.CSSProperties
-      }
-      onClick={onClick}
-      aria-label={t('showcase.postAriaLabel', {
-        name: post.author.displayName || post.author.username,
-      })}
-    >
-      <div className={s.cardHeader}>
-        <Avatar
-          src={post.author.avatarUrl}
-          name={post.author.displayName || post.author.username}
-          size="sm"
-          alt=""
-        />
-        <div className={s.cardAuthor}>
-          <span className={s.cardName}>{post.author.displayName || post.author.username}</span>
-          {(post.author.isAgent || post.author.archivedAt) && (
-            <AccountBadge
-              isAgent={post.author.isAgent}
-              agentBackend={post.author.agentBackend}
-              archivedAt={post.author.archivedAt}
-            />
-          )}
-        </div>
-        <span className={s.cardTime}>{relativeTime(post.createdAt, t)}</span>
-      </div>
-
-      {post.images.length > 0 && (
-        <div className={s.cardImage}>
-          <img src={post.images[0].url} alt="" loading="lazy" />
-        </div>
-      )}
-
-      <p className={s.cardText}>
-        {excerpt.slice(0, 160)}
-        {excerpt.length > 160 ? '…' : ''}
-      </p>
-
-      <div className={s.cardFooter}>
-        <span className={s.cardStat}>
-          <Heart size={11} />
-          {post.likeCount}
-        </span>
-        <span className={s.cardStat}>
-          <ChatCircle size={11} />
-          {post.commentCount}
-        </span>
-        {post.tags.length > 0 && <span className={s.cardTag}>#{post.tags[0].display}</span>}
-      </div>
-    </button>
-  );
-}
-
 function PostPreviewModal({ post, onClose }: { post: PostDTO | null; onClose: () => void }) {
   const { t } = useTranslation();
+  const language = useUI((st) => st.language);
 
   const commentsQuery = useQuery({
-    queryKey: ['showcase-comments', post?.id],
-    queryFn: () => commentsApi.listForPost(post!.id, { limit: 5 }),
+    queryKey: qk.showcase.comments(post?.id ?? '', language),
+    queryFn: () => commentsApi.listForPost(post!.id, { limit: 5, lang: language }),
     enabled: !!post,
     staleTime: 60_000,
   });
@@ -155,7 +66,7 @@ function PostPreviewModal({ post, onClose }: { post: PostDTO | null; onClose: ()
               </span>
               <span className={s.modalHandle}>@{post.author.username}</span>
             </div>
-            <time className={s.modalTime}>{relativeTime(post.createdAt, t)}</time>
+            <time className={s.modalTime}>{formatRelative(post.createdAt)}</time>
           </div>
 
           <div className={s.modalBody}>
@@ -215,7 +126,7 @@ function PostPreviewModal({ post, onClose }: { post: PostDTO | null; onClose: ()
 function LangToggle() {
   const { t } = useTranslation();
   const language = useUI((st) => st.language);
-  const setLanguage = useUI((st) => st.setLanguage);
+  const setLanguage = useSetLanguage();
   const next = language === 'zh' ? 'en' : 'zh';
   const label = language === 'zh' ? 'EN' : '中文';
 
@@ -223,7 +134,7 @@ function LangToggle() {
     <button
       type="button"
       className={s.langToggle}
-      onClick={() => setLanguage(next)}
+      onClick={() => void setLanguage(next)}
       aria-label={t('settings.appearance.language')}
       title={t('settings.appearance.language')}
     >
@@ -240,7 +151,7 @@ export default function ShowcaseRoute() {
   const [selectedPost, setSelectedPost] = useState<PostDTO | null>(null);
 
   const { data: posts, isLoading } = useQuery({
-    queryKey: ['showcase', language],
+    queryKey: qk.showcase.list(language),
     queryFn: () => postsApi.getShowcase(language),
     staleTime: 5 * 60_000,
   });
@@ -270,7 +181,7 @@ export default function ShowcaseRoute() {
           </div>
         )}
         {posts?.map((post, i) => (
-          <ShowcaseCard key={post.id} post={post} index={i} onClick={() => setSelectedPost(post)} />
+          <ImmersiveCard key={post.id} post={post} index={i} onOpen={() => setSelectedPost(post)} />
         ))}
       </main>
 

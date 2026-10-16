@@ -1,9 +1,9 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { posts, comments, tags } from '../db/schema';
 import { env } from '../config/env';
 import type { PostRow, CommentRow, TagRow, PostDTOContext, CommentDTOContext } from './dto';
-import { detectLang } from './lang';
+import { detectLang, type ReadTranslation } from './lang';
 
 export interface TranslateOptions {
   /** false → leave bodies alone (auto-translate off) but still localize tags. */
@@ -19,6 +19,23 @@ const TRANSLATE_TIMEOUT_MS = 4_000;
  *  snapshot lets two concurrent readers (en + zh) overwrite each other's key. */
 function mergeTranslation(lang: string, text: string) {
   return sql`coalesce(${sql.raw('translations')}, '{}'::jsonb) || ${JSON.stringify({ [lang]: text })}::jsonb`;
+}
+
+/** Cache writes in flight. Fire-and-forget for the response; tracked so a test can wait them out. */
+const pendingCacheWrites = new Set<Promise<unknown>>();
+
+function persistInBackground(updates: Array<Promise<unknown>>): void {
+  if (updates.length === 0) return;
+  // Persisting the cache must never block the response, nor fail it.
+  const job: Promise<unknown> = Promise.all(updates)
+    .catch(() => undefined)
+    .finally(() => pendingCacheWrites.delete(job));
+  pendingCacheWrites.add(job);
+}
+
+/** Test hook: resolves once every cache write started so far has settled. */
+export async function settleTranslationCacheWrites(): Promise<void> {
+  await Promise.all(Array.from(pendingCacheWrites));
 }
 
 function hasChinese(text: string): boolean {
@@ -96,19 +113,24 @@ export async function translatePosts(
             ctx.translatedText = translatedText;
             ctx.originalLang = detectLang(post.text);
           }
+          // Mutate in memory too (as `translateTags` does): a row held in a
+          // cache — the explore summary's featured post — then serves the
+          // translation from `translations` on the next request instead of
+          // paying Translate again until the cache expires.
+          post.translations = { ...(post.translations ?? {}), [targetLang]: translatedText };
+          // `AND text = <source>`: an edit that lands while the provider is
+          // answering clears `translations` and changes `text`; without the
+          // guard this write would put the OLD body's translation back.
           updates.push(
             db
               .update(posts)
               .set({ translations: mergeTranslation(targetLang, translatedText) })
-              .where(eq(posts.id, post.id)),
+              .where(and(eq(posts.id, post.id), eq(posts.text, post.text))),
           );
         }
       }
 
-      if (updates.length > 0) {
-        // Fire-and-forget — persisting the cache must never block the response.
-        Promise.all(updates).catch(() => undefined);
-      }
+      persistInBackground(updates);
     } catch {
       // Translation API failed — originals will be used
     }
@@ -132,6 +154,24 @@ export async function translatePosts(
   for (const ctx of ctxById.values()) {
     ctx.lang = targetLang;
   }
+}
+
+/** `translatePosts` for a read: a null translation (first-party agent) leaves originals. */
+export async function translatePostsForRead(
+  postList: PostRow[],
+  ctxById: Map<string, PostDTOContext>,
+  t: ReadTranslation | null | undefined,
+): Promise<void> {
+  if (t) await translatePosts(postList, ctxById, t.lang, { content: t.content });
+}
+
+/** `translateComments` for a read: a null translation (first-party agent) leaves originals. */
+export async function translateCommentsForRead(
+  commentList: CommentRow[],
+  ctxByCommentId: Map<string, CommentDTOContext>,
+  t: ReadTranslation | null | undefined,
+): Promise<void> {
+  if (t) await translateComments(commentList, ctxByCommentId, t.lang, { content: t.content });
 }
 
 export async function translateComments(
@@ -177,19 +217,17 @@ export async function translateComments(
       if (translatedText && translatedText !== comment.text) {
         const ctx = ctxByCommentId.get(comment.id);
         if (ctx) ctx.translatedText = translatedText;
+        // Same edit race as posts: only cache against the body that was translated.
         updates.push(
           db
             .update(comments)
             .set({ translations: mergeTranslation(targetLang, translatedText) })
-            .where(eq(comments.id, comment.id)),
+            .where(and(eq(comments.id, comment.id), eq(comments.text, comment.text))),
         );
       }
     }
 
-    if (updates.length > 0) {
-      // Fire-and-forget — persisting the cache must never block the response.
-      Promise.all(updates).catch(() => undefined);
-    }
+    persistInBackground(updates);
   } catch {
     // Translation API failed
   }
@@ -233,10 +271,7 @@ export async function translateTags(tagList: TagRow[], targetLang: string): Prom
       }
     }
 
-    if (updates.length > 0) {
-      // Fire-and-forget — persisting the cache must never block the response.
-      Promise.all(updates).catch(() => undefined);
-    }
+    persistInBackground(updates);
   } catch {
     // Translation API failed
   }

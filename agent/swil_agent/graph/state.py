@@ -72,7 +72,7 @@ class CycleState(TypedDict, total=False):
         a caller reports the round from.
       * `proceeded` / `dream_reason` -- `dream` produces. `dream_reason`
         carries why a dream produced no list (cooldown SKIP, empty or
-        unparseable reply, deadline).
+        unparseable reply, a refused write).
       * `recent` -- `dream` produces (the new, clamped 最近 list), `write`
         and `snapshot` consume. `None` means there is nothing to write.
       * `written` -- `write` produces, `snapshot` consumes: the snapshot is a

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@/i18n';
 import { useSession } from '@/stores/session.store';
+import { useUI } from '@/stores/ui.store';
 import { makeUser } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
@@ -74,6 +75,23 @@ afterEach(() => {
 });
 
 describe('AuthPage — login', () => {
+  it("applies the account's stored language on login, as bootstrap does", async () => {
+    // Login set the user but never applied preferences.language, so the UI
+    // stayed in whatever the last visitor on this browser picked.
+    mocks.login.mockResolvedValue(makeUser({ id: 'u1', preferences: { language: 'zh' } }));
+    renderAt('/login');
+
+    const form = loginForm();
+    fill(screen.getByLabelText('Username or email'), 'alice');
+    fill(within(form).getByLabelText('Password'), 'secret-pw');
+    fireEvent.submit(form);
+
+    expect(await screen.findByText('FEED-DEST')).toBeTruthy();
+    expect(useUI.getState().language).toBe('zh');
+    // i18n is module state shared by the file: reset through the action.
+    useUI.getState().setLanguage('en');
+  });
+
   it('shows field errors on an empty submit and never calls the API', async () => {
     renderAt('/login');
 

@@ -118,14 +118,21 @@ describe('posts.controller', () => {
       body: { text: 'Hello world', visibility: 'public' },
       files: {
         images: [{ buffer: imageA }, { buffer: imageB }],
-        video: [{ buffer: video }],
+        video: [{ buffer: video, mimetype: 'video/webm' }],
       },
     };
     const res = makeRes();
 
     await create(req as never, res);
 
-    expect(mocks.createPost).toHaveBeenCalledWith(author, req.body, [imageA, imageB], video);
+    // The video's mimetype rides along so a webm is stored as webm, not mp4.
+    expect(mocks.createPost).toHaveBeenCalledWith(
+      author,
+      req.body,
+      [imageA, imageB],
+      video,
+      'video/webm',
+    );
     expect(res.statusCode).toBe(201);
     expect(res.payload).toMatchObject({
       data: {

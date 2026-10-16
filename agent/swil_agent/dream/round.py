@@ -10,7 +10,8 @@ Locking: `write_recent` takes no lock of its own. Every write here must run
 under `dream_lock_<name>`: `graph/run.py`'s `run_graph` holds that path as a
 `RunLease` for the whole `dream` or `cycle` run.
 
-Lab events never change what a step returns (`_emit`).
+Lab events never change what a step returns: `Resources.lab_event` never
+raises, and logs a WARNING when the server refuses one.
 """
 
 from __future__ import annotations
@@ -59,21 +60,6 @@ UNPARSEABLE_REASON: Final = "unparseable dream output"
 
 class Embedder(Protocol):
     def embed(self, texts: list[str]) -> list[list[float]]: ...
-
-
-def _emit(resources: Resources, username: str, event: LabEvent) -> None:
-    """Best-effort observability write: an events outage never changes the
-    dream's outcome."""
-    try:
-        resources.lab_event(username, event)
-    except Exception:
-        logger.debug(
-            "lab event failed for %s (%s/%s/%s): outcome unaffected",
-            username,
-            event.type,
-            event.phase,
-            event.outcome,
-        )
 
 
 def _dream_event(outcome: str, summary: str) -> LabEvent:
@@ -165,7 +151,7 @@ class DreamStep(NamedTuple):
 
 def _fail(resources: Resources, persona: Persona, reason: str) -> DreamStep:
     logger.warning("FAIL %s — %s", persona.directory.name, reason)
-    _emit(resources, persona.username, _dream_event("fail", reason))
+    resources.lab_event(persona.username, _dream_event("fail", reason))
     return DreamStep(recent=None, failure_reason=reason)
 
 
@@ -182,7 +168,7 @@ def dream_step(
     usable list, or one whose items are all blank is a `dream`/`fail` event
     and no list.
     """
-    _emit(resources, persona.username, _dream_event("started", "dream started"))
+    resources.lab_event(persona.username, _dream_event("started", "dream started"))
     memory_tail = "\n".join(memory_text.splitlines()[-_MEMORY_TAIL_LINES:])
     request = build_dream_prompt(
         persona, memory_tail=memory_tail, group_memory=_group_memory(resources)
@@ -235,14 +221,14 @@ def write_step(
     except PersonaFormatError as exc:
         reason = str(exc)
         logger.warning("FAIL %s — %s; keeping original", name, reason)
-        _emit(
-            resources, persona.username, _dream_event("fail", cap_utf16(reason, SUMMARY_MAX_UNITS))
+        resources.lab_event(
+            persona.username, _dream_event("fail", cap_utf16(reason, SUMMARY_MAX_UNITS))
         )
         return WriteStep(written=False, reason=reason)
     state.record_dream(name, at=int(now.timestamp()))
     persona_source.append_memory(name, f"{now:%Y-%m-%d} | {DREAM_MEMORY_NOTE}")
     logger.info("DONE %s dreamed — 最近 updated (old → personality.archive.md)", name)
-    _emit(resources, persona.username, _dream_event("success", "personality updated"))
+    resources.lab_event(persona.username, _dream_event("success", "personality updated"))
     return WriteStep(written=True)
 
 
@@ -288,8 +274,7 @@ def snapshot_step(
     except (EmbedderUnavailable, WriteNotVerifiedError, ApiError) as exc:
         reason = str(exc)
         logger.warning("WARN %s — snapshot upload failed: %s", name, reason)
-        _emit(
-            resources,
+        resources.lab_event(
             persona.username,
             LabEvent(
                 type="snapshot",
@@ -304,8 +289,7 @@ def snapshot_step(
         return SnapshotStep(ok=False, reason=reason)
 
     logger.info("%s — snapshot uploaded", name)
-    _emit(
-        resources,
+    resources.lab_event(
         persona.username,
         LabEvent(type="snapshot", phase="snapshot", outcome="success", summary="snapshot uploaded"),
     )

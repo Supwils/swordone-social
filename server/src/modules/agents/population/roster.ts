@@ -15,7 +15,14 @@ import {
   posts,
   users,
 } from '../../../db/schema';
-import { countByDay, dayBuckets, findAgentByUsername, isoDay, splitByAgent } from '../lab/shared';
+import {
+  countByDay,
+  findLabAccount,
+  likeOnPublicTarget,
+  onPublicPost,
+  splitByAgent,
+} from '../lab/shared';
+import { accountWindow, labWindow, windowDayKeys } from '../lab/window';
 import type {
   AgentStatsDTO,
   AgentSummaryDTO,
@@ -40,7 +47,9 @@ export async function listAgents(limit = 50, era: LabEra = 3): Promise<AgentSumm
   if (rows.length === 0) return [];
 
   const userIds = rows.map((u) => u.id);
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  // "Last 7d" is the lab's 7d window: seven UTC days ending today, or ending at
+  // the seal for Era 2, so a sealed roster does not read zero forever.
+  const { since: sevenDaysAgo } = await labWindow('7d', era);
 
   const [postCountRows, snapRows, behRows] = await Promise.all([
     db
@@ -64,12 +73,20 @@ export async function listAgents(limit = 50, era: LabEra = 3): Promise<AgentSumm
       .from(personalitySnapshots)
       .where(inArray(personalitySnapshots.userId, userIds))
       .orderBy(asc(personalitySnapshots.capturedAt)),
-    // Latest persona fidelity per account (stated self vs revealed behavior).
+    // Latest persona fidelity per account (stated self vs revealed behavior),
+    // one row per account.
     db
-      .select({ userId: behaviorSnapshots.userId, fidelity: behaviorSnapshots.fidelity })
+      .selectDistinctOn([behaviorSnapshots.userId], {
+        userId: behaviorSnapshots.userId,
+        fidelity: behaviorSnapshots.fidelity,
+      })
       .from(behaviorSnapshots)
       .where(inArray(behaviorSnapshots.userId, userIds))
-      .orderBy(asc(behaviorSnapshots.capturedAt)),
+      .orderBy(
+        behaviorSnapshots.userId,
+        desc(behaviorSnapshots.capturedAt),
+        desc(behaviorSnapshots.id),
+      ),
   ]);
 
   const postCountById = new Map<string, number>();
@@ -108,6 +125,10 @@ export async function listAgents(limit = 50, era: LabEra = 3): Promise<AgentSumm
       displayName: u.displayName,
       headline: u.headline,
       avatarUrl: u.avatarUrl ?? null,
+      // Deliberately NOT publicAgentBackend: the lab roster is the public
+      // analysis surface and shows a sealed Era 2 simulated human's stored
+      // backend (the model tier is the variable under study). Platform DTOs
+      // withhold it. Decision: docs/13-observation-lab.md, 2026-10-15 entry.
       ...(u.agentBackend ? { agentBackend: u.agentBackend } : {}),
       isAgent: Boolean(u.isAgent),
       archivedAt: u.archivedAt ? u.archivedAt.toISOString() : null,
@@ -127,18 +148,39 @@ export async function listAgents(limit = 50, era: LabEra = 3): Promise<AgentSumm
 /* ---------- stats ---------- */
 
 export async function getAgentStats(username: string, range: LabRange): Promise<AgentStatsDTO> {
-  const agent = await findAgentByUsername(username);
-  const { since } = dayBuckets(range);
+  const agent = await findLabAccount(username);
+  const window = accountWindow(range, agent);
+  const { since } = window;
   const agentId = agent.id;
 
-  // Cadence: count posts/comments/likes-given per UTC day from `since` to today.
-  const [postDates, commentDates, likeDates] = await Promise.all([
+  // The agent's own posts, as a join target: public and live only, here and
+  // below — this read is public, so it counts nothing a visitor could not
+  // already see on the platform.
+  const ownPublicPost = and(
+    eq(posts.authorId, agentId),
+    eq(posts.status, 'active'),
+    eq(posts.visibility, 'public'),
+  );
+  const actor = {
+    username: users.username,
+    displayName: users.displayName,
+    isAgent: users.isAgent,
+  };
+
+  const [
+    postDates,
+    commentDates,
+    likeDates,
+    likesInRows,
+    commentsInRows,
+    givenCommentRows,
+    likesGivenRows,
+  ] = await Promise.all([
+    // Cadence: posts/comments/likes-given per UTC day of the window.
     db
       .select({ createdAt: posts.createdAt })
       .from(posts)
-      .where(
-        and(eq(posts.authorId, agentId), eq(posts.status, 'active'), gte(posts.createdAt, since)),
-      ),
+      .where(and(ownPublicPost, gte(posts.createdAt, since))),
     db
       .select({ createdAt: comments.createdAt })
       .from(comments)
@@ -147,180 +189,102 @@ export async function getAgentStats(username: string, range: LabRange): Promise<
           eq(comments.authorId, agentId),
           eq(comments.status, 'active'),
           gte(comments.createdAt, since),
+          onPublicPost(comments.postId),
         ),
       ),
     db
       .select({ createdAt: likes.createdAt })
       .from(likes)
-      .where(and(eq(likes.userId, agentId), gte(likes.createdAt, since))),
+      .where(and(eq(likes.userId, agentId), gte(likes.createdAt, since), likeOnPublicTarget())),
+    // Engagement received, ONE query per kind: every like / comment on the
+    // agent's public posts, with its actor. The AI/human split and the top
+    // interactors are both derived from these rows (they used to be two
+    // identical queries each, over an unbounded list of the agent's post ids).
+    db
+      .select(actor)
+      .from(likes)
+      .innerJoin(posts, eq(likes.targetId, posts.id))
+      .innerJoin(users, eq(likes.userId, users.id))
+      .where(and(eq(likes.targetType, 'post'), ownPublicPost, gte(likes.createdAt, since))),
+    db
+      .select(actor)
+      .from(comments)
+      .innerJoin(posts, eq(comments.postId, posts.id))
+      .innerJoin(users, eq(comments.authorId, users.id))
+      .where(
+        and(
+          ownPublicPost,
+          ne(comments.authorId, agentId),
+          eq(comments.status, 'active'),
+          gte(comments.createdAt, since),
+        ),
+      ),
+    // Comments the agent gave on OTHER people's posts, split by target-author isAgent.
+    db
+      .select({ isAgent: users.isAgent })
+      .from(comments)
+      .innerJoin(posts, eq(comments.postId, posts.id))
+      .innerJoin(users, eq(posts.authorId, users.id))
+      .where(
+        and(
+          eq(comments.authorId, agentId),
+          eq(comments.status, 'active'),
+          gte(comments.createdAt, since),
+          ne(posts.authorId, agentId),
+          eq(posts.status, 'active'),
+          eq(posts.visibility, 'public'),
+        ),
+      ),
+    // Likes given by the agent, split by target author.
+    db
+      .select({ isAgent: users.isAgent })
+      .from(likes)
+      .innerJoin(posts, eq(likes.targetId, posts.id))
+      .innerJoin(users, eq(posts.authorId, users.id))
+      .where(
+        and(
+          eq(likes.userId, agentId),
+          eq(likes.targetType, 'post'),
+          gte(likes.createdAt, since),
+          eq(posts.status, 'active'),
+          eq(posts.visibility, 'public'),
+        ),
+      ),
   ]);
 
   const postsByDay = countByDay(postDates);
   const commentsByDay = countByDay(commentDates);
   const likesByDay = countByDay(likeDates);
+  const cadence: CadencePointDTO[] = windowDayKeys(window).map((date) => ({
+    date,
+    posts: postsByDay.get(date) ?? 0,
+    comments: commentsByDay.get(date) ?? 0,
+    likesGiven: likesByDay.get(date) ?? 0,
+  }));
 
-  const byDay = new Map<string, CadencePointDTO>();
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  for (let d = new Date(since); d <= today; d.setUTCDate(d.getUTCDate() + 1)) {
-    const key = isoDay(d);
-    byDay.set(key, { date: key, posts: 0, comments: 0, likesGiven: 0 });
-  }
-  for (const [k, n] of postsByDay) {
-    const row = byDay.get(k);
-    if (row) row.posts = n;
-  }
-  for (const [k, n] of commentsByDay) {
-    const row = byDay.get(k);
-    if (row) row.comments = n;
-  }
-  for (const [k, n] of likesByDay) {
-    const row = byDay.get(k);
-    if (row) row.likesGiven = n;
-  }
-  const cadence = Array.from(byDay.values());
-
-  // Engagement received: likes + comments on the agent's posts, split by actor.isAgent.
-  // The join reads the actor's isAgent flag; JS reduces to an AI/human split.
-  const myPostRows = await db
-    .select({ id: posts.id })
-    .from(posts)
-    .where(and(eq(posts.authorId, agentId), eq(posts.status, 'active')));
-  const myPostIds = myPostRows.map((p) => p.id);
-
-  const recvLikesP: Promise<Array<{ isAgent: boolean }>> = myPostIds.length
-    ? db
-        .select({ isAgent: users.isAgent })
-        .from(likes)
-        .innerJoin(users, eq(likes.userId, users.id))
-        .where(
-          and(
-            eq(likes.targetType, 'post'),
-            inArray(likes.targetId, myPostIds),
-            gte(likes.createdAt, since),
-          ),
-        )
-    : Promise.resolve([]);
-  const recvCommentsP: Promise<Array<{ isAgent: boolean }>> = myPostIds.length
-    ? db
-        .select({ isAgent: users.isAgent })
-        .from(comments)
-        .innerJoin(users, eq(comments.authorId, users.id))
-        .where(
-          and(
-            inArray(comments.postId, myPostIds),
-            ne(comments.authorId, agentId),
-            eq(comments.status, 'active'),
-            gte(comments.createdAt, since),
-          ),
-        )
-    : Promise.resolve([]);
-  // Comments the agent gave on OTHER people's posts, split by target-author isAgent.
-  const givenCommentsP = db
-    .select({ isAgent: users.isAgent })
-    .from(comments)
-    .innerJoin(posts, eq(comments.postId, posts.id))
-    .innerJoin(users, eq(posts.authorId, users.id))
-    .where(
-      and(
-        eq(comments.authorId, agentId),
-        eq(comments.status, 'active'),
-        gte(comments.createdAt, since),
-        ne(posts.authorId, agentId),
-      ),
-    );
-  // Likes given by agent split by target author.
-  const likesGivenP = db
-    .select({ isAgent: users.isAgent })
-    .from(likes)
-    .innerJoin(posts, eq(likes.targetId, posts.id))
-    .innerJoin(users, eq(posts.authorId, users.id))
-    .where(
-      and(eq(likes.userId, agentId), eq(likes.targetType, 'post'), gte(likes.createdAt, since)),
-    );
-  // Top interactors: inbound likes + comments grouped by actor.
-  const topLikesP: Promise<Array<{ username: string; displayName: string; isAgent: boolean }>> =
-    myPostIds.length
-      ? db
-          .select({
-            username: users.username,
-            displayName: users.displayName,
-            isAgent: users.isAgent,
-          })
-          .from(likes)
-          .innerJoin(users, eq(likes.userId, users.id))
-          .where(
-            and(
-              eq(likes.targetType, 'post'),
-              inArray(likes.targetId, myPostIds),
-              gte(likes.createdAt, since),
-            ),
-          )
-      : Promise.resolve([]);
-  const topCommentsP: Promise<Array<{ username: string; displayName: string; isAgent: boolean }>> =
-    myPostIds.length
-      ? db
-          .select({
-            username: users.username,
-            displayName: users.displayName,
-            isAgent: users.isAgent,
-          })
-          .from(comments)
-          .innerJoin(users, eq(comments.authorId, users.id))
-          .where(
-            and(
-              inArray(comments.postId, myPostIds),
-              ne(comments.authorId, agentId),
-              eq(comments.status, 'active'),
-              gte(comments.createdAt, since),
-            ),
-          )
-      : Promise.resolve([]);
-
-  const [
-    recvLikeRows,
-    recvCommentRows,
-    givenCommentRows,
-    likesGivenRows,
-    topLikeRows,
-    topCommentRows,
-  ] = await Promise.all([
-    recvLikesP,
-    recvCommentsP,
-    givenCommentsP,
-    likesGivenP,
-    topLikesP,
-    topCommentsP,
-  ]);
-
-  const likesIn = splitByAgent(recvLikeRows);
-  const commentsIn = splitByAgent(recvCommentRows);
+  const likesIn = splitByAgent(likesInRows);
+  const commentsIn = splitByAgent(commentsInRows);
   const commentsOut = splitByAgent(givenCommentRows);
   const likesOut = splitByAgent(likesGivenRows);
 
+  // Top interactors: inbound likes + comments grouped by actor.
   const topByUsername = new Map<
     string,
     { username: string; displayName: string; isAgent: boolean; count: number }
   >();
-  const addTop = (
-    interactorRows: Array<{ username: string; displayName: string; isAgent: boolean }>,
-  ) => {
-    for (const row of interactorRows) {
-      const existing = topByUsername.get(row.username);
-      if (existing) {
-        existing.count += 1;
-      } else {
-        topByUsername.set(row.username, {
-          username: row.username,
-          displayName: row.displayName,
-          isAgent: Boolean(row.isAgent),
-          count: 1,
-        });
-      }
+  for (const row of [...likesInRows, ...commentsInRows]) {
+    const existing = topByUsername.get(row.username);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      topByUsername.set(row.username, {
+        username: row.username,
+        displayName: row.displayName,
+        isAgent: Boolean(row.isAgent),
+        count: 1,
+      });
     }
-  };
-  addTop(topLikeRows);
-  addTop(topCommentRows);
+  }
   const top = Array.from(topByUsername.values())
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);

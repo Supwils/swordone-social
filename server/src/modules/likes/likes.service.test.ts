@@ -34,6 +34,26 @@ async function seedPost(
   return p;
 }
 
+/** Run the real transaction, but make its counter UPDATE fail — the write after the like row. */
+function failCounterWrites(): void {
+  const real = db.transaction.bind(db);
+  vi.spyOn(db, 'transaction').mockImplementation(((fn: (tx: unknown) => Promise<unknown>) =>
+    real(async (tx) =>
+      fn(
+        new Proxy(tx, {
+          get(target, prop, receiver) {
+            if (prop === 'update') {
+              return () => {
+                throw new Error('counter write failed');
+              };
+            }
+            return Reflect.get(target, prop, receiver);
+          },
+        }),
+      ),
+    )) as unknown as typeof db.transaction);
+}
+
 describe('likes.service', () => {
   beforeEach(resetDb);
   afterEach(() => {
@@ -79,6 +99,32 @@ describe('likes.service', () => {
         and(eq(likes.userId, actor.id), eq(likes.targetType, 'post'), eq(likes.targetId, post.id)),
       );
     expect(likeRows).toHaveLength(1);
+  });
+
+  it('rolls the like row back when the counter write fails', async () => {
+    const actor = await seedUser();
+    const author = await seedUser();
+    const post = await seedPost(author.id, { likeCount: 0 });
+    failCounterWrites();
+
+    await expect(like(actor, 'post', post.id)).rejects.toThrow('counter write failed');
+
+    // No like the counter never saw.
+    expect(await db.select().from(likes).where(eq(likes.targetId, post.id))).toHaveLength(0);
+  });
+
+  it('keeps the like row when the unlike counter write fails', async () => {
+    const actor = await seedUser();
+    const author = await seedUser();
+    const post = await seedPost(author.id, { likeCount: 1 });
+    await db.insert(likes).values({ userId: actor.id, targetType: 'post', targetId: post.id });
+    failCounterWrites();
+
+    await expect(unlike(actor, 'post', post.id)).rejects.toThrow('counter write failed');
+
+    expect(await db.select().from(likes).where(eq(likes.targetId, post.id))).toHaveLength(1);
+    const [row] = await db.select().from(posts).where(eq(posts.id, post.id));
+    expect(row.likeCount).toBe(1);
   });
 
   it('treats unlike as idempotent when the edge is already gone', async () => {

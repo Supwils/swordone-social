@@ -4,6 +4,7 @@ import { toUserDTO, toUserLiteDTO } from '../../lib/dto';
 import { AppError } from '../../lib/errors';
 import * as usersService from './users.service';
 import { TAG_CATEGORIES, ALL_PRESET_TAGS } from '../../lib/tagPresets';
+import { authed } from '../../middlewares/authed';
 
 export async function getByUsername(req: Request, res: Response) {
   const user = await usersService.findByUsername(req.params.username);
@@ -38,15 +39,13 @@ export async function getProfileTagPresets(_req: Request, res: Response) {
   });
 }
 
-export async function updateMe(req: Request, res: Response) {
-  if (!req.user) throw AppError.unauthenticated();
+export const updateMe = authed(async (req, res) => {
   const updated = await usersService.updateMe(req.user, req.body);
   return ok(res, { user: toUserDTO(updated, { self: true }) });
-}
+});
 
-export async function updateAvatar(req: Request, res: Response) {
-  if (!req.user) throw AppError.unauthenticated();
+export const updateAvatar = authed(async (req, res) => {
   if (!req.file) throw AppError.validation('image file required', { image: 'required' });
   const updated = await usersService.updateAvatar(req.user, req.file.buffer);
   return ok(res, { avatarUrl: updated.avatarUrl });
-}
+});

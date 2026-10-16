@@ -1,14 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../db/client';
-import { users, posts, notifications as notificationsTable } from '../../db/schema';
+import {
+  comments,
+  follows,
+  users,
+  posts,
+  notifications as notificationsTable,
+} from '../../db/schema';
 import { resetDb } from '../../test/db-reset';
 import { newId } from '../../lib/id';
 import * as realtime from '../../realtime/io';
 import type { PostRow, UserRow } from '../../lib/dto';
 import type { NotificationType } from '../../contract/messaging';
 import {
-  buildUpdatedCursorPage,
   clearAll,
   createNotification,
   list,
@@ -16,7 +21,7 @@ import {
   toNotificationDTO,
   unreadCount,
 } from './notifications.service';
-import { decodeCursor } from '../../lib/pagination';
+import { buildNextCursor, decodeCursor } from '../../lib/pagination';
 import { toUserLiteDTO } from '../../lib/dto';
 import { expectContract } from '../../test/contract';
 import {
@@ -66,7 +71,7 @@ async function seedPost(
   return p;
 }
 
-describe('buildUpdatedCursorPage', () => {
+describe('notification paging cursor', () => {
   it('builds the next cursor from updatedAt rather than createdAt', () => {
     const docs = [
       {
@@ -81,7 +86,8 @@ describe('buildUpdatedCursorPage', () => {
       },
     ] as unknown as NotificationRow[];
 
-    const page = buildUpdatedCursorPage(docs, 1);
+    // `list` orders by updatedAt, so it builds its cursor on that key.
+    const page = buildNextCursor(docs, 1, 'updatedAt');
     const cursor = decodeCursor(page.nextCursor);
 
     expect(page.items).toHaveLength(1);
@@ -496,5 +502,138 @@ describe('unreadCount', () => {
     await seedNotification(stranger.id, actor.id, { type: 'like', read: false });
 
     expect(await unreadCount(viewer)).toBe(2);
+  });
+});
+
+/**
+ * SC-F1: the preview is re-checked against the recipient at read time. A post
+ * deleted or made non-public after the notification fired used to keep serving
+ * its first 80 characters from the bell.
+ */
+describe('notification previews follow the current state of the post', () => {
+  beforeEach(resetDb);
+
+  async function previewsFor(viewer: UserRow) {
+    const { items } = await list(viewer, null, 50, false);
+    return new Map(items.map((i) => [i.id, i]));
+  }
+
+  async function seedComment(postId: string, authorId: string, text: string) {
+    const [c] = await db.insert(comments).values({ postId, authorId, text }).returning();
+    return c;
+  }
+
+  it('shows the body while the post is public and active', async () => {
+    const author = await seedUser();
+    const actor = await seedUser();
+    const post = await seedPost(author.id, { text: 'still here' });
+    const comment = await seedComment(post.id, actor.id, 'a reply');
+    const n = await seedNotification(author.id, actor.id, {
+      type: 'comment',
+      postId: post.id,
+      commentId: comment.id,
+    });
+
+    const dto = (await previewsFor(author)).get(n.id);
+    expect(dto?.post).toEqual({ id: post.id, textPreview: 'still here' });
+    expect(dto?.comment).toEqual({ id: comment.id, textPreview: 'a reply' });
+  });
+
+  it('empties the post and comment previews once the post is deleted', async () => {
+    const author = await seedUser();
+    const actor = await seedUser();
+    const post = await seedPost(actor.id, { text: 'about to go' });
+    const comment = await seedComment(post.id, actor.id, 'under it');
+    const n = await seedNotification(author.id, actor.id, {
+      type: 'mention',
+      postId: post.id,
+      commentId: comment.id,
+    });
+    await db.update(posts).set({ status: 'deleted' }).where(eq(posts.id, post.id));
+
+    const dto = (await previewsFor(author)).get(n.id);
+    expect(dto?.post).toEqual({ id: post.id, textPreview: '' });
+    expect(dto?.comment).toEqual({ id: comment.id, textPreview: '' });
+  });
+
+  it('empties the comment preview once the comment is deleted', async () => {
+    const author = await seedUser();
+    const actor = await seedUser();
+    const post = await seedPost(author.id, { text: 'mine' });
+    const comment = await seedComment(post.id, actor.id, 'regretted');
+    const n = await seedNotification(author.id, actor.id, {
+      type: 'comment',
+      postId: post.id,
+      commentId: comment.id,
+    });
+    await db.update(comments).set({ status: 'deleted' }).where(eq(comments.id, comment.id));
+
+    const dto = (await previewsFor(author)).get(n.id);
+    expect(dto?.comment).toEqual({ id: comment.id, textPreview: '' });
+    expect(dto?.post).toEqual({ id: post.id, textPreview: 'mine' });
+  });
+
+  it('empties both once a public post goes private (but its author still sees it)', async () => {
+    const author = await seedUser();
+    const mentioned = await seedUser();
+    const post = await seedPost(author.id, { text: 'hey @someone' });
+    const comment = await seedComment(post.id, author.id, 'follow-up');
+    const toMentioned = await seedNotification(mentioned.id, author.id, {
+      type: 'mention',
+      postId: post.id,
+      commentId: comment.id,
+    });
+    const toAuthor = await seedNotification(author.id, mentioned.id, {
+      type: 'like',
+      postId: post.id,
+    });
+    await db.update(posts).set({ visibility: 'private' }).where(eq(posts.id, post.id));
+
+    const dto = (await previewsFor(mentioned)).get(toMentioned.id);
+    expect(dto?.post).toEqual({ id: post.id, textPreview: '' });
+    expect(dto?.comment).toEqual({ id: comment.id, textPreview: '' });
+    const own = (await previewsFor(author)).get(toAuthor.id);
+    expect(own?.post).toEqual({ id: post.id, textPreview: 'hey @someone' });
+  });
+
+  it('shows a followers-only post only to a recipient who follows its author', async () => {
+    const author = await seedUser();
+    const follower = await seedUser();
+    const stranger = await seedUser();
+    await db.insert(follows).values({ followerId: follower.id, followingId: author.id });
+    const post = await seedPost(author.id, { text: 'friends only', visibility: 'followers' });
+    const toFollower = await seedNotification(follower.id, author.id, {
+      type: 'mention',
+      postId: post.id,
+    });
+    const toStranger = await seedNotification(stranger.id, author.id, {
+      type: 'mention',
+      postId: post.id,
+    });
+
+    expect((await previewsFor(follower)).get(toFollower.id)?.post?.textPreview).toBe(
+      'friends only',
+    );
+    expect((await previewsFor(stranger)).get(toStranger.id)?.post?.textPreview).toBe('');
+  });
+
+  it('applies the same check to the live emit', async () => {
+    const author = await seedUser();
+    const actor = await seedUser();
+    const post = await seedPost(author.id, { text: 'secret', visibility: 'private' });
+    const emit = vi.spyOn(realtime, 'emitToUser').mockImplementation(() => undefined);
+
+    await createNotification({
+      recipientId: actor.id,
+      actorId: author.id,
+      type: 'mention',
+      postId: post.id,
+    });
+
+    expect(emit).toHaveBeenCalledWith(
+      actor.id,
+      'notification',
+      expect.objectContaining({ post: { id: post.id, textPreview: '' } }),
+    );
   });
 });

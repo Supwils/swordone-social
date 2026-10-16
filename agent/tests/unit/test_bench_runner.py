@@ -316,8 +316,8 @@ def test_the_timeout_flag_resets_per_call(tmp_path: Path) -> None:
     """One timed-out call does not mark the next one: a fresh answer files."""
 
     class OnceSlow(RecordingRunner):
-        def run_result(self, argv, stdin=None, env=None, timeout=300.0):  # type: ignore[no-untyped-def]
-            result = super().run_result(argv, stdin, env, timeout)
+        def run_result(self, argv, stdin=None, env=None, timeout=300.0, cwd=None):  # type: ignore[no-untyped-def]
+            result = super().run_result(argv, stdin, env, timeout, cwd)
             if len(self.calls) == 1:
                 return RunResult(stdout="", returncode=None, timed_out=True)
             return result
@@ -332,6 +332,45 @@ def test_the_timeout_flag_resets_per_call(tmp_path: Path) -> None:
     assert out[1] == "  [free_post#0] TIMEOUT (opus, 7s) — skipped"
     assert [body["runIndex"] for body in sink.bodies] == [1]
     assert {call.timeout for call in runner.calls} == {7.0}
+
+
+def test_a_model_call_that_exited_non_zero_is_failed_and_never_scored(tmp_path: Path) -> None:
+    """S6 AG-F14: the judge already refuses a non-zero exit's stdout; the
+    model under test did not, and filed a CLI's error text as the persona's
+    answer, embedded and rule-scored."""
+    root = _persona_root(tmp_path)
+    runner = RecordingRunner("5-hour limit reached, resets at 3pm", returncode=1)
+    sink = FakeSink()
+    out: list[str] = []
+    deps = _deps(root, sink=sink, out=out)
+    deps.resolve = lambda spec: resolve_model(spec, runner, Settings())
+    code = run_pair(deps, _TASKS[:1], "aa", "sonnet", k=2, batch_id="b")
+    assert code == 0
+    assert out[1:3] == [
+        "  [free_post#0] FAILED (sonnet, exit 1) — skipped",
+        "  [free_post#1] FAILED (sonnet, exit 1) — skipped",
+    ]
+    assert sink.bodies == []
+    assert not list((root / "bench/results/aa/sonnet").glob("*.json"))
+
+
+def test_the_failed_flag_resets_per_call(tmp_path: Path) -> None:
+    class OnceFailing(RecordingRunner):
+        def run_result(self, argv, stdin=None, env=None, timeout=300.0, cwd=None):  # type: ignore[no-untyped-def]
+            result = super().run_result(argv, stdin, env, timeout, cwd)
+            if len(self.calls) == 1:
+                return RunResult(stdout="rate limited", returncode=2)
+            return result
+
+    root = _persona_root(tmp_path)
+    runner = OnceFailing("答")
+    sink = FakeSink()
+    out: list[str] = []
+    deps = _deps(root, sink=sink, out=out)
+    deps.resolve = lambda spec: resolve_model(spec, runner, Settings())
+    run_pair(deps, _TASKS[:1], "aa", "opus", k=2, batch_id="b")
+    assert out[1] == "  [free_post#0] FAILED (opus, exit 2) — skipped"
+    assert [body["runIndex"] for body in sink.bodies] == [1]
 
 
 # ── POST failures and the throttle ────────────────────────────────────────

@@ -157,7 +157,7 @@ def _hold_lock(tmp_agent: Path, name: str) -> None:
     the command turns into a SKIP) rather than steal it."""
     path = act_lock_path(tmp_agent, name)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("999999\n", encoding="utf-8")
+    path.write_text(f"{os.getpid()}\n", encoding="utf-8")
 
 
 def _set_last_dream(tmp_agent: Path, name: str, *, hours_ago: float) -> None:
@@ -534,7 +534,7 @@ def test_dream_a_held_lock_exits_75(tmp_agent: Path) -> None:
 
     path = dream_lock_path(tmp_agent, "zenith")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("999999\n", encoding="utf-8")
+    path.write_text(f"{os.getpid()}\n", encoding="utf-8")
 
     result = runner.invoke(cli.app, ["dream", "zenith"])
     assert result.exit_code == 75
@@ -822,6 +822,54 @@ def test_cycle_a_busy_lease_skips_with_a_cause_and_a_remedy_and_exits_75(
     assert "Traceback" not in result.stdout
 
 
+def test_cycle_a_busy_lease_reads_no_memory_no_feed_and_runs_no_news_fetch(
+    tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F8. `cycle` defers `memory.md`, the world context and the follow-topics
+    feed until both leases are held, as `act` does: an account another run
+    holds costs no reads, no `news-fetch.sh`, and no snapshot of a
+    `memory.md` that run is appending to."""
+    from swil_agent.persona.source import GitPersonaSource
+
+    from ._runners import RecordingRunner
+
+    resources = FakeResources()
+    job_runner = RecordingRunner()
+    memory_reads: list[str] = []
+    real_read = GitPersonaSource.read_memory
+
+    def _spy(self: GitPersonaSource, name: str) -> str:
+        memory_reads.append(name)
+        return real_read(self, name)
+
+    monkeypatch.setattr(compose, "resources_for", lambda persona, settings: resources)
+    monkeypatch.setattr(compose, "runner_for", lambda settings: job_runner)
+    monkeypatch.setattr(GitPersonaSource, "read_memory", _spy)
+    # `read_news_digest` skips a missing script; the stub is never executed
+    # (`RecordingRunner` only records the call).
+    (tmp_cycle / "scripts").mkdir()
+    (tmp_cycle / "scripts" / "news-fetch.sh").write_text("exit 0\n", encoding="utf-8")
+    _hold_lock(tmp_cycle, "zenith")
+
+    result = runner.invoke(cli.app, ["cycle", "zenith"])
+
+    assert result.exit_code == 75
+    assert "lease busy" in result.stdout
+    assert memory_reads == []
+    assert resources.search_calls == []
+    assert resources.feed_board_calls == []
+    assert job_runner.calls == []
+
+    # The same seams with the lock free: the reads DO happen, so the empty
+    # lists above are the lease's doing and not a dead spy. (The dream's
+    # cooldown reads `memory.md` again, under the dream lease.)
+    act_lock_path(tmp_cycle, "zenith").unlink()
+    assert runner.invoke(cli.app, ["cycle", "zenith"]).exit_code == 0
+    assert memory_reads[0] == "zenith"
+    assert resources.feed_board_calls != []
+    assert len(job_runner.calls) == 1
+
+
 def test_cycle_with_no_credentials_skips_with_the_remedy_and_exits_75(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1018,9 +1066,8 @@ def test_a_cycles_logout_record_lands_in_the_act_log(
     """§7.6's terminal record is the only line that says a cycle reached its
     end rather than dying somewhere in the middle, and it belongs where
     Bash's own `=== auto-run complete ===` is. It comes from
-    `swil_agent.graph.nodes`, the ONE logger family that emits both phases -- the
-    dream node's deadline FAIL is a child logger for exactly this reason, so
-    routing by module alone would put one of the two in the wrong file."""
+    `swil_agent.graph.nodes`, which `_DREAM_LOG_SOURCES` deliberately leaves
+    out."""
     runner.invoke(cli.app, ["cycle", "zenith"])
     assert any("logout zenith" in line for line in _round_log_lines(tmp_cycle, "auto-run.log"))
     assert not any("logout zenith" in line for line in _round_log_lines(tmp_cycle, "dream.log"))
@@ -1041,42 +1088,6 @@ def test_a_cycles_analysis_samplers_land_in_the_act_log(
     dream_lines = _round_log_lines(tmp_cycle, "dream.log")
     assert any("behavior-snapshot:" in line for line in act_lines), act_lines
     assert not any("behavior-snapshot:" in line for line in dream_lines), dream_lines
-
-
-def test_a_cycles_dream_deadline_fail_lands_in_the_dream_log(
-    tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch, round_log_level: None
-) -> None:
-    """`swil_agent.graph.nodes` is the ONE logger family that emits records from both
-    phases: the logout record (the cycle's own terminal line, act log) and the
-    dream node's deadline `FAIL` (dream log). Routing by module alone puts one
-    of the two in the wrong file, which is why the deadline line goes through
-    a child logger.
-
-    Nothing else in the suite exercises this: without it, deleting
-    `"swil_agent.graph.nodes.dream"` from `_DREAM_LOG_SOURCES` leaves the
-    whole suite green and quietly moves every deadline FAIL into
-    `auto-run.log`, where a dream-log grep will never find it.
-
-    The deadline is squeezed to zero through `_cycle_deps_for`'s own return
-    value rather than by patching the module constant -- `CycleDeps` captures
-    that constant as a dataclass DEFAULT at class-definition time, so patching
-    it afterwards changes nothing.
-    """
-    from dataclasses import replace
-
-    real_deps = compose.cycle_deps_for
-
-    def _no_time_at_all(*args: object, **kwargs: object) -> object:
-        phase = real_deps(*args, **kwargs)  # type: ignore[arg-type]
-        return phase._replace(deps=replace(phase.deps, dream_deadline_seconds=0.0))
-
-    monkeypatch.setattr(compose, "cycle_deps_for", _no_time_at_all)
-    result = runner.invoke(cli.app, ["cycle", "zenith"])
-    assert result.exit_code == 0
-
-    dream_lines = _round_log_lines(tmp_cycle, "dream.log")
-    assert any("deadline" in line for line in dream_lines), dream_lines
-    assert not any("deadline" in line for line in _round_log_lines(tmp_cycle, "auto-run.log"))
 
 
 def test_a_cycles_embedder_probe_stays_in_the_dream_log(
@@ -1130,9 +1141,10 @@ def test_cycle_resume_continues_the_interrupted_run_without_re_acting(
     different thread, start a brand-new cycle, and re-post -- passing any
     test that only checks "the second invocation exited 0".
 
-    The interruption is injected at the `write` node, which is past the whole
-    act phase and before any dream write, so the checkpoint the resume
-    continues from is one where a post has already landed.
+    The interruption is injected at the `snapshot` node, past the whole act
+    phase and past the dream's write, so the checkpoint the resume continues
+    from is one where a post has already landed. (`execute` and `write` are
+    the two nodes a resume refuses to re-enter: see the 64 tests below.)
     """
     from swil_agent.graph import nodes_dream
 
@@ -1148,7 +1160,7 @@ def test_cycle_resume_continues_the_interrupted_run_without_re_acting(
     def _explode(**_kwargs: object) -> object:
         raise _InjectedBugError("interrupted mid-cycle")
 
-    monkeypatch.setattr(nodes_dream, "write_step", _explode)
+    monkeypatch.setattr(nodes_dream, "snapshot_step", _explode)
     first = runner.invoke(cli.app, ["cycle", "zenith"])
     assert first.exit_code == 75
     assert len(posts[0].created_posts) == 1
@@ -1170,6 +1182,50 @@ def test_cycle_resume_continues_the_interrupted_run_without_re_acting(
     # phase's nodes are already past in the checkpoint.
     assert posts[1].created_posts == []
     assert len(posts[0].created_posts) == 1
+
+
+@pytest.mark.parametrize(
+    ("module", "step", "node"),
+    [("nodes_act", "execute_step", "execute"), ("nodes_dream", "write_step", "write")],
+)
+def test_cycle_resume_refuses_a_thread_stopped_inside_execute_or_write_with_64(
+    tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch, module: str, step: str, node: str
+) -> None:
+    """Ruling 3. Neither node is idempotent -- a half-run `execute` may have
+    landed actions, a half-run `write` may have archived `personality.md` --
+    so `--resume` exits 64 with the remedy and runs nothing at all."""
+    from swil_agent.graph import nodes_act, nodes_dream
+
+    target = {"nodes_act": nodes_act, "nodes_dream": nodes_dream}[module]
+
+    def _explode(**_kwargs: object) -> object:
+        raise _InjectedBugError("interrupted mid-cycle")
+
+    monkeypatch.setattr(target, step, _explode)
+    assert runner.invoke(cli.app, ["cycle", "zenith"]).exit_code == 75
+    personality = (tmp_cycle / "agents" / "zenith" / "personality.md").read_bytes()
+    memory = (tmp_cycle / "agents" / "zenith" / "memory.md").read_bytes()
+
+    monkeypatch.undo()
+    monkeypatch.setenv("ERA_START", _ERA_START)
+    _patch_cycle_seams(monkeypatch, tmp_cycle)
+    posts: list[FakeResources] = []
+
+    def _recording_resources(persona: Persona, settings: Settings) -> FakeResources:
+        resources = FakeResources()
+        posts.append(resources)
+        return resources
+
+    monkeypatch.setattr(compose, "resources_for", _recording_resources)
+    result = runner.invoke(cli.app, ["cycle", "zenith", "--resume"])
+
+    assert result.exit_code == 64, result.output
+    assert f"stopped inside `{node}`" in result.output
+    assert "swil-agent cycle zenith --auto" in result.output
+    assert all(not r.created_posts and not r.search_calls for r in posts)
+    assert (tmp_cycle / "agents" / "zenith" / "personality.md").read_bytes() == personality
+    assert (tmp_cycle / "agents" / "zenith" / "memory.md").read_bytes() == memory
+    assert not list((tmp_cycle / ".agent-state").glob("lock_*"))
 
 
 def test_cycle_resume_without_a_previous_cycle_skips_with_a_remedy(tmp_cycle: Path) -> None:
@@ -3080,6 +3136,7 @@ def _doctor_ready(
     monkeypatch.setattr(doctor, "on_path", lambda name: True)
     monkeypatch.setattr(doctor, "heartbeat_launchctl_status", lambda: "not loaded")
     monkeypatch.setattr(doctor, "since_probe", lambda settings: (True, "ok"))
+    monkeypatch.setattr(doctor, "grok_version", lambda: doctor.GROK_AUDITED_VERSION)
 
 
 def test_doctor_exits_75_when_url_is_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3166,6 +3223,34 @@ def test_doctor_checks_the_cli_of_every_roster_backend(
     assert checked == ["claude", "uv", "codex", "grok", "cursor-agent"]
     assert "cursor-agent: not on PATH" in result.stdout
     assert result.exit_code == 75
+
+
+def test_doctor_fails_a_grok_arm_on_an_unaudited_grok_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`GROK_DISALLOWED_TOOLS` names one grok version's built-ins; on any
+    other version a new built-in would reach the persona undenied."""
+    _doctor_ready(monkeypatch, tmp_path)
+    _write_era3(tmp_path, "bb", "grok:grok-4.6")
+    result = runner.invoke(cli.app, ["doctor"])
+    assert result.exit_code == 0
+    assert f"grok version: ok {doctor.GROK_AUDITED_VERSION} (audited)" in result.stdout
+
+    monkeypatch.setattr(doctor, "grok_version", lambda: "1.0.99")
+    result = runner.invoke(cli.app, ["doctor"])
+    assert result.exit_code == 75
+    assert "grok version: FAIL 1.0.99 is not the audited" in result.stdout
+    assert "re-audit GROK_DISALLOWED_TOOLS" in result.stdout
+
+
+def test_doctor_skips_the_grok_version_without_a_grok_arm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _doctor_ready(monkeypatch, tmp_path)
+    monkeypatch.setattr(doctor, "grok_version", lambda: "1.0.99")
+    result = runner.invoke(cli.app, ["doctor"])
+    assert result.exit_code == 0
+    assert "grok version" not in result.stdout
 
 
 def test_doctor_missing_launchctl_is_not_a_fail(
@@ -3703,8 +3788,8 @@ def test_a_stale_env_id_never_re_enters_the_finished_thread(
 def _interrupt_a_cycle(
     tmp_cycle: Path, monkeypatch: pytest.MonkeyPatch, *, env: str | None
 ) -> None:
-    """Run `zenith` under `env` until the `write` node blows up, leaving a
-    checkpointed thread to resume, then reinstall the fixture's seams."""
+    """Run `zenith` under `env` until the `snapshot` node blows up, leaving a
+    resumable checkpointed thread, then reinstall the fixture's seams."""
     from swil_agent.graph import nodes_dream
 
     _set_round_env(monkeypatch, env)
@@ -3712,7 +3797,7 @@ def _interrupt_a_cycle(
     def _explode(**_kwargs: object) -> object:
         raise _InjectedBugError("interrupted mid-cycle")
 
-    monkeypatch.setattr(nodes_dream, "write_step", _explode)
+    monkeypatch.setattr(nodes_dream, "snapshot_step", _explode)
     assert runner.invoke(cli.app, ["cycle", "zenith"]).exit_code == 75
 
     monkeypatch.undo()

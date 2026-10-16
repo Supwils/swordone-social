@@ -330,7 +330,7 @@ describe('feed routes', () => {
 
     expect(error).toBeUndefined();
     expect(res.statusCode).toBe(200);
-    expect(mocks.getExploreSummary).toHaveBeenCalledWith(null);
+    expect(mocks.getExploreSummary).toHaveBeenCalledWith(null, { lang: 'en', content: true });
   });
 
   it('lists a user profile feed with validated params', async () => {

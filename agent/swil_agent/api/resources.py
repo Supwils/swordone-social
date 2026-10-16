@@ -25,6 +25,7 @@ from swil_agent.api.envelope import WriteNotVerifiedError as WriteNotVerifiedErr
 from swil_agent.api.envelope import _items
 from swil_agent.api.lab import LabWrites
 from swil_agent.api.lab import VectorFiling as VectorFiling
+from swil_agent.api.paths import id_segment, segment, username_segment
 from swil_agent.api.writes import SocialWrites
 
 
@@ -104,7 +105,9 @@ class Resources(SocialWrites, LabWrites):
         self, slug: str, limit: int = 12, sort: str = "latest", since: str | None = None
     ) -> list[dict[str, Any]]:
         """GET /feed/board/{slug}?limit=&sort=[&since=] -- board-scoped feed."""
-        payload = self._client.get(f"/feed/board/{slug}", params=_feed_params(limit, sort, since))
+        payload = self._client.get(
+            f"/feed/board/{segment(slug, 'board slug')}", params=_feed_params(limit, sort, since)
+        )
         return _items(payload)
 
     def search_posts(
@@ -137,7 +140,7 @@ class Resources(SocialWrites, LabWrites):
         `test_get_post_returns_the_post_dict`'s real-envelope regression
         guard.
         """
-        payload = self._client.get(f"/posts/{post_id}")
+        payload = self._client.get(f"/posts/{id_segment(post_id, 'postId')}")
         data = payload.get("data")
         post = data.get("post") if isinstance(data, dict) else None
         return post if isinstance(post, dict) else {}
@@ -146,7 +149,9 @@ class Resources(SocialWrites, LabWrites):
         """GET /posts/{id}/comments?limit= — the second of the two thread
         calls (contract `01` §2i).
         """
-        payload = self._client.get(f"/posts/{post_id}/comments", params={"limit": limit})
+        payload = self._client.get(
+            f"/posts/{id_segment(post_id, 'postId')}/comments", params={"limit": limit}
+        )
         return _items(payload)
 
     def notifications(self, limit: int = 8, unread_only: bool = True) -> list[dict[str, Any]]:
@@ -167,7 +172,8 @@ class Resources(SocialWrites, LabWrites):
 
     def user_posts(self, username: str, limit: int = 12) -> list[dict[str, Any]]:
         """GET /users/{username}/posts?limit=."""
-        return _items(self._client.get(f"/users/{username}/posts", params={"limit": limit}))
+        path = f"/users/{username_segment(username)}/posts"
+        return _items(self._client.get(path, params={"limit": limit}))
 
     def user_posts_page(
         self,
@@ -189,7 +195,7 @@ class Resources(SocialWrites, LabWrites):
             params["since"] = since
         if cursor is not None:
             params["cursor"] = cursor
-        payload = self._client.get(f"/users/{username}/posts", params=params)
+        payload = self._client.get(f"/users/{username_segment(username)}/posts", params=params)
         data = payload.get("data")
         raw_next = data.get("nextCursor") if isinstance(data, dict) else None
         next_cursor = raw_next if isinstance(raw_next, str) and raw_next else None
@@ -211,7 +217,8 @@ class Resources(SocialWrites, LabWrites):
         if not isinstance(me, str) or not me:
             return []
         names: set[str] = set()
-        for path in (f"/users/{me}/following", f"/users/{me}/followers"):
+        user = username_segment(me)
+        for path in (f"/users/{user}/following", f"/users/{user}/followers"):
             for row in _items(self._client.get(path, params={"limit": 100})):
                 name = row.get("username")
                 if isinstance(name, str) and name:

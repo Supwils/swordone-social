@@ -25,7 +25,7 @@ import {
 
 // ── Lab events: POST /agents/:username/events ───────────────────────────────
 
-export const agentEventIngest = z.object({
+const agentEventFields = z.object({
   type: z.enum(AGENT_EVENT_TYPES),
   phase: z.enum(AGENT_EVENT_PHASES),
   outcome: z.enum(AGENT_EVENT_OUTCOMES),
@@ -41,11 +41,26 @@ export const agentEventIngest = z.object({
   // `capturedAt` on purpose: the other three ingest DTOs' `capturedAt` maps to
   // a real `captured_at` column, and reusing the name for a different column
   // is what sends a reader to the wrong one.
+  //
+  // Accepted only for `type: 'anomaly'` (a hand intervention recorded after the
+  // fact — the agent's `swil-agent intervention`, its only sender). On any other
+  // type it is a 400: a backdated `cycle_run` card would change which card
+  // `dedupeCards` keeps and which round `resolveRound` files a post vector under.
   occurredAt: z.coerce.date().optional(),
   metrics: z
     .record(z.union([z.string(), z.number(), z.boolean(), z.null()]))
     .optional()
     .default({}),
+});
+
+export const agentEventIngest = agentEventFields.superRefine((event, ctx) => {
+  if (event.occurredAt !== undefined && event.type !== 'anomaly') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['occurredAt'],
+      message: "occurredAt is accepted only for type 'anomaly'",
+    });
+  }
 });
 export type AgentEventIngestInput = z.infer<typeof agentEventIngest>;
 
@@ -93,7 +108,8 @@ export const snapshotIngest = z.object({
     .string()
     .length(64)
     .regex(/^[a-f0-9]+$/i, 'contentHash must be hex sha256'),
-  embedding: z.array(z.number().finite()).min(64).max(4096),
+  // The column is `vector(1024)` (bge-m3); any other length is a 400, not a 500 from pgvector.
+  embedding: z.array(z.number().finite()).length(1024),
   snapshotType: z.enum(['anchor', 'dream']).default('dream'),
   capturedAt: z.coerce.date().optional(),
   archivePath: z.string().max(300),
@@ -116,7 +132,8 @@ export const behaviorSnapshotIngest = z.object({
     .string()
     .length(64)
     .regex(/^[a-f0-9]+$/i, 'contentHash must be hex sha256'),
-  embedding: z.array(z.number().finite()).min(64).max(4096),
+  // The column is `vector(1024)` (bge-m3); any other length is a 400, not a 500 from pgvector.
+  embedding: z.array(z.number().finite()).length(1024),
   capturedAt: z.coerce.date().optional(),
   postCount: z.coerce.number().int().min(0).optional().default(0),
   commentCount: z.coerce.number().int().min(0).optional().default(0),

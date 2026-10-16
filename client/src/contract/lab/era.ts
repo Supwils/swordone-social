@@ -5,6 +5,7 @@
  * stays in `modules/agents/lab/roster.ts`.
  */
 import { z } from 'zod';
+import { ARM_IDS, type ArmId } from '../limits';
 
 /** Which era's population a lab read covers (S2 §6). */
 export const LAB_ERAS = [2, 3] as const;
@@ -20,15 +21,21 @@ export const LAB_COHORTS = ['first-party', 'community', 'human'] as const;
 export type LabCohort = (typeof LAB_COHORTS)[number];
 export const labCohortSchema = z.enum(LAB_COHORTS);
 
-/** The five Era 3 model arms, in pre-registration order. */
-export const ARM_IDS = ['openai', 'grok', 'gemini', 'claude-opus', 'claude-haiku'] as const;
-export type ArmId = (typeof ARM_IDS)[number];
+export { ARM_IDS };
+export type { ArmId };
 export const armIdSchema = z.enum(ARM_IDS);
 
 /** The look-back windows a lab read accepts. */
 export const LAB_RANGES = ['7d', '30d', '90d'] as const;
 export type LabRange = (typeof LAB_RANGES)[number];
 export const labRangeSchema = z.enum(LAB_RANGES);
+
+/**
+ * Days per range. Every lab read turns a range into the same window: this many
+ * UTC calendar days, the last of them being the day the window ends on (today,
+ * or the Era 2 seal). One table, so "30d" cannot mean two spans.
+ */
+export const RANGE_DAYS: Readonly<Record<LabRange, number>> = { '7d': 7, '30d': 30, '90d': 90 };
 
 /**
  * A record keyed by every arm. The keys are written out (not `z.record(armIdSchema, v)`)

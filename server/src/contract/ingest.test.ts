@@ -87,8 +87,9 @@ describe('agentEventIngest occurredAt', () => {
     // `runtime.schemas.ts`) left the two assertions below green while its
     // two sibling tests went red. "Optional" has to be
     // distinguishable from "not there at all".
-    expect(Object.keys(agentEventIngest.shape)).toContain('occurredAt');
-    expect(agentEventIngest.shape.occurredAt.isOptional()).toBe(true);
+    const shape = agentEventIngest.innerType().shape;
+    expect(Object.keys(shape)).toContain('occurredAt');
+    expect(shape.occurredAt.isOptional()).toBe(true);
     const parsed = agentEventIngest.safeParse(base);
     expect(parsed.success).toBe(true);
     expect(parsed.success && parsed.data.occurredAt).toBeUndefined();
@@ -102,6 +103,20 @@ describe('agentEventIngest occurredAt', () => {
     expect(parsed.success && parsed.data.occurredAt?.getTime()).toBe(
       Date.parse('2026-08-05T08:35:04.000Z'),
     );
+  });
+
+  it('is refused on every type but anomaly — a backdated cycle_run card would move a round', () => {
+    for (const type of ['cycle', 'dream', 'snapshot', 'memory'] as const) {
+      const parsed = agentEventIngest.safeParse({
+        ...base,
+        type,
+        occurredAt: '2026-08-05T08:35:04Z',
+      });
+      expect(parsed.success).toBe(false);
+      expect(!parsed.success && parsed.error.issues[0].path).toEqual(['occurredAt']);
+      // The same event without the field is fine.
+      expect(agentEventIngest.safeParse({ ...base, type }).success).toBe(true);
+    }
   });
 
   it('rejects a value that is not a date at all', () => {
@@ -176,7 +191,7 @@ describe('agentEventIngest cycle_run card', () => {
 describe('snapshotIngest aspectDrift', () => {
   const base = {
     contentHash: 'e'.repeat(64),
-    embedding: Array(64).fill(0.01),
+    embedding: Array(1024).fill(0.01),
     archivePath: 'agents/zenith/personality.md',
   };
 
@@ -287,7 +302,7 @@ describe('ROUND_ID_RE', () => {
 describe('snapshotIngest contentHash and defaults', () => {
   const base = {
     contentHash: 'e'.repeat(64),
-    embedding: Array(64).fill(0.01),
+    embedding: Array(1024).fill(0.01),
     archivePath: 'agents/zenith/personality.md',
   };
 
@@ -304,19 +319,34 @@ describe('snapshotIngest contentHash and defaults', () => {
     expect(snapshotIngest.parse(base)).toMatchObject({ snapshotType: 'dream', excerpt: '' });
   });
 
-  it('rejects a non-finite embedding value and an embedding under 64 dims', () => {
+  it('rejects a non-finite embedding value', () => {
     expect(
       snapshotIngest.safeParse({ ...base, embedding: [...base.embedding.slice(1), Infinity] })
         .success,
     ).toBe(false);
-    expect(snapshotIngest.safeParse({ ...base, embedding: Array(63).fill(0.01) }).success).toBe(
-      false,
-    );
+  });
+
+  it('takes exactly 1024 dims — the column is vector(1024)', () => {
+    // 64–4096 used to pass validation and then fail the insert (a 500).
+    for (const n of [1023, 1025, 64]) {
+      expect(snapshotIngest.safeParse({ ...base, embedding: Array(n).fill(0.01) }).success).toBe(
+        false,
+      );
+    }
   });
 });
 
 describe('behaviorSnapshotIngest', () => {
-  const base = { contentHash: 'a'.repeat(64), embedding: Array(64).fill(0.01) };
+  const base = { contentHash: 'a'.repeat(64), embedding: Array(1024).fill(0.01) };
+
+  it('takes exactly 1024 dims — the column is vector(1024)', () => {
+    expect(behaviorSnapshotIngest.safeParse(base).success).toBe(true);
+    for (const n of [1023, 1025]) {
+      expect(
+        behaviorSnapshotIngest.safeParse({ ...base, embedding: Array(n).fill(0.01) }).success,
+      ).toBe(false);
+    }
+  });
 
   it('defaults the counts and the excerpt', () => {
     expect(behaviorSnapshotIngest.parse(base)).toMatchObject({

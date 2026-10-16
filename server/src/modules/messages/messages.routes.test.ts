@@ -1,14 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Router } from 'express';
-import { db } from '../../db/client';
-import { users } from '../../db/schema';
 import { resetDb } from '../../test/db-reset';
 import { newId } from '../../lib/id';
-import type { UserRow } from '../../lib/dto';
 
 const mocks = vi.hoisted(() => ({
   listForViewer: vi.fn(),
-  findOrCreateWith: vi.fn(),
+  openConversation: vi.fn(),
   getById: vi.fn(),
   unreadCount: vi.fn(),
   listMessages: vi.fn(),
@@ -34,7 +31,7 @@ vi.mock('../../middlewares/auth', () => ({
 
 vi.mock('./messages.service', () => ({
   listForViewer: mocks.listForViewer,
-  findOrCreateWith: mocks.findOrCreateWith,
+  openConversation: mocks.openConversation,
   getById: mocks.getById,
   unreadCount: mocks.unreadCount,
   listMessages: mocks.listMessages,
@@ -45,22 +42,6 @@ vi.mock('./messages.service', () => ({
 vi.mock('../../middlewares/rateLimit', () => ({
   messageWriteLimiter: (_req: unknown, _res: unknown, next: (err?: unknown) => void) => next(),
 }));
-
-let seq = 0;
-async function seedUser(over: Partial<typeof users.$inferInsert> = {}): Promise<UserRow> {
-  seq += 1;
-  const [u] = await db
-    .insert(users)
-    .values({
-      username: `user${seq}`,
-      usernameDisplay: `user${seq}`,
-      email: `user${seq}@example.com`,
-      displayName: `User ${seq}`,
-      ...over,
-    })
-    .returning();
-  return u;
-}
 
 import { conversationsRouter } from './messages.routes';
 
@@ -180,26 +161,8 @@ describe('messages routes', () => {
   });
 
   it('creates a conversation and returns 201 when new', async () => {
-    const me = await seedUser({
-      username: 'viewer',
-      usernameDisplay: 'viewer',
-      email: 'viewer@example.com',
-      displayName: 'Viewer',
-    });
-    const peer = await seedUser({
-      username: 'bob',
-      usernameDisplay: 'bob',
-      email: 'bob@example.com',
-      displayName: 'Bob',
-    });
-    const conversation = {
-      id: newId(),
-      participantIds: [me.id, peer.id],
-      unreadBy: [],
-      lastMessageAt: new Date('2026-04-23T00:00:00.000Z'),
-      lastMessageId: null,
-    };
-    mocks.findOrCreateWith.mockResolvedValue({ conversation, created: true });
+    const conversation = { id: newId(), participants: [{}, {}] };
+    mocks.openConversation.mockResolvedValue({ conversation, created: true });
 
     const { res, error } = await runRoute(conversationsRouter, '/', 'post', {
       body: { recipientUsername: 'bob' },
@@ -207,11 +170,12 @@ describe('messages routes', () => {
 
     expect(error).toBeUndefined();
     expect(res.statusCode).toBe(201);
-    const payload = res.payload as {
-      data: { conversation: { id: string; participants: unknown[] } };
-    };
-    expect(payload.data.conversation.id).toBe(conversation.id);
-    expect(payload.data.conversation.participants).toHaveLength(2);
+    expect(mocks.openConversation).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'viewer-id' }),
+      'bob',
+    );
+    const payload = res.payload as { data: { conversation: unknown } };
+    expect(payload.data.conversation).toBe(conversation);
   });
 
   it('rejects blank message bodies after validation trim', async () => {
@@ -277,23 +241,8 @@ describe('messages routes — remaining surface', () => {
     expect(mocks.listMessages).not.toHaveBeenCalled();
   });
 
-  it('answers 200 (not 201) for an existing conversation and computes unread', async () => {
-    const peer = await seedUser({
-      username: 'bob',
-      usernameDisplay: 'bob',
-      email: 'bob@example.com',
-      displayName: 'Bob',
-    });
-    const conversation = {
-      id: newId(),
-      participantIds: [peer.id],
-      // The route builds the DTO for the MOCKED viewer ('viewer-id'), so this
-      // marks the thread unread for exactly that viewer.
-      unreadBy: ['viewer-id'],
-      lastMessageAt: new Date('2026-04-23T00:00:00.000Z'),
-      lastMessageId: null,
-    };
-    mocks.findOrCreateWith.mockResolvedValue({ conversation, created: false });
+  it('answers 200 (not 201) for an existing conversation', async () => {
+    mocks.openConversation.mockResolvedValue({ conversation: { id: newId() }, created: false });
 
     const { res, error } = await runRoute(conversationsRouter, '/', 'post', {
       body: { recipientUsername: 'bob' },
@@ -301,8 +250,6 @@ describe('messages routes — remaining surface', () => {
 
     expect(error).toBeUndefined();
     expect(res.statusCode).toBe(200);
-    const payload = res.payload as { data: { conversation: { unread: boolean } } };
-    expect(payload.data.conversation.unread).toBe(true);
   });
 
   it('rejects a too-short recipientUsername before touching the service', async () => {
@@ -311,7 +258,7 @@ describe('messages routes — remaining surface', () => {
     });
 
     expect(error).toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
-    expect(mocks.findOrCreateWith).not.toHaveBeenCalled();
+    expect(mocks.openConversation).not.toHaveBeenCalled();
   });
 
   it('serves a single conversation through getById', async () => {

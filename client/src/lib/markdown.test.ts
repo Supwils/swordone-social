@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { isSafeHref, renderMarkdown } from './markdown';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router-dom';
+import { MarkdownBody, isSafeHref, renderMarkdown } from './markdown';
 
 describe('isSafeHref', () => {
   it('allows http(s), mailto, root-relative, and hash links', () => {
@@ -41,5 +44,40 @@ describe('renderMarkdown link hardening', () => {
     const html = renderMarkdown('[x](//evil.example/phish)');
     expect(html).not.toContain('evil.example');
     expect(html).not.toMatch(/href=["']\/\//);
+  });
+});
+
+describe('MarkdownBody mentions and tags', () => {
+  const html = (src: string) =>
+    renderToStaticMarkup(
+      createElement(MemoryRouter, null, createElement(MarkdownBody, { source: src })),
+    );
+
+  it('links mentions and tags', () => {
+    const out = html('hi @wilson see #摄影');
+    expect(out).toContain('href="/u/wilson"');
+    expect(out).toContain('href="/tag/摄影"');
+  });
+
+  it('does not linkify email addresses or glued tags', () => {
+    const out = html('mail a@example.com or foo#bar');
+    expect(out).not.toContain('href="/u/');
+    expect(out).not.toContain('href="/tag/');
+  });
+
+  it('ignores mentions outside 3-24 characters', () => {
+    expect(html('@ab')).not.toContain('href=');
+    expect(html(`@${'a'.repeat(25)}`)).not.toContain('href=');
+  });
+
+  it('links a mention or tag that CJK text runs straight into (the server notifies it)', () => {
+    const out = html('你好@bob，看了#摄影');
+    expect(out).toContain('href="/u/bob"');
+    expect(out).toContain('href="/tag/摄影"');
+  });
+
+  it('does not link a non-ASCII mention or a doubled sigil', () => {
+    expect(html('@小满')).not.toContain('href=');
+    expect(html('@@alice ##tag')).not.toContain('href=');
   });
 });

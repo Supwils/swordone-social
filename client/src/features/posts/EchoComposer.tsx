@@ -7,6 +7,8 @@ import * as postsApi from '@/api/posts.api';
 import type { PostDTO, Visibility, ApiError } from '@/api/types';
 import { Avatar, Button, Dialog } from '@/components/primitives';
 import s from './EchoComposer.module.css';
+import { invalidatePost, invalidatePostLists } from './postCache';
+import { LIMITS } from '@/contract/limits';
 
 function EchoPreview({ post }: { post: PostDTO }) {
   return (
@@ -42,7 +44,10 @@ export function EchoComposer({ post, open, onClose }: Props) {
   const mutation = useMutation({
     mutationFn: () => postsApi.create({ text, visibility, echoOf: post.id }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['feed'] });
+      // The echo lands in every list (own profile included), and the
+      // original's echoCount moved wherever it is shown.
+      invalidatePostLists(qc);
+      invalidatePost(qc, post.id);
       setText('');
       onClose();
       toast.success(t('post.echoPosted'));
@@ -71,7 +76,7 @@ export function EchoComposer({ post, open, onClose }: Props) {
           placeholder={t('post.echoPlaceholder')}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          maxLength={2000}
+          maxLength={LIMITS.postText}
           rows={3}
           autoFocus
         />

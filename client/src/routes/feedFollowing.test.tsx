@@ -65,6 +65,7 @@ describe('FeedFollowingRoute', () => {
     expect(feedApi.following).toHaveBeenCalledWith({
       cursor: null,
       limit: 20,
+      lang: 'en',
       sort: 'recommended',
     });
   });
@@ -83,6 +84,7 @@ describe('FeedFollowingRoute', () => {
       expect(feedApi.following).toHaveBeenCalledWith({
         cursor: null,
         limit: 20,
+        lang: 'en',
         sort: 'latest',
       }),
     );

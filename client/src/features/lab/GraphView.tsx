@@ -4,10 +4,9 @@
  * The lab's composition root is now `features/lab/LabPage.tsx`.
  */
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Skeleton } from '@/components/primitives';
-import { getAlerts, getInteractionGraph } from '@/features/lab/api';
+import { useInteractionGraph, useLabAlerts } from '@/features/lab/queries';
 import { InteractionGraph } from '@/features/lab/InteractionGraph';
 import type { LabEra } from '@/features/lab/types';
 import s from '@/features/lab/lab.module.css';
@@ -16,11 +15,7 @@ export function GraphView({ era, onSelect }: { era: LabEra; onSelect: (u: string
   const { t } = useTranslation();
   const [range, setRange] = useState<'7d' | '30d' | '90d'>('30d');
   const [crossOnly, setCrossOnly] = useState(false);
-  const graphQ = useQuery({
-    queryKey: ['lab-graph', era, range],
-    queryFn: () => getInteractionGraph(era, range),
-    staleTime: 60_000,
-  });
+  const graphQ = useInteractionGraph(era, range);
 
   return (
     <section className={s.chartBlock}>
@@ -59,11 +54,7 @@ export function GraphView({ era, onSelect }: { era: LabEra; onSelect: (u: string
 
 export function AlertsStrip({ era, onSelect }: { era: LabEra; onSelect: (u: string) => void }) {
   const { t } = useTranslation();
-  const q = useQuery({
-    queryKey: ['lab-alerts', era, '7d'],
-    queryFn: () => getAlerts(era, '7d'),
-    staleTime: 60_000,
-  });
+  const q = useLabAlerts(era, '7d');
   const alerts = q.data?.alerts ?? [];
   if (alerts.length === 0) return null;
 

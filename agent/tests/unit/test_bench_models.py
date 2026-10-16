@@ -21,7 +21,7 @@ from swil_agent.bench.models import (
 )
 from swil_agent.config import Settings
 from swil_agent.llm.runner import CompletionRequest
-from tests.unit._runners import RecordingRunner
+from tests.unit._runners import RecordingRunner, assert_isolated_cwd
 
 _REQ = CompletionRequest(system="SYS", user="USR")
 
@@ -39,8 +39,9 @@ class CodexRunner(RecordingRunner):
         stdin: str | None = None,
         env: dict[str, str] | None = None,
         timeout: float = 300.0,
+        cwd: str | None = None,
     ) -> str:
-        super().run(argv, stdin, env, timeout)
+        super().run(argv, stdin, env, timeout, cwd)
         Path(argv[argv.index("-o") + 1]).write_text("answer", encoding="utf-8")
         return ""
 
@@ -63,6 +64,13 @@ def test_a_bare_word_is_a_claude_alias_with_the_bash_argv() -> None:
             "-p",
             "--tools",
             "",
+            "--strict-mcp-config",
+            "--setting-sources",
+            "",
+            "--disable-slash-commands",
+            "--no-session-persistence",
+            "--effort",
+            "high" if spec == "opus" else "xhigh",
             "--model",
             spec,
             "--system-prompt",
@@ -71,6 +79,7 @@ def test_a_bare_word_is_a_claude_alias_with_the_bash_argv() -> None:
             "text",
         ]
         assert (call.stdin, call.env) == ("USR", None)
+        assert_isolated_cwd(call)
 
 
 def test_codex_is_the_cli_default_model_read_only() -> None:
@@ -80,11 +89,32 @@ def test_codex_is_the_cli_default_model_read_only() -> None:
     _call(model)
     argv = runner.calls[0].argv
     out = argv[argv.index("-o") + 1]
+    cwd = runner.calls[0].cwd
     assert argv == [
         "codex",
         "exec",
         "--ephemeral",
         "--skip-git-repo-check",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "-C",
+        cwd,
+        "-c",
+        "model_reasoning_effort=high",
+        "-c",
+        "service_tier=priority",
+        "--disable",
+        "shell_tool",
+        "--disable",
+        "unified_exec",
+        "--disable",
+        "apps",
+        "--disable",
+        "plugins",
+        "--disable",
+        "hooks",
+        "-c",
+        "web_search=disabled",
         "-s",
         "read-only",
         "--color",
@@ -93,6 +123,7 @@ def test_codex_is_the_cli_default_model_read_only() -> None:
         out,
         "System:\nSYS\n\n---\n\nUSR",
     ]
+    assert_isolated_cwd(runner.calls[0])
 
 
 def test_ds_flash_runs_deepseek_v4_flash_with_its_own_env() -> None:
@@ -108,6 +139,11 @@ def test_ds_flash_runs_deepseek_v4_flash_with_its_own_env() -> None:
         "-p",
         "--tools",
         "",
+        "--strict-mcp-config",
+        "--setting-sources",
+        "",
+        "--disable-slash-commands",
+        "--no-session-persistence",
         "--model",
         "deepseek-v4-flash",
         "--system-prompt",

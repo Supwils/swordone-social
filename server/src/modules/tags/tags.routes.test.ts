@@ -7,6 +7,7 @@ import { tags, users } from '../../db/schema';
 import { newId } from '../../lib/id';
 import type { UserRow } from '../../lib/dto';
 import { tagsRouter } from './tags.routes';
+import { env } from '../../config/env';
 
 let seq = 0;
 async function seedUser(over: Partial<typeof users.$inferInsert> = {}): Promise<UserRow> {
@@ -134,7 +135,7 @@ async function runRoute(
 describe('tags routes', () => {
   beforeEach(resetDb);
   afterEach(() => {
-    delete process.env.ADMIN_USERNAME;
+    env.ADMIN_USERNAME = undefined;
   });
 
   it('lists trending tags ordered by post count', async () => {
@@ -273,7 +274,7 @@ describe('tags routes', () => {
   // ── PATCH /:slug (admin only) ─────────────────────────────────────────────
 
   it('lets an admin update a tag: pin posts, set aliases, and feature it', async () => {
-    process.env.ADMIN_USERNAME = 'admin';
+    env.ADMIN_USERNAME = 'admin';
     const admin = await seedUser({ username: 'admin', usernameDisplay: 'admin' });
     const [tag] = await db
       .insert(tags)
@@ -311,8 +312,78 @@ describe('tags routes', () => {
     expect(aliasRow.isAlias).toBe(true);
   });
 
+  it('unsets an alias dropped from the list, unless another tag still lists it', async () => {
+    env.ADMIN_USERNAME = 'admin';
+    const admin = await seedUser({ username: 'admin', usernameDisplay: 'admin' });
+    const [ml] = await db
+      .insert(tags)
+      .values({ slug: 'ml', display: 'ML', isAlias: true })
+      .returning();
+    const [dl] = await db
+      .insert(tags)
+      .values({ slug: 'dl', display: 'DL', isAlias: true })
+      .returning();
+    const [tag] = await db
+      .insert(tags)
+      .values({ slug: 'ai', display: 'AI', aliasIds: [ml.id, dl.id] })
+      .returning();
+    // A second tag still claims `dl`, so dropping it from `ai` must not free it.
+    await db.insert(tags).values({ slug: 'neural', display: 'Neural', aliasIds: [dl.id] });
+
+    const { error } = await runRoute(tagsRouter, '/:slug', 'patch', {
+      params: { slug: 'ai' },
+      body: { aliasSlugs: [] },
+      session: { userId: admin.id },
+    });
+
+    expect(error).toBeUndefined();
+    const [updated] = await db.select().from(tags).where(eq(tags.id, tag.id));
+    expect(updated.aliasIds).toEqual([]);
+    const [mlRow] = await db.select().from(tags).where(eq(tags.id, ml.id));
+    expect(mlRow.isAlias).toBe(false);
+    const [dlRow] = await db.select().from(tags).where(eq(tags.id, dl.id));
+    expect(dlRow.isAlias).toBe(true);
+  });
+
+  it('rejects a tag listed as its own alias (it would hide the tag itself)', async () => {
+    env.ADMIN_USERNAME = 'admin';
+    const admin = await seedUser({ username: 'admin', usernameDisplay: 'admin' });
+    const [tag] = await db.insert(tags).values({ slug: 'ai', display: 'AI' }).returning();
+
+    const { error } = await runRoute(tagsRouter, '/:slug', 'patch', {
+      params: { slug: 'ai' },
+      body: { aliasSlugs: ['AI'] },
+      session: { userId: admin.id },
+    });
+
+    expect(error).toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+    const [row] = await db.select().from(tags).where(eq(tags.id, tag.id));
+    expect(row.isAlias).toBe(false);
+    expect(row.aliasIds).toEqual([]);
+  });
+
+  it('localizes the patch response to the caller’s language', async () => {
+    env.ADMIN_USERNAME = 'admin';
+    const admin = await seedUser({
+      username: 'admin',
+      usernameDisplay: 'admin',
+      preferences: { language: 'zh' },
+    });
+    await db.insert(tags).values({ slug: 'ai', display: 'AI', translations: { zh: '人工智能' } });
+
+    const { res, error } = await runRoute(tagsRouter, '/:slug', 'patch', {
+      params: { slug: 'ai' },
+      body: { featured: true },
+      session: { userId: admin.id },
+    });
+
+    expect(error).toBeUndefined();
+    const payload = res.payload as { data: { tag: { display: string } } };
+    expect(payload.data.tag.display).toBe('人工智能');
+  });
+
   it('handles aliasSlugs that match no existing tags', async () => {
-    process.env.ADMIN_USERNAME = 'admin';
+    env.ADMIN_USERNAME = 'admin';
     const admin = await seedUser({ username: 'admin', usernameDisplay: 'admin' });
     const [tag] = await db
       .insert(tags)
@@ -331,7 +402,7 @@ describe('tags routes', () => {
   });
 
   it('returns the tag unchanged when the patch body is empty', async () => {
-    process.env.ADMIN_USERNAME = 'admin';
+    env.ADMIN_USERNAME = 'admin';
     const admin = await seedUser({ username: 'admin', usernameDisplay: 'admin' });
     await db.insert(tags).values({ slug: 'ai', display: 'AI', postCount: 5 });
 
@@ -347,7 +418,7 @@ describe('tags routes', () => {
   });
 
   it('forbids a non-admin from patching a tag', async () => {
-    process.env.ADMIN_USERNAME = 'admin';
+    env.ADMIN_USERNAME = 'admin';
     const user = await seedUser({ username: 'bob', usernameDisplay: 'bob' });
     await db.insert(tags).values({ slug: 'ai', display: 'AI', postCount: 5 });
 
@@ -361,7 +432,7 @@ describe('tags routes', () => {
   });
 
   it('returns not found when patching a missing tag', async () => {
-    process.env.ADMIN_USERNAME = 'admin';
+    env.ADMIN_USERNAME = 'admin';
     const admin = await seedUser({ username: 'admin', usernameDisplay: 'admin' });
 
     const { error } = await runRoute(tagsRouter, '/:slug', 'patch', {

@@ -1,26 +1,23 @@
 import type { Request, Response } from 'express';
 import { ok, noContent } from '../../lib/respond';
-import { AppError } from '../../lib/errors';
 import { decodeCursor, parseLimit } from '../../lib/pagination';
 import * as followsService from './follows.service';
+import { authed } from '../../middlewares/authed';
 
-export async function follow(req: Request, res: Response) {
-  if (!req.user) throw AppError.unauthenticated();
+export const follow = authed(async (req, res) => {
   await followsService.follow(req.user, req.params.username);
   return noContent(res);
-}
+});
 
-export async function unfollow(req: Request, res: Response) {
-  if (!req.user) throw AppError.unauthenticated();
+export const unfollow = authed(async (req, res) => {
   await followsService.unfollow(req.user, req.params.username);
   return noContent(res);
-}
+});
 
-export async function checkFollowing(req: Request, res: Response) {
-  if (!req.user) throw AppError.unauthenticated();
+export const checkFollowing = authed(async (req, res) => {
   const following = await followsService.isFollowing(req.user, req.params.username);
   return ok(res, { following });
-}
+});
 
 export async function listFollowing(req: Request, res: Response) {
   const cursor = decodeCursor(req.query.cursor);

@@ -39,10 +39,9 @@ DREAM_LOG_FILENAME: Final = "dream.log"
 # act-phase ones, so filtering there would be machinery with no failure mode
 # to prevent.
 #
-# Matching is by dotted-prefix, so `swil_agent.graph.nodes.dream` (the dream
-# node's deadline FAIL) routes to `dream.log` while its parent
-# `swil_agent.graph.nodes` (the cycle's own logout record) does not.
-# `swil_agent.cli.dream` is the CLI's own dream-phase channel
+# Matching is by dotted-prefix. `swil_agent.graph.nodes` (the cycle's own
+# logout record) is deliberately absent: it is the cycle's terminal line and
+# belongs with the act log. `swil_agent.cli.dream` is the CLI's own dream-phase channel
 # (`cli/compose.py`) -- the round-level embedder-down ERROR, which
 # `swil-agent dream` already writes to `dream.log` and which must not change
 # file just because the same probe ran inside a cycle.
@@ -52,7 +51,6 @@ DREAM_LOG_FILENAME: Final = "dream.log"
 _DREAM_LOG_SOURCES: Final[tuple[str, ...]] = (
     "swil_agent.dream",
     "swil_agent.embedder",
-    "swil_agent.graph.nodes.dream",
     "swil_agent.cli.dream",
 )
 

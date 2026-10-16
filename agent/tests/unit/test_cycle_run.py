@@ -26,7 +26,6 @@ from swil_agent.analysis.cycle_run import (
     build_missing_sampler_event,
     grants_dream_for,
 )
-from swil_agent.config import Settings
 from swil_agent.dream.candidate import FilesystemDreamState
 from swil_agent.graph import nodes_tail
 from swil_agent.graph.cycle import run_cycle
@@ -35,7 +34,7 @@ from swil_agent.graph.nodes_tail import make_behavior_snapshot_node, make_logout
 from swil_agent.models import ActOutcome, Persona
 from swil_agent.persona.source import GitPersonaSource
 
-from ._runners import FakeEmbedder, FakeResources, ScriptedBackend, SilentBackend
+from ._runners import FakeEmbedder, FakeResources, ScriptedBackend, SilentBackend, make_cycle_deps
 
 NOW = datetime(2026, 8, 21, 10, 0, 0)
 CAPTURED_AT = datetime(2026, 8, 21, 2, 0, 0, tzinfo=UTC)
@@ -239,23 +238,17 @@ def _persona(root: Path) -> Persona:
 
 def _deps(root: Path, **overrides: Any) -> CycleDeps:
     defaults: dict[str, Any] = {
-        "resources": FakeResources(),
         "backend": ScriptedBackend('{"plan":[{"action":"post","text":"你好世界"}]}', DREAM_REPLY),
         "persona_source": GitPersonaSource(root),
         "embedder": FakeEmbedder(vectors=[[1.0], [1.0], [1.0]]),
         "dream_state": FilesystemDreamState(root / ".agent-state"),
-        "settings": Settings(agent_root=root),
-        "agent_root": root,
-        "health_check": lambda: True,
         "memory_text": INITIAL_MEMORY,
-        "llm_backend": "claude",
         "llm_model": "opus",
         "rng": random.Random(7),
         "now": NOW,
         "captured_at": CAPTURED_AT,
     }
-    defaults.update(overrides)
-    return CycleDeps(**defaults)
+    return make_cycle_deps(root, **(defaults | overrides))
 
 
 def _run(root: Path, deps: CycleDeps, persona: Persona | None = None) -> dict[str, Any]:
@@ -465,33 +458,6 @@ def test_a_failed_dream_card_records_dream_accepted_false(tmp_path: Path) -> Non
 
     cards = _cycle_run_events(resources)
     assert cards[0].metrics["dreamAccepted"] is False
-
-
-def test_a_lab_outage_emitting_the_card_does_not_change_logout(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """The ledger is fail-loud when it lands; a dead events endpoint must not
-    become the round's exit code. The miss itself is WARNING so a missing
-    ledger is grep-able (DEBUG would drown in the round log)."""
-    root = tmp_path / "agent_root"
-    resources = FakeResources(lab_event_raises=RuntimeError("events down"))
-    node = make_logout_node(_deps(root, resources=resources))
-
-    with caplog.at_level(logging.WARNING, logger="swil_agent.graph.nodes"):
-        update = node(
-            {
-                "persona": _persona(root),
-                "run_id": "run-7",
-                "outcome": ActOutcome.OFFLINE,
-            }
-        )
-
-    assert update == {}
-    assert any(
-        rec.levelno == logging.WARNING and "lab event failed" in rec.message
-        for rec in caplog.records
-    )
 
 
 # ── memory rotation at logout ───────────────────────────────────────────────

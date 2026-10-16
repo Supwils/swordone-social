@@ -60,7 +60,8 @@ export const AgentStatsDTOSchema = z
           displayName: z.string(),
           isAgent: z.boolean(),
           count: z.number(),
-          kind: z.enum(['in', 'out']),
+          // Inbound only: the lab never produced an outbound interactor row.
+          kind: z.literal('in'),
         })
         .strict(),
     ),

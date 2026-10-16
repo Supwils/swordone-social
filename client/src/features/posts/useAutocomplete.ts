@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useDebounce } from '@/lib/useDebounce';
-import * as usersApi from '@/api/users.api';
+import { useUserSearch } from '@/features/users/useUserSearch';
 import * as tagsApi from '@/api/tags.api';
 import type { TagDTO, UserLiteDTO } from '@/api/types';
 
@@ -40,12 +40,7 @@ export function useAutocomplete(text: string, cursorPos: number) {
   const trigger = detectTrigger(text, cursorPos);
   const debouncedQuery = useDebounce(trigger?.query ?? '', 200);
 
-  const mentionQ = useQuery({
-    queryKey: ['autocomplete', '@', debouncedQuery],
-    queryFn: ({ signal }) => usersApi.searchUsers(debouncedQuery, signal),
-    enabled: trigger?.prefix === '@' && debouncedQuery.length >= 1,
-    staleTime: 30_000,
-  });
+  const mentionQ = useUserSearch(debouncedQuery, { enabled: trigger?.prefix === '@' });
 
   const tagQ = useQuery({
     queryKey: ['autocomplete', '#', debouncedQuery],

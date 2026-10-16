@@ -7,13 +7,8 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Skeleton } from '@/components/primitives';
-import {
-  getAgentOverview,
-  getAlerts,
-  getHomogenization,
-  getPopulationPulse,
-  listLabAgents,
-} from '@/features/lab/api';
+import { getAgentOverview, listLabAgents } from '@/features/lab/api';
+import { useHomogenization, useLabAlerts, usePopulationPulse } from '@/features/lab/queries';
 import { mean, median, zScore } from '@/features/lab/stats';
 import type { LabEra } from '@/features/lab/types';
 import s from '@/features/lab/lab.module.css';
@@ -53,21 +48,9 @@ export function PopulationInsights({
   onSelect: (u: string) => void;
 }) {
   const { t } = useTranslation();
-  const homogQ = useQuery({
-    queryKey: ['lab-homogenization', era, range],
-    queryFn: () => getHomogenization(era, range),
-    staleTime: 60_000,
-  });
-  const pulseQ = useQuery({
-    queryKey: ['lab-pulse', era, range],
-    queryFn: () => getPopulationPulse(era, range),
-    staleTime: 60_000,
-  });
-  const alertsQ = useQuery({
-    queryKey: ['lab-alerts', era, range],
-    queryFn: () => getAlerts(era, range),
-    staleTime: 60_000,
-  });
+  const homogQ = useHomogenization(era, range);
+  const pulseQ = usePopulationPulse(era, range);
+  const alertsQ = useLabAlerts(era, range);
 
   const conclusions = useMemo<Conclusion[]>(() => {
     let mono: Conclusion;

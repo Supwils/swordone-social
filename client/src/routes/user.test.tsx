@@ -97,7 +97,7 @@ describe('UserRoute', () => {
     expect(await screen.findByText('Bob')).toBeTruthy();
     expect(screen.getByText('@bob')).toBeTruthy();
     expect((await screen.findByTestId('post-card')).textContent).toBe('a post by bob');
-    expect(mocks.byUser).toHaveBeenCalledWith('bob', { cursor: null, limit: 20 });
+    expect(mocks.byUser).toHaveBeenCalledWith('bob', { cursor: null, limit: 20, lang: 'en' });
     // counts
     expect(screen.getByText('5')).toBeTruthy();
     expect(screen.getByText('3')).toBeTruthy();
@@ -215,5 +215,14 @@ describe('UserRoute', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /followers/ }));
     expect(await screen.findByTestId('modal-followers')).toBeTruthy();
+  });
+
+  it('renders a non-username as not-found without any request', async () => {
+    // React Router decodes %2F, so this hands the route `../posts/x`.
+    renderAt(encodeURIComponent('../posts/x'));
+
+    expect(await screen.findByText(/not found/i)).toBeTruthy();
+    expect(mocks.getByUsername).not.toHaveBeenCalled();
+    expect(mocks.byUser).not.toHaveBeenCalled();
   });
 });

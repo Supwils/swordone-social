@@ -2,7 +2,7 @@
 title: Testing standards & reliability playbook
 status: stable
 last-updated: 2026-10-15
-owner: s5-hygiene
+owner: s6-review
 ---
 
 # Testing standards & reliability playbook
@@ -17,9 +17,9 @@ this codebase; the examples are real files you can open.
 - `npm run ci:check` is the only definition of green. Run it before claiming
   any change is done, and always for changes touching build config,
   dependencies, lint config, or the CI workflow itself.
-- `ci:check` is 17 steps (`09-contributing.md`): besides tests it gates the contract
+- `ci:check` is 20 steps (`09-contributing.md`): besides tests it gates the contract
   sync, lint (server, client, mcp, agent), Prettier format check (server, client,
-  mcp), and knip. CI additionally runs the Playwright `e2e` job, which `ci:check`
+  mcp), the three builds, an e2e typecheck, knip and `uv lock --check`. CI additionally runs the Playwright `e2e` job, which `ci:check`
   does not.
 - Per-package: `npm --prefix server run test:coverage`,
   `npm --prefix client run test:coverage`, `npm --prefix mcp run test`,

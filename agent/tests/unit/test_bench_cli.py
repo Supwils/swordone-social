@@ -22,7 +22,7 @@ from swil_agent.cli.errors import AccountSetupError
 from swil_agent.config import Settings
 from swil_agent.embedder.client import EmbedderUnavailable
 from swil_agent.llm.runner import RunResult
-from tests.unit._runners import RunnerCall
+from tests.unit._runners import RunnerCall, record_call
 
 runner = CliRunner()
 
@@ -55,8 +55,9 @@ class BenchRunner:
         stdin: str | None = None,
         env: dict[str, str] | None = None,
         timeout: float = 300.0,
+        cwd: str | None = None,
     ) -> RunResult:
-        stdout = self.run(argv, stdin, env, timeout)
+        stdout = self.run(argv, stdin, env, timeout, cwd)
         if self.model_times_out and "--system-prompt" in argv:
             return RunResult(stdout="", returncode=None, timed_out=True)
         return RunResult(stdout=stdout, returncode=0)
@@ -67,8 +68,9 @@ class BenchRunner:
         stdin: str | None = None,
         env: dict[str, str] | None = None,
         timeout: float = 300.0,
+        cwd: str | None = None,
     ) -> str:
-        self.calls.append(RunnerCall(argv=list(argv), stdin=stdin, env=env, timeout=timeout))
+        self.calls.append(record_call(argv, stdin, env, timeout, cwd))
         if argv[0] == "codex":
             Path(argv[argv.index("-o") + 1]).write_text("codex 的回答", encoding="utf-8")
             return ""

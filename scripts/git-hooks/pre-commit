@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # pre-commit hook — fast local feedback before each commit.
-# Runs typecheck + tests on both packages. Build is left to pre-push.
+# Runs typecheck + lint + tests on server and client only. Build, format, mcp,
+# knip and agent checks are left to pre-push (scripts/ci-check.sh).
 # Bypass once with: git commit --no-verify
 
 set -euo pipefail

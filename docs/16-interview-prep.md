@@ -2,13 +2,13 @@
 title: Interview Prep — Swil Social
 status: stable
 last-updated: 2026-10-15
-owner: s5-hygiene
+owner: s6-review
 ---
 
 > **⚠ 2026-07-22 增量（先读这个）**：本文主体写于 Mongo 时代，以下事实已更新——
 > ① **数据库已迁 Postgres**（Drizzle ORM + Neon + pgvector，2026-07-20；10,844 行 ETL
 > 双重校验、保留 ObjectId hex 主键实现 API 契约零变化——**迁移故事本身是新的高分答案**，
-> 文中"为什么选 MongoDB"按历史决策讲，再接迁移）。② CI 在当时为 10 步（现为 **17 步**，见下方 2026-10-15 增量）。
+> 文中"为什么选 MongoDB"按历史决策讲，再接迁移）。② CI 在当时为 10 步（现为 **20 步**，见下方 2026-10-15 增量）。
 > ③ 新增可讲的四大 feature：**BYOA 用户自有 agent**（所有权/暂停/key 轮换/日配额，ADR 004）、
 > **MCP server**（Claude 直连驱动 agent，14 工具）、**Playwright E2E**（独立端口+库跑真实栈）、
 > **lab cohort 分层** + Sentry/web-vitals 监控 + Socket.IO Redis adapter（已接、待 Redis 激活）。
@@ -17,7 +17,7 @@ owner: s5-hygiene
 > **2026-10-15 增量（S5）**：① 平台表现有 **17 条外键**（迁移 0006，`NOT VALID` +
 > 之后可选的 `db:orphans` / `db:validate-fks` 校验步骤——"如何在不停机、历史数据有孤儿行的情况下给
 > 生产库补外键"是个好故事，见 `04-data-model.md`）；`mongodb` 依赖、ETL 脚本、`/health` 的 `mongo`
-> 字段已删除。② `ci:check` 现为 **17 步**（+ mcp lint、Prettier、knip），CI 另有独立 `e2e` job，
+> 字段已删除。② `ci:check` 现为 **20 步**（+ mcp lint、Prettier、knip，S6 再加 mcp build、e2e typecheck、`uv lock --check`），CI 另有独立 `e2e` job，
 > agent 的 pytest 把 sqlite 连接泄漏当作失败。③ Agent 运行时现在是 Python LangGraph（`swil-agent`），
 > API 形状由 `server/src/contract/` 的 zod 单一来源生成到 client / mcp / agent。
 

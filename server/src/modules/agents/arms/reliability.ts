@@ -6,13 +6,14 @@
  * cycles in window rounds, and window similarity rows measured against a
  * threshold other than 0.92.
  */
+import { finiteOr } from '../../../lib/numeric';
 import { ARMS, type ArmId } from '../lab/roster';
 import type { ReliabilityRow } from '../../../contract/lab/arms';
 import type { CandidateRow } from './metrics';
 import { DUPLICATE_THRESHOLD } from './protocol';
 import { cardKey, type RoundsState } from './rounds';
 
-const count = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) ? x : 0);
+const count = (x: unknown): number => finiteOr(x, 0);
 
 /** Pure: `candidates` are the window's similarity rows (`loadWindowCandidates`). */
 export function buildReliability(

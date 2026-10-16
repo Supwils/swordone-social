@@ -19,7 +19,9 @@ from typing import Any, Final
 from swil_agent.api.client import ApiError
 from swil_agent.api.dto import LabEvent
 from swil_agent.api.resources import VectorFiling, WriteNotVerifiedError
+from swil_agent.config import Settings
 from swil_agent.embedder.client import EmbedderUnavailable
+from swil_agent.graph.deps import CycleDeps
 from swil_agent.llm.errors import BackendUnavailableError
 from swil_agent.llm.runner import CompletionRequest, RunResult
 from swil_agent.models import Persona
@@ -50,12 +52,50 @@ def make_persona(
 
 @dataclass(frozen=True)
 class RunnerCall:
-    """One recorded invocation of `Runner.run`."""
+    """One recorded invocation of `Runner.run`.
+
+    `cwd_entries` is what the working directory held AT CALL TIME (`None`
+    when no `cwd` was passed or it did not exist) -- the isolation tests
+    assert it existed and was empty, then that it is gone afterwards."""
 
     argv: list[str]
     stdin: str | None
     env: dict[str, str] | None
     timeout: float
+    cwd: str | None = None
+    cwd_entries: tuple[str, ...] | None = None
+
+
+def record_call(
+    argv: list[str],
+    stdin: str | None,
+    env: dict[str, str] | None,
+    timeout: float,
+    cwd: str | None,
+) -> RunnerCall:
+    entries = (
+        tuple(sorted(p.name for p in Path(cwd).iterdir()))
+        if cwd is not None and Path(cwd).is_dir()
+        else None
+    )
+    return RunnerCall(
+        argv=list(argv), stdin=stdin, env=env, timeout=timeout, cwd=cwd, cwd_entries=entries
+    )
+
+
+# The repository this test suite lives in; an isolated persona call must
+# never start inside it.
+_REPO_ROOT: Final = Path(__file__).resolve().parents[3]
+
+
+def assert_isolated_cwd(call: RunnerCall, *, expected: tuple[str, ...] = ()) -> None:
+    """The call ran in a fresh temp directory outside the repository that
+    held exactly `expected` at call time and is gone now."""
+    assert call.cwd is not None, "the call inherited the caller's working directory"
+    cwd = Path(call.cwd).resolve()
+    assert _REPO_ROOT not in (cwd, *cwd.parents), f"{cwd} is inside the repository"
+    assert call.cwd_entries == expected, f"cwd held {call.cwd_entries} at call time"
+    assert not Path(call.cwd).exists(), f"{call.cwd} was not removed after the call"
 
 
 class RecordingRunner:
@@ -76,8 +116,9 @@ class RecordingRunner:
         stdin: str | None = None,
         env: dict[str, str] | None = None,
         timeout: float = 300.0,
+        cwd: str | None = None,
     ) -> RunResult:
-        stdout = self.run(argv, stdin, env, timeout)
+        stdout = self.run(argv, stdin, env, timeout, cwd)
         if self.timed_out:
             return RunResult(stdout="", returncode=None, timed_out=True)
         return RunResult(stdout=stdout, returncode=self.returncode)
@@ -88,8 +129,9 @@ class RecordingRunner:
         stdin: str | None = None,
         env: dict[str, str] | None = None,
         timeout: float = 300.0,
+        cwd: str | None = None,
     ) -> str:
-        self.calls.append(RunnerCall(argv=list(argv), stdin=stdin, env=env, timeout=timeout))
+        self.calls.append(record_call(argv, stdin, env, timeout, cwd))
         return self.output
 
 
@@ -112,8 +154,9 @@ class ScriptedRunner:
         stdin: str | None = None,
         env: dict[str, str] | None = None,
         timeout: float = 300.0,
+        cwd: str | None = None,
     ) -> str:
-        self.calls.append(RunnerCall(argv=list(argv), stdin=stdin, env=env, timeout=timeout))
+        self.calls.append(record_call(argv, stdin, env, timeout, cwd))
         if self.call_count >= len(self._responses):
             raise RuntimeError(
                 f"ScriptedRunner called {self.call_count + 1} time(s) but only "
@@ -231,8 +274,7 @@ class ScriptedBackend:
     A whole CYCLE spends two backend calls on ONE backend object -- the plan,
     then the dream's new 最近 list -- so `StubBackend` (one fixed answer for
     everything) cannot drive one. Calls past the end of the script repeat its
-    last entry, which is what makes a cycle whose act phase runs twice
-    (loop 3) expressible without padding the script.
+    last entry.
     """
 
     name = "scripted"
@@ -346,8 +388,8 @@ class FakeResources:
 
     Extended a third time (task 12, fix round 1, item 1) with
     `lab_event_raises`: if set, `lab_event` raises instead of recording --
-    simulating an events-service outage, to pin that `run_dream`'s own
-    `_emit` helper swallows it and a dream's outcome is unaffected.
+    a fake that BREAKS `Resources.lab_event`'s never-raises contract, for the
+    callers that defend against any `Resources` anyway.
     """
 
     def __init__(
@@ -796,3 +838,25 @@ class FakePersonaSource:
         if self._order is not None:
             self._order.append("memory_append")
         self.appended.append((name, line))
+
+
+def make_cycle_deps(agent_root: Path, **overrides: Any) -> CycleDeps:
+    """THE `CycleDeps` builder for tests: every collaborator a harmless
+    double, a planner that answers `nothing`, settings rooted at
+    `agent_root`. Override any field; a test file's own `_deps` passes only
+    what differs for that file."""
+    fields: dict[str, Any] = {
+        "resources": FakeResources(),
+        "backend": StubBackend('{"plan":[{"action":"nothing"}]}'),
+        "persona_source": FakePersonaSource(),
+        "embedder": FakeEmbedder(),
+        "dream_state": FakeState(),
+        "settings": Settings(agent_root=agent_root),
+        "agent_root": agent_root,
+        "health_check": lambda: True,
+        "memory_text": "",
+        "llm_backend": "claude",
+        "llm_model": None,
+    }
+    fields.update(overrides)
+    return CycleDeps(**fields)

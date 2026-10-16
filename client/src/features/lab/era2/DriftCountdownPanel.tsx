@@ -35,26 +35,17 @@
  * 2026-10-14) — and it is deleted in favour of
  * `aspectThresholdsFrom` below.
  */
-import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Skeleton } from '@/components/primitives';
-import { getDriftCountdown } from '@/features/lab/api';
 import type {
   DriftCountdownDTO,
   DriftCountdownKey,
   DriftCountdownSeriesDTO,
 } from '@/features/lab/types';
+import { day, fmtNum } from '@/features/lab/format';
+import { useDriftCountdown } from '@/features/lab/queries';
 import s from '@/features/lab/lab.module.css';
-
-/** One query for the whole detail view: `AgentDetail` reuses this key for the chart's thresholds. */
-export function useDriftCountdown(username: string, range: '7d' | '30d' | '90d') {
-  return useQuery({
-    queryKey: ['agent-countdown', username, range],
-    queryFn: () => getDriftCountdown(username, range),
-    staleTime: 60_000,
-  });
-}
 
 /**
  * The per-aspect reject thresholds actually in force, for the aspect chart's
@@ -98,15 +89,6 @@ export function countdownHeadline(data: DriftCountdownDTO): CountdownHeadline {
     x.projection === 'insufficient-points' || x.projection === 'no-time-span';
   if (gating.length > 0 && gating.every(unfitted)) return { kind: 'waiting' };
   return { kind: 'none' };
-}
-
-function fmt(value: number | null, digits: number): string {
-  return value === null ? '—' : value.toFixed(digits);
-}
-
-/** ISO instant → `YYYY-MM-DD`, the convention every other lab panel uses. */
-function day(iso: string | null): string {
-  return iso ? iso.slice(0, 10) : '—';
 }
 
 export function DriftCountdownPanel({
@@ -153,14 +135,14 @@ function CountdownBody({ data }: { data: DriftCountdownDTO }) {
           {head.kind === 'crossed'
             ? t('lab.countdown.head.crossed', {
                 aspect: t(`lab.countdown.key.${head.series.key}`),
-                threshold: fmt(head.series.thresholdSim, 3),
+                threshold: fmtNum(head.series.thresholdSim, 3),
               })
             : head.kind === 'projected'
               ? t('lab.countdown.head.projected', {
                   aspect: t(`lab.countdown.key.${head.series.key}`),
                   rounds: head.series.roundsRemaining ?? 0,
                   date: day(head.series.crossesAt),
-                  r2: fmt(head.series.r2, 3),
+                  r2: fmtNum(head.series.r2, 3),
                 })
               : t(`lab.countdown.head.${head.kind}`)}
         </span>
@@ -205,8 +187,8 @@ function CountdownRow({
         {t(gating ? 'lab.countdown.gates' : 'lab.countdown.diagnostic')} ·{' '}
         {t('lab.countdown.meta', {
           n: series.n,
-          span: fmt(series.spanDays, 1),
-          latest: fmt(series.latestSim, 3),
+          span: fmtNum(series.spanDays, 1),
+          latest: fmtNum(series.latestSim, 3),
           // WHY THE DATE TRAVELS WITH THE READING. `latestSim` alone cannot be
           // read against `thresholdSim`: on the `crossedAlready` branch the
           // crossing may sit AFTER the last measurement, in which case
@@ -220,7 +202,7 @@ function CountdownRow({
           threshold:
             series.thresholdBasis === 'absent'
               ? t('lab.countdown.thresholdAbsent')
-              : fmt(series.thresholdSim, 3),
+              : fmtNum(series.thresholdSim, 3),
         })}
       </span>
       <span className={s.timelineSummary}>{projectionSentence(series, maxExtrapolation, t)}</span>
@@ -243,7 +225,7 @@ function projectionSentence(
       // so the date branch would print "—" and read as no lockout at all.
       return series.crossedAlready
         ? t('lab.countdown.proj.crossed', {
-            threshold: fmt(series.thresholdSim, 3),
+            threshold: fmtNum(series.thresholdSim, 3),
             // The honest limit of `crossedAlready`, rendered rather than left
             // in the service's comment: a crossing between the last
             // measurement and `asOf` rests on the fit alone, and this date is
@@ -251,10 +233,10 @@ function projectionSentence(
             latestAt: day(series.latestAt),
           })
         : t('lab.countdown.proj.fitted', {
-            threshold: fmt(series.thresholdSim, 3),
+            threshold: fmtNum(series.thresholdSim, 3),
             date: day(series.crossesAt),
             rounds: series.roundsRemaining ?? 0,
-            r2: fmt(series.r2, 3),
+            r2: fmtNum(series.r2, 3),
           });
     case 'insufficient-points':
       return series.n === 0
@@ -263,13 +245,13 @@ function projectionSentence(
     case 'no-time-span':
       return t('lab.countdown.proj.noTimeSpan', { n: series.n });
     case 'not-declining':
-      return t('lab.countdown.proj.notDeclining', { slope: fmt(series.simSlopePerDay, 5) });
+      return t('lab.countdown.proj.notDeclining', { slope: fmtNum(series.simSlopePerDay, 5) });
     case 'no-threshold':
-      return t('lab.countdown.proj.noThreshold', { slope: fmt(series.simSlopePerDay, 5) });
+      return t('lab.countdown.proj.noThreshold', { slope: fmtNum(series.simSlopePerDay, 5) });
     case 'span-too-short':
       return t('lab.countdown.proj.spanTooShort', {
-        slope: fmt(series.simSlopePerDay, 5),
-        span: fmt(series.spanDays, 1),
+        slope: fmtNum(series.simSlopePerDay, 5),
+        span: fmtNum(series.spanDays, 1),
         mult: maxExtrapolation,
       });
   }

@@ -127,22 +127,21 @@ def test_normalize_kind_accepts_both_spellings(raw: str, expected: str | None) -
     assert normalize_kind(raw) == expected
 
 
-def test_unknown_persona_bullet_warns_and_falls_back() -> None:
-    """`mangniu` records `AI Backend: haiku` -- a MODEL name in the backend
-    slot. Bash's `llm.sh` sent every unrecognised name down its `*)` branch to
-    the claude CLI and the account has run that way for months, so this must
-    not become an error. It must, however, stop being silent."""
-    choice, warnings = resolve_backend_choice(
-        _persona(declared_backend="haiku", model="haiku"), _settings()
-    )
-    assert choice.kind == "claude_cli"
-    assert len(warnings) == 1
-    assert "haiku" in warnings[0]
+def test_an_unknown_persona_backend_is_an_error_not_a_fallback() -> None:
+    """S6 AG-F13: a backend typo in `model:` used to run the account on the
+    claude CLI with one warning line -- an arm on the wrong model family while
+    the round reported success. It is refused like a flag typo."""
+    with pytest.raises(BackendConfigurationError, match=r"unknown backend 'haiku' \(zenith"):
+        resolve_backend_choice(_persona(declared_backend="haiku", model="haiku"), _settings())
+
+
+def test_an_unknown_env_backend_is_an_error_not_a_fallback() -> None:
+    with pytest.raises(BackendConfigurationError, match="SWIL_LLM_BACKEND"):
+        resolve_backend_choice(_persona(declared_backend=None), _settings(swil_llm_backend="gork"))
 
 
 def test_unknown_flag_is_an_error_not_a_fallback() -> None:
-    """The forgiving path above exists for the roster's historical spellings.
-    A flag typed ten seconds ago is a typo, and defaulting it would run the
+    """A flag typed ten seconds ago is a typo, and defaulting it would run the
     wrong model while reporting success."""
     with pytest.raises(BackendConfigurationError, match="unknown backend 'gork'"):
         resolve_backend_choice(_persona(), _settings(), backend_override="gork")

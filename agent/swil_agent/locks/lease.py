@@ -15,14 +15,14 @@ So a lease holds BOTH:
 
 Removing the file half would blind that sweep and any file-based check.
 
-**What actually kills the orphan-lock class.** Time-based expiry alone buys
-nothing over the file it accompanies: the file reclaims at the same 1800s,
-so a dead run still costs the account up to
-30 minutes of SKIPped rounds. The row carries the holder's **pid**, and a
-lease whose pid is no longer alive is reclaimable *immediately*. That is the
-difference between "we added SQLite" and "we killed the class of defect that
-an accepted dream exiting 141 after `snapshot uploaded` used to create". Time
-expiry stays as the backstop for a reused pid.
+**What actually kills the orphan-lock class: the dead pid.** Time-based
+expiry alone would cost a dead run's account up to 30 minutes of SKIPped
+rounds. Both halves carry the holder's **pid** -- line 1 of the lock file and
+the row's `pid` column -- and both are reclaimable *immediately* once that pid
+is gone. The file has to apply the rule itself (`FileLock`): it is acquired
+first, so a row reclaim behind a file that only aged out after 1800s was
+unreachable for the whole window. Time expiry stays as the backstop for a
+reused pid.
 
 Pid liveness is only meaningful on the host that wrote the row. This runtime
 is single-host by construction (the lease DB is a local SQLite file, and
@@ -102,8 +102,7 @@ from swil_agent.locks.file import (
 
 logger = logging.getLogger("swil_agent.graph.leases")
 
-# The same 1800s Bash reclaims at, and the
-# same window `locks.STALE_AFTER_SECONDS` applies to the file half. The two
+# The same 1800s window `locks.STALE_AFTER_SECONDS` applies to the file half. The two
 # halves of one lease must expire at the same instant -- any gap between them
 # is a window in which one runtime reclaims what the other still considers
 # held. `test_the_ttl_matches_the_bash_staleness_window` pins the equality.
@@ -441,13 +440,13 @@ class RunLease:
         heartbeat tries again), a dead round is not. But it is not swallowed
         silently either -- a heartbeat that keeps failing is functionally
         identical, from Bash's side, to a process that stopped heartbeating
-        for real, and Bash reclaims this lease's file half after
+        for real, and another holder reclaims this lease's file half after
         `LEASE_TTL_SECONDS` regardless of why the row went stale. Logged at
         WARNING, so an operator sees a struggling lease well before that
         1800s clock runs out and a second runtime starts acting on the same
         account -- not after. The lock file below is still touched
-        regardless of whether the row write succeeded: it is the
-        Bash-visible half of this same beat and does not depend on SQLite.
+        regardless of whether the row write succeeded: it is the half every
+        other holder reads, and it does not depend on SQLite.
         """
         stamp = self._now() if now is None else now
         try:
@@ -478,7 +477,7 @@ class RunLease:
         with it and is deliberate: the mtime refresh is an *extra* claim, so
         declining it costs nothing, while declining the unlink strands a lock
         file that no Python process will ever come back for and that costs the
-        account every round until Bash's 1800s staleness window expires.
+        account every round until its pid is seen dead or 1800s pass.
         """
         if self._lock_file_owner() != "theirs":
             self._lock.release()
@@ -494,6 +493,6 @@ class RunLease:
             self._db.commit()
         finally:
             # `finally`, so a dead database on the way out cannot strand the
-            # Bash-visible lock. The row expires on its own after the TTL;
+            # lock file. The row expires on its own after the TTL;
             # the lock file would not.
             self._release_lock_file()

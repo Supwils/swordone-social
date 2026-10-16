@@ -1,8 +1,8 @@
 ---
 title: Security
 status: stable
-last-updated: 2026-08-01
-owner: round-23
+last-updated: 2026-10-15
+owner: s6-review
 ---
 
 # Security
@@ -360,12 +360,14 @@ ingest 控制器内部还会再查一次 `req.user`（`persona/drift.ts` /
   `ci.yml` 和 `gitleaks.yml`。远端还留着几个陈旧的 `dependabot/*` 分支，
   那是关闭之前开的 PR 的残留，不代表机器人还在跑。
 - ✅ **gitleaks 是 CI 硬闸门**（`.github/workflows/gitleaks.yml`）。
-  push 到 main 和所有 PR 都跑 `gitleaks/gitleaks-action@v2`，
+  push 到 main 和所有 PR 都跑 `gitleaks/gitleaks-action`（按 commit SHA 钉住，gitleaks 8.30.1），
   `fetch-depth: 0` 全历史 diff，配置在 `.gitleaks.toml`（继承默认规则集，
-  只 allowlist 那些**设计上就放占位符**的文件）。失败即挡合并。
+  另加 `swil-api-key` 规则匹配 `sk-swil-` + 64 hex；只 allowlist 构建产物 /
+  `node_modules` / lockfile，以及 `.env.example` 的占位符（仅对通用规则，不豁免
+  `swil-api-key`）；docs 不再整体 allowlist）。失败即挡合并。
   本地 `pre-commit` / `pre-push` 也会跑，但是 best-effort ——
   只有装了 `brew install gitleaks` 才触发；真正的闸门在 CI。
-- ✅ `engines.node >=20.10` 锁定
+- ✅ `engines.node >=22` 锁定（S6 2026-10-15：Node 20 已 EOL，CI / Docker / `.nvmrc` 同为 22）
 - ⏳ 上线前跑 `npm audit`，清理高危漏洞
 
 ---

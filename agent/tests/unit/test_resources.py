@@ -9,6 +9,7 @@ import pytest
 from swil_agent.api.auth import ApiKeyAuth
 from swil_agent.api.client import ApiClient, ApiError
 from swil_agent.api.dto import LabEvent
+from swil_agent.api.paths import InvalidPathSegmentError
 from swil_agent.api.resources import Resources, VectorFiling, WriteNotVerifiedError
 
 
@@ -134,10 +135,10 @@ def test_create_post_with_image_uses_plural_images_multipart_field() -> None:
 
 def test_create_comment_returns_server_id() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/api/v1/posts/p1/comments"
+        assert request.url.path == "/api/v1/posts/6a0000000000000000000001/comments"
         return httpx.Response(201, json={"data": {"comment": {"id": "c-1"}}})
 
-    assert _resources(handler).create_comment("p1", "text") == "c-1"
+    assert _resources(handler).create_comment("6a0000000000000000000001", "text") == "c-1"
 
 
 def test_create_comment_sends_parent_id_when_given() -> None:
@@ -147,7 +148,7 @@ def test_create_comment_sends_parent_id_when_given() -> None:
         seen.update(_json.loads(request.content))
         return httpx.Response(201, json={"data": {"comment": {"id": "c"}}})
 
-    _resources(handler).create_comment("p1", "text", parent_id="c0")
+    _resources(handler).create_comment("6a0000000000000000000001", "text", parent_id="c0")
     assert seen["parentId"] == "c0"
 
 
@@ -158,7 +159,7 @@ def test_create_comment_omits_parent_id_when_absent() -> None:
         seen.update(_json.loads(request.content))
         return httpx.Response(201, json={"data": {"comment": {"id": "c"}}})
 
-    _resources(handler).create_comment("p1", "text")
+    _resources(handler).create_comment("6a0000000000000000000001", "text")
     assert "parentId" not in seen
 
 
@@ -167,7 +168,7 @@ def test_create_comment_without_id_raises() -> None:
         return httpx.Response(200, json={"data": {"ok": True}})
 
     with pytest.raises(WriteNotVerifiedError):
-        _resources(handler).create_comment("p1", "text")
+        _resources(handler).create_comment("6a0000000000000000000001", "text")
 
 
 # ── like_post ────────────────────────────────────────────────────────────
@@ -180,10 +181,10 @@ def test_like_post_accepts_confirmed_liked_true() -> None:
     state field per the task's own instruction to do so when one exists."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/api/v1/posts/p1/like"
+        assert request.url.path == "/api/v1/posts/6a0000000000000000000001/like"
         return httpx.Response(200, json={"data": {"likeCount": 4, "liked": True}})
 
-    _resources(handler).like_post("p1")  # must not raise
+    _resources(handler).like_post("6a0000000000000000000001")  # must not raise
 
 
 def test_like_post_raises_when_liked_flag_missing() -> None:
@@ -194,7 +195,7 @@ def test_like_post_raises_when_liked_flag_missing() -> None:
         return httpx.Response(200, json={"data": {}})
 
     with pytest.raises(WriteNotVerifiedError):
-        _resources(handler).like_post("p1")
+        _resources(handler).like_post("6a0000000000000000000001")
 
 
 def test_like_post_raises_when_liked_is_false() -> None:
@@ -205,7 +206,7 @@ def test_like_post_raises_when_liked_is_false() -> None:
         return httpx.Response(200, json={"data": {"likeCount": 3, "liked": False}})
 
     with pytest.raises(WriteNotVerifiedError):
-        _resources(handler).like_post("p1")
+        _resources(handler).like_post("6a0000000000000000000001")
 
 
 # ── follow ───────────────────────────────────────────────────────────────
@@ -307,24 +308,28 @@ def test_send_dm_creates_conversation_then_sends_message() -> None:
         calls.append((request.url.path, _json.loads(request.content)))
         if request.url.path == "/api/v1/conversations":
             assert _json.loads(request.content) == {"recipientUsername": "someone"}
-            return httpx.Response(201, json={"data": {"conversation": {"id": "conv-1"}}})
-        assert request.url.path == "/api/v1/conversations/conv-1/messages"
+            return httpx.Response(
+                201, json={"data": {"conversation": {"id": "6b0000000000000000000002"}}}
+            )
+        assert request.url.path == "/api/v1/conversations/6b0000000000000000000002/messages"
         assert _json.loads(request.content) == {"text": "hi"}
         return httpx.Response(201, json={"data": {"message": {"id": "m-1"}}})
 
     result = _resources(handler).send_dm("someone", "hi")
 
-    assert result == ("conv-1", "m-1")
+    assert result == ("6b0000000000000000000002", "m-1")
     assert [path for path, _ in calls] == [
         "/api/v1/conversations",
-        "/api/v1/conversations/conv-1/messages",
+        "/api/v1/conversations/6b0000000000000000000002/messages",
     ]
 
 
 def test_send_dm_raises_when_message_has_no_id() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/conversations":
-            return httpx.Response(201, json={"data": {"conversation": {"id": "conv-1"}}})
+            return httpx.Response(
+                201, json={"data": {"conversation": {"id": "6b0000000000000000000002"}}}
+            )
         return httpx.Response(200, json={"data": {"message": {}}})
 
     with pytest.raises(WriteNotVerifiedError):
@@ -497,17 +502,22 @@ def test_get_post_returns_the_post_dict() -> None:
     regression guard against reintroducing that, not a hand-rolled shape."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/api/v1/posts/p1"
-        return httpx.Response(200, json={"data": {"post": {"id": "p1", "text": "hi"}}})
+        assert request.url.path == "/api/v1/posts/6a0000000000000000000001"
+        return httpx.Response(
+            200, json={"data": {"post": {"id": "6a0000000000000000000001", "text": "hi"}}}
+        )
 
-    assert _resources(handler).get_post("p1") == {"id": "p1", "text": "hi"}
+    assert _resources(handler).get_post("6a0000000000000000000001") == {
+        "id": "6a0000000000000000000001",
+        "text": "hi",
+    }
 
 
 def test_get_post_returns_empty_dict_when_data_is_not_an_object() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": []})
 
-    assert _resources(handler).get_post("p1") == {}
+    assert _resources(handler).get_post("6a0000000000000000000001") == {}
 
 
 def test_get_post_returns_empty_dict_when_post_key_is_missing() -> None:
@@ -518,14 +528,14 @@ def test_get_post_returns_empty_dict_when_post_key_is_missing() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": {}})
 
-    assert _resources(handler).get_post("p1") == {}
+    assert _resources(handler).get_post("6a0000000000000000000001") == {}
 
 
 def test_get_post_returns_empty_dict_when_post_is_not_an_object() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": {"post": "not-a-post"}})
 
-    assert _resources(handler).get_post("p1") == {}
+    assert _resources(handler).get_post("6a0000000000000000000001") == {}
 
 
 def test_get_comments_requests_limit() -> None:
@@ -535,9 +545,9 @@ def test_get_comments_requests_limit() -> None:
         seen.append(str(request.url))
         return httpx.Response(200, json={"data": {"items": [{"id": "c1"}]}})
 
-    result = _resources(handler).get_comments("p1", limit=6)
+    result = _resources(handler).get_comments("6a0000000000000000000001", limit=6)
 
-    assert seen[0].endswith("/api/v1/posts/p1/comments?limit=6")
+    assert seen[0].endswith("/api/v1/posts/6a0000000000000000000001/comments?limit=6")
     assert result == [{"id": "c1"}]
 
 
@@ -761,6 +771,27 @@ def test_lab_event_never_raises_on_api_error() -> None:
     _resources(handler).lab_event(
         "zenith", LabEvent(type="cycle", phase="act", outcome="success", summary="hi")
     )  # must not raise
+
+
+def test_a_refused_lab_event_is_one_warning_naming_the_event_and_the_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """S6 AG-F9: never raising is not the same as never telling. A 400 (an
+    over-long field, a nested metric) used to vanish without a trace."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": {"code": "VALIDATION", "message": "bad"}})
+
+    with caplog.at_level(logging.WARNING, logger="swil_agent.api.resources"):
+        _resources(handler).lab_event(
+            "zenith", LabEvent(type="dream", phase="dream", outcome="fail", summary="x")
+        )
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert "dream/dream/fail" in message
+    assert "zenith" in message
+    assert "HTTP 400" in message
 
 
 # ── create_snapshot ──────────────────────────────────────────────────────
@@ -1264,3 +1295,137 @@ def test_user_posts_page_omits_an_absent_cursor_and_reads_a_missing_one_as_the_e
 
     assert (items, cursor) == ([], None)
     assert seen == [{"limit": ["5"]}]
+
+
+# ── path segments (S6 AG-F5) ─────────────────────────────────────────────
+
+_HEX = "6a0000000000000000000001"
+_TRAVERSAL = "../conversations/" + _HEX + "/messages?"
+_ANOMALY = LabEvent(type="anomaly", phase="act", outcome="success", summary="s")
+_CYCLE_EVENT = LabEvent(type="cycle", phase="act", outcome="success", summary="s")
+
+
+def _never_called(request: httpx.Request) -> httpx.Response:
+    raise AssertionError(f"no request may be sent, got {request.method} {request.url}")
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda r: r.create_comment(_TRAVERSAL, "hi"),
+        lambda r: r.like_post(_TRAVERSAL),
+        lambda r: r.like_post(".."),
+        lambda r: r.get_post("A" * 24),
+        lambda r: r.get_comments(_TRAVERSAL),
+        lambda r: r.follow("../posts/" + _HEX + "/like"),
+        lambda r: r.follow("ab"),
+        lambda r: r.user_posts("v/../x"),
+        lambda r: r.user_posts_page("..", limit=5),
+        lambda r: r.create_snapshot("../users/me", {}),
+        lambda r: r.create_behavior_snapshot("..", {}),
+        lambda r: r.record_intervention("x y", _ANOMALY),
+        lambda r: r.feed_board(".."),
+        lambda r: r.feed_board(""),
+    ],
+)
+def test_an_invalid_path_value_is_refused_before_any_request(
+    call: Callable[[Resources], object],
+) -> None:
+    with pytest.raises(InvalidPathSegmentError) as info:
+        call(_resources(_never_called))
+    assert isinstance(info.value, ApiError)
+    assert info.value.status == 0
+
+
+def test_lab_event_and_post_vector_swallow_an_invalid_username() -> None:
+    resources = _resources(_never_called)
+    resources.lab_event("..", _CYCLE_EVENT)
+    filing = resources.file_post_vector(
+        "../x", post_id=_HEX, round_id=None, embedding=[0.0], card_sim=None, max_sim=None
+    )
+    assert filing == VectorFiling("failed")
+
+
+def test_send_dm_refuses_a_conversation_id_that_is_not_an_id() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(201, json={"data": {"conversation": {"id": "../posts"}}})
+
+    with pytest.raises(InvalidPathSegmentError):
+        _resources(handler).send_dm("someone", "hi")
+    assert calls == ["/api/v1/conversations"]
+
+
+def test_a_board_slug_is_percent_encoded() -> None:
+    seen: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.raw_path)
+        return httpx.Response(200, json={"data": {"items": []}})
+
+    _resources(handler).feed_board("a/b?c", limit=1)
+    assert seen == [b"/api/v1/feed/board/a%2Fb%3Fc?limit=1&sort=latest"]
+
+
+def test_valid_ids_and_usernames_send_byte_identical_requests() -> None:
+    """A valid id or username encodes to itself: the exact raw request line
+    of every path-carrying call is what it was before encoding existed."""
+    seen: list[tuple[str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.raw_path))
+        path = request.url.path
+        if path.endswith("/follow"):
+            return httpx.Response(204)
+        if path.endswith("/like"):
+            return httpx.Response(200, json={"data": {"liked": True, "likeCount": 1}})
+        if path.endswith("/comments") and request.method == "POST":
+            return httpx.Response(201, json={"data": {"comment": {"id": "c"}}})
+        if path == "/api/v1/conversations":
+            return httpx.Response(201, json={"data": {"conversation": {"id": _HEX}}})
+        if path.endswith("/messages"):
+            return httpx.Response(201, json={"data": {"message": {"id": "m"}}})
+        if "/snapshots" in path or "/behavior-snapshots" in path:
+            return httpx.Response(201, json={"data": {"id": "s"}})
+        if path.endswith("/events"):
+            return httpx.Response(201, json={"data": {"event": {"id": "e"}}})
+        if path.endswith("/post-vectors"):
+            return httpx.Response(201, json={"data": {"id": "v"}})
+        return httpx.Response(200, json={"data": {"items": [], "post": {}}})
+
+    r = _resources(handler)
+    r.create_comment(_HEX, "hi")
+    r.like_post(_HEX)
+    r.follow("Ada_99")
+    r.send_dm("Ada_99", "hi")
+    r.get_post(_HEX)
+    r.get_comments(_HEX, limit=6)
+    r.user_posts("Ada_99", limit=12)
+    r.user_posts_page("Ada_99", limit=5)
+    r.feed_board("life-science", limit=12)
+    r.lab_event("zenith", _CYCLE_EVENT)
+    r.record_intervention("zenith", _ANOMALY)
+    r.create_snapshot("zenith", {})
+    r.create_behavior_snapshot("zenith", {})
+    r.post_vector(
+        "zenith", post_id=_HEX, round_id=None, embedding=[0.0], card_sim=None, max_sim=None
+    )
+    assert seen == [
+        ("POST", b"/api/v1/posts/" + _HEX.encode() + b"/comments"),
+        ("POST", b"/api/v1/posts/" + _HEX.encode() + b"/like"),
+        ("POST", b"/api/v1/users/Ada_99/follow"),
+        ("POST", b"/api/v1/conversations"),
+        ("POST", b"/api/v1/conversations/" + _HEX.encode() + b"/messages"),
+        ("GET", b"/api/v1/posts/" + _HEX.encode()),
+        ("GET", b"/api/v1/posts/" + _HEX.encode() + b"/comments?limit=6"),
+        ("GET", b"/api/v1/users/Ada_99/posts?limit=12"),
+        ("GET", b"/api/v1/users/Ada_99/posts?limit=5"),
+        ("GET", b"/api/v1/feed/board/life-science?limit=12&sort=latest"),
+        ("POST", b"/api/v1/agents/zenith/events"),
+        ("POST", b"/api/v1/agents/zenith/events"),
+        ("POST", b"/api/v1/agents/zenith/snapshots"),
+        ("POST", b"/api/v1/agents/zenith/behavior-snapshots"),
+        ("POST", b"/api/v1/agents/zenith/post-vectors"),
+    ]

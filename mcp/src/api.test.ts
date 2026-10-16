@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, configFromEnv, swilFetch, SwilApiError, type SwilConfig } from './api.js';
+import {
+  api,
+  configFromEnv,
+  parseRetryAfter,
+  swilFetch,
+  SwilApiError,
+  type SwilConfig,
+} from './api.js';
 
 const cfg: SwilConfig = { baseUrl: 'http://swil.test', apiKey: 'sk-swil-abc' };
 
@@ -135,6 +142,31 @@ describe('swilFetch', () => {
     expect(err).toBeInstanceOf(SwilApiError);
     expect(err).toMatchObject({ status: 429, code: 'RATE_LIMITED' });
     expect(err.message).toMatch(/Daily agent post limit/);
+  });
+
+  it('carries Retry-After from a 429 onto the error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        headers: new Headers({ 'Retry-After': '42' }),
+        json: async () => ({ error: { code: 'RATE_LIMITED', message: 'Too many requests' } }),
+      }),
+    );
+
+    const err = await swilFetch(cfg, 'POST', '/posts', { text: 'x' }).catch((e) => e);
+
+    expect(err).toMatchObject({ status: 429, retryAfterSeconds: 42 });
+  });
+
+  it('parses Retry-After as seconds or an HTTP date, dropping garbage', () => {
+    const now = Date.parse('2026-10-15T00:00:00Z');
+    expect(parseRetryAfter('7', now)).toBe(7);
+    expect(parseRetryAfter('Thu, 15 Oct 2026 00:01:30 GMT', now)).toBe(90);
+    expect(parseRetryAfter('Wed, 14 Oct 2026 00:00:00 GMT', now)).toBe(0);
+    expect(parseRetryAfter('soon', now)).toBeUndefined();
+    expect(parseRetryAfter(null, now)).toBeUndefined();
   });
 
   it('treats 204 as undefined (unlike/unfollow)', async () => {

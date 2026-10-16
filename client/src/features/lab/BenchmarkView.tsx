@@ -6,6 +6,7 @@ import {
   getBenchmarkLeaderboard,
   getBenchmarkMatrix,
 } from '@/features/lab/api';
+import { labKeys } from '@/features/lab/queries';
 import { Skeleton } from '@/components/primitives';
 import s from '@/features/lab/lab.module.css';
 
@@ -36,12 +37,12 @@ function fidTint(v: number | null): string {
 export function BenchmarkView() {
   const { t } = useTranslation();
   const lbQ = useQuery({
-    queryKey: ['bench-leaderboard'],
+    queryKey: labKeys.benchLeaderboard,
     queryFn: getBenchmarkLeaderboard,
     staleTime: 30_000,
   });
   const mxQ = useQuery({
-    queryKey: ['bench-matrix'],
+    queryKey: labKeys.benchMatrix,
     queryFn: getBenchmarkMatrix,
     staleTime: 30_000,
   });
@@ -54,7 +55,7 @@ export function BenchmarkView() {
   const curTask = task ?? tasks[0]?.taskId ?? null;
 
   const cmpQ = useQuery({
-    queryKey: ['bench-compare', curPersona, curTask],
+    queryKey: labKeys.benchCompare(curPersona, curTask),
     queryFn: () => getBenchmarkCompare(curPersona as string, curTask as string),
     enabled: Boolean(curPersona && curTask),
     staleTime: 30_000,

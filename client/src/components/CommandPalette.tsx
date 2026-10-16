@@ -5,8 +5,7 @@ import { useUI, type FeedLayout } from '@/stores/ui.store';
 import { useSetLanguage } from '@/lib/useSetLanguage';
 import { useSession } from '@/stores/session.store';
 import { useDebounce } from '@/lib/useDebounce';
-import * as usersApi from '@/api/users.api';
-import type { UserLiteDTO } from '@/api/types';
+import { useUserSearch } from '@/features/users/useUserSearch';
 import s from './CommandPalette.module.css';
 
 /**
@@ -40,7 +39,6 @@ export function CommandPalette() {
 
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
-  const [people, setPeople] = useState<UserLiteDTO[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const debouncedQuery = useDebounce(query.trim(), 200);
 
@@ -63,29 +61,12 @@ export function CommandPalette() {
       inputRef.current?.focus();
     } else {
       setQuery('');
-      setPeople([]);
       setActive(0);
     }
   }, [open]);
 
-  // People search — plain effect with a staleness guard; the palette sits
-  // outside any query cache on purpose (nothing here should be cached).
-  useEffect(() => {
-    if (!open || debouncedQuery.length < 2) {
-      setPeople([]);
-      return;
-    }
-    let stale = false;
-    usersApi
-      .searchUsers(debouncedQuery)
-      .then((items) => {
-        if (!stale) setPeople(items.slice(0, 5));
-      })
-      .catch(() => undefined);
-    return () => {
-      stale = true;
-    };
-  }, [open, debouncedQuery]);
+  const peopleQuery = useUserSearch(debouncedQuery, { enabled: open, minLength: 2 });
+  const people = useMemo(() => (peopleQuery.data ?? []).slice(0, 5), [peopleQuery.data]);
 
   const commands = useMemo<Command[]>(() => {
     const go = (path: string) => () => nav(path);
@@ -127,7 +108,7 @@ export function CommandPalette() {
         id: 'language',
         label: t('cmdk.language'),
         hint: '',
-        run: () => setLanguage(language === 'zh' ? 'en' : 'zh'),
+        run: () => void setLanguage(language === 'zh' ? 'en' : 'zh'),
       },
     );
     // Every layout except the one already in effect — with three of them, a

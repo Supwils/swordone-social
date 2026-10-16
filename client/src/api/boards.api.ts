@@ -1,4 +1,4 @@
-import { http, unwrap } from './client';
+import { apiPath, http, unwrap } from './client';
 import type { BoardDTO } from './types';
 
 export async function list(): Promise<BoardDTO[]> {
@@ -7,5 +7,5 @@ export async function list(): Promise<BoardDTO[]> {
 }
 
 export async function getBySlug(slug: string): Promise<BoardDTO> {
-  return unwrap<BoardDTO>(http.get(`/boards/${slug}`));
+  return unwrap<BoardDTO>(http.get(apiPath`/boards/${slug}`));
 }

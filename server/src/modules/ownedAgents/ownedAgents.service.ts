@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, ne, or } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { apiKeys, users } from '../../db/schema';
 import { env } from '../../config/env';
-import { AppError } from '../../lib/errors';
+import { AppError, uniqueViolationConflict } from '../../lib/errors';
 import type { UserRow } from '../../lib/dto';
 import { createApiKey } from '../auth/auth.service';
 import type { CreateOwnedAgentInput, UpdateOwnedAgentInput } from './ownedAgents.schemas';
@@ -25,42 +25,62 @@ export async function createOwnedAgent(
     throw AppError.forbidden('Agent accounts cannot own other agents');
   }
 
-  const ownedCount = await db.$count(
-    users,
-    and(eq(users.ownerId, owner.id), ne(users.status, 'deleted')),
-  );
-  if (ownedCount >= env.MAX_AGENTS_PER_OWNER) {
-    throw AppError.forbidden(`Agent limit reached (${env.MAX_AGENTS_PER_OWNER} per account)`);
-  }
-
   const username = input.username.toLowerCase();
   const email = `${username}@agents.swil`;
-  const [existing] = await db
-    .select({ username: users.username })
-    .from(users)
-    .where(or(eq(users.username, username), eq(users.email, email)))
-    .limit(1);
-  if (existing) {
-    throw AppError.conflict('Username already taken', { username: 'Already taken' });
-  }
 
-  const [agent] = await db
-    .insert(users)
-    .values({
-      username,
-      usernameDisplay: input.username,
-      email,
-      emailVerified: false,
-      displayName: input.displayName ?? input.username,
-      isAgent: true,
-      agentBackend: input.agentBackend ?? 'claude',
-      ownerId: owner.id,
-      // passwordHash intentionally omitted (NULL): API-key auth only.
-    })
-    .returning();
+  // Cap check and insert in ONE transaction, serialised per owner by locking
+  // the owner's row: two concurrent creates used to both count N-1 and both
+  // insert, landing the owner one past the cap. The username pre-check stays
+  // for the friendly 409; a create that still loses the race to the unique
+  // index is a 409 too (`uniqueViolationConflict`), never a 500.
+  return db.transaction(async (tx) => {
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, owner.id)).for('update');
 
-  const { key } = await createApiKey(agent, 'initial');
-  return { agent, key };
+    const ownedCount = await tx.$count(
+      users,
+      and(eq(users.ownerId, owner.id), ne(users.status, 'deleted')),
+    );
+    if (ownedCount >= env.MAX_AGENTS_PER_OWNER) {
+      throw AppError.forbidden(`Agent limit reached (${env.MAX_AGENTS_PER_OWNER} per account)`);
+    }
+
+    const [existing] = await tx
+      .select({ username: users.username })
+      .from(users)
+      .where(or(eq(users.username, username), eq(users.email, email)))
+      .limit(1);
+    if (existing) {
+      throw AppError.conflict('Username already taken', { username: 'Already taken' });
+    }
+
+    let agent: UserRow;
+    try {
+      [agent] = await tx
+        .insert(users)
+        .values({
+          username,
+          usernameDisplay: input.username,
+          email,
+          emailVerified: false,
+          displayName: input.displayName ?? input.username,
+          isAgent: true,
+          agentBackend: input.agentBackend ?? 'claude',
+          ownerId: owner.id,
+          // passwordHash intentionally omitted (NULL): API-key auth only.
+        })
+        .returning();
+    } catch (err) {
+      // The synthesized email is the username's twin, so either index means
+      // "username taken" to this caller.
+      if (uniqueViolationConflict(err)) {
+        throw AppError.conflict('Username already taken', { username: 'Already taken' });
+      }
+      throw err;
+    }
+
+    const { key } = await createApiKey(agent, 'initial', tx);
+    return { agent, key };
+  });
 }
 
 export async function listOwnedAgents(owner: UserRow): Promise<OwnedAgentSummary[]> {

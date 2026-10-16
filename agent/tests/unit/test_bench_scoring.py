@@ -20,7 +20,7 @@ from swil_agent.bench.judge import (
 from swil_agent.bench.rules import clean_output, rule_score, vector_fidelity
 from swil_agent.llm.errors import BackendBinaryMissingError
 from swil_agent.llm.runner import SubprocessRunner
-from tests.unit._runners import RecordingRunner
+from tests.unit._runners import RecordingRunner, assert_isolated_cwd
 
 # ── output cleanup ────────────────────────────────────────────────────────
 
@@ -83,9 +83,10 @@ def test_vector_fidelity_is_the_dot_product_rounded_to_six_places() -> None:
 # ── judge ─────────────────────────────────────────────────────────────────
 
 
-def test_the_judge_argv_is_the_bash_argv_exactly_and_tool_less() -> None:
-    """`benchmark-run.sh:125`, with no `--system-prompt`: an explicit one,
-    even empty, would replace Claude Code's default and break the series."""
+def test_the_judge_argv_is_the_bash_argv_plus_isolation_and_tool_less() -> None:
+    """`benchmark-run.sh:125` plus the 2026-10-15 isolation flags, with no
+    `--system-prompt`: an explicit one, even empty, would replace Claude
+    Code's default and break the series."""
     assert judge_argv("sonnet") == [
         "claude",
         "--model",
@@ -93,10 +94,18 @@ def test_the_judge_argv_is_the_bash_argv_exactly_and_tool_less() -> None:
         "-p",
         "--tools",
         "",
+        "--strict-mcp-config",
+        "--setting-sources",
+        "",
+        "--disable-slash-commands",
+        "--no-session-persistence",
+        "--effort",
+        "xhigh",
         "--output-format",
         "text",
     ]
     assert "--system-prompt" not in judge_argv("opus")
+    assert judge_argv("opus")[judge_argv("opus").index("--effort") + 1] == "high"
 
 
 def test_the_judge_prompt_is_the_bash_template_verbatim() -> None:
@@ -114,6 +123,7 @@ def test_the_judge_sends_the_prompt_on_stdin_with_a_scrubbed_env() -> None:
     assert call.argv == judge_argv("opus")
     assert call.stdin == judge_prompt("REF", "OUT")
     assert call.env == dict.fromkeys(SCRUBBED_ENV, "")
+    assert_isolated_cwd(call)
     assert set(SCRUBBED_ENV) == {
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_AUTH_TOKEN",
@@ -162,7 +172,7 @@ def test_an_out_of_range_judge_answer_is_null_with_a_warn(
 
 def test_a_failed_judge_call_is_null_with_a_warn(caplog: pytest.LogCaptureFixture) -> None:
     class MissingClaude:
-        def run_result(self, argv, stdin=None, env=None, timeout=300.0):  # type: ignore[no-untyped-def]
+        def run_result(self, argv, stdin=None, env=None, timeout=300.0, cwd=None):  # type: ignore[no-untyped-def]
             raise BackendBinaryMissingError("executable not found on PATH: 'claude'")
 
     with caplog.at_level(logging.WARNING, logger="swil_agent.bench.judge"):

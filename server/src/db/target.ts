@@ -46,3 +46,30 @@ export function remoteWriteRefusal(uri: string, argv: readonly string[]): string
     `pass ${REMOTE_OVERRIDE_FLAG} if you really mean it.`
   );
 }
+
+const DISPOSABLE_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1', 'postgres']);
+const DISPOSABLE_NAME = /_(test|e2e)(_pg)?$/;
+
+/**
+ * Throw unless `uri` names a database that is safe to migrate and TRUNCATE:
+ * a loopback (or compose-service `postgres`) host AND a name ending in
+ * `_test`, `_test_pg`, `_e2e` or `_e2e_pg`. The test runner and the e2e prep
+ * script read DATABASE_URL straight from the shell, so an exported production
+ * URL would otherwise be wiped by a plain `git commit`. Pure, tested without a DB.
+ */
+export function assertDisposableDb(uri: string): void {
+  let url: URL;
+  try {
+    url = new URL(uri);
+  } catch {
+    throw new Error(`refusing to reset ${UNPARSEABLE}: not a disposable test database`);
+  }
+  const name = url.pathname.replace(/^\//, '');
+  if (!url.hostname || !DISPOSABLE_HOSTS.has(url.hostname) || !DISPOSABLE_NAME.test(name)) {
+    throw new Error(
+      `refusing to migrate and truncate ${describeDbTarget(uri)}: a disposable test database ` +
+        `must be on localhost/127.0.0.1/::1/postgres and be named *_test, *_test_pg, *_e2e or *_e2e_pg. ` +
+        `Unset DATABASE_URL / E2E_DATABASE_URL in your shell to use the local default.`,
+    );
+  }
+}

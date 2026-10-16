@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { useDrafts } from './draft.store';
+import { DRAFT_TTL_MS, pruneDrafts, useDrafts } from './draft.store';
 
 /**
  * Drafts hold text the user typed but has not posted, so a bug here loses
@@ -7,7 +7,7 @@ import { useDrafts } from './draft.store';
  * stale-clear the failure modes worth pinning.
  */
 function reset(): void {
-  useDrafts.setState({ drafts: {} });
+  useDrafts.setState({ drafts: {}, ownerId: null });
 }
 
 describe('draft.store', () => {
@@ -28,10 +28,10 @@ describe('draft.store', () => {
 
   it('keeps drafts for different keys independent', () => {
     useDrafts.getState().setDraft('post.new', 'top level');
-    useDrafts.getState().setDraft('reply.abc123', 'a reply');
+    useDrafts.getState().setDraft('comment.abc123', 'a reply');
 
     expect(useDrafts.getState().getDraft('post.new')?.text).toBe('top level');
-    expect(useDrafts.getState().getDraft('reply.abc123')?.text).toBe('a reply');
+    expect(useDrafts.getState().getDraft('comment.abc123')?.text).toBe('a reply');
   });
 
   it('overwrites rather than appends on repeated writes to one key', () => {
@@ -57,11 +57,11 @@ describe('draft.store', () => {
 
   it('clearDraft removes only the target key', () => {
     useDrafts.getState().setDraft('post.new', 'keep me');
-    useDrafts.getState().setDraft('reply.abc123', 'delete me');
+    useDrafts.getState().setDraft('comment.abc123', 'delete me');
 
-    useDrafts.getState().clearDraft('reply.abc123');
+    useDrafts.getState().clearDraft('comment.abc123');
 
-    expect(useDrafts.getState().getDraft('reply.abc123')).toBeUndefined();
+    expect(useDrafts.getState().getDraft('comment.abc123')).toBeUndefined();
     expect(useDrafts.getState().getDraft('post.new')?.text).toBe('keep me');
   });
 
@@ -77,5 +77,97 @@ describe('draft.store', () => {
     useDrafts.getState().setDraft('post.new', '');
     expect(useDrafts.getState().getDraft('post.new')).toBeDefined();
     expect(useDrafts.getState().getDraft('post.new')?.text).toBe('');
+  });
+
+  it('clearDraft on an absent key writes nothing to storage', () => {
+    // Every mounted comment box clears its draft when empty — ~20 per feed
+    // page. A no-op `set` still persisted, i.e. one localStorage write each.
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    useDrafts.getState().clearDraft('comment.never');
+    expect(setItem).not.toHaveBeenCalled();
+    setItem.mockRestore();
+  });
+
+  it('clearAll drops every draft', () => {
+    useDrafts.getState().setDraft('post.new', 'a');
+    useDrafts.getState().setDraft('comment.abc123', 'b');
+
+    useDrafts.getState().clearAll();
+
+    expect(useDrafts.getState().drafts).toEqual({});
+  });
+
+  it('expires drafts older than the TTL when the store rehydrates', async () => {
+    const now = Date.now();
+    localStorage.setItem(
+      'swil.drafts',
+      JSON.stringify({
+        state: {
+          drafts: {
+            'post.new': { text: 'fresh', updatedAt: now - 1000 },
+            'comment.old': { text: 'stale', updatedAt: now - DRAFT_TTL_MS - 1000 },
+          },
+        },
+        version: 0,
+      }),
+    );
+
+    await useDrafts.persist.rehydrate();
+
+    expect(useDrafts.getState().getDraft('post.new')?.text).toBe('fresh');
+    expect(useDrafts.getState().getDraft('comment.old')).toBeUndefined();
+    localStorage.removeItem('swil.drafts');
+  });
+
+  it('pruneDrafts keeps the edge inside the TTL and drops malformed rows', () => {
+    const now = 10 * DRAFT_TTL_MS;
+    const out = pruneDrafts(
+      {
+        a: { text: 'edge', updatedAt: now - DRAFT_TTL_MS + 1 },
+        b: { text: 'gone', updatedAt: now - DRAFT_TTL_MS },
+        c: { text: 'bad' } as unknown as { text: string; updatedAt: number },
+      },
+      now,
+    );
+    expect(Object.keys(out)).toEqual(['a']);
+  });
+
+  it('writes the pruned drafts back to storage after rehydrating', async () => {
+    // merge's result is not persisted by itself: without a write-back the
+    // expired draft stayed in localStorage indefinitely.
+    const now = Date.now();
+    localStorage.setItem(
+      'swil.drafts',
+      JSON.stringify({
+        state: {
+          drafts: {
+            'post.new': { text: 'fresh', updatedAt: now - 1000 },
+            'comment.old': { text: 'stale secret', updatedAt: now - DRAFT_TTL_MS - 1000 },
+          },
+          ownerId: 'u1',
+        },
+        version: 0,
+      }),
+    );
+
+    await useDrafts.persist.rehydrate();
+
+    const stored = localStorage.getItem('swil.drafts') ?? '';
+    expect(stored).not.toContain('stale secret');
+    expect(stored).toContain('fresh');
+    expect(useDrafts.getState().ownerId).toBe('u1');
+    localStorage.removeItem('swil.drafts');
+  });
+
+  it('claim keeps drafts for the same owner and drops them for another', () => {
+    useDrafts.getState().claim('u1');
+    useDrafts.getState().setDraft('post.new', 'mine');
+
+    useDrafts.getState().claim('u1');
+    expect(useDrafts.getState().getDraft('post.new')?.text).toBe('mine');
+
+    useDrafts.getState().claim('u2');
+    expect(useDrafts.getState().drafts).toEqual({});
+    expect(useDrafts.getState().ownerId).toBe('u2');
   });
 });

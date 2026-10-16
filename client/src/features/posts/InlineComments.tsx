@@ -1,18 +1,13 @@
 import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Link } from 'react-router-dom';
-import {
-  type InfiniteData,
-  useInfiniteQuery,
-  useMutation,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { DotsThreeVertical } from '@phosphor-icons/react';
 import * as commentsApi from '@/api/comments.api';
 import { qk } from '@/api/queryKeys';
-import type { ApiError, CommentDTO, Paginated, PostDTO } from '@/api/types';
+import type { ApiError, CommentDTO } from '@/api/types';
 import { Avatar, Spinner } from '@/components/primitives';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import { useSession } from '@/stores/session.store';
@@ -22,7 +17,9 @@ import { formatRelative } from '@/lib/formatDate';
 import { MarkdownBody } from './MarkdownBody';
 import { useAutocomplete, applySelection } from './useAutocomplete';
 import { AutocompleteDropdown } from './AutocompleteDropdown';
+import { bumpCommentCount } from './postCache';
 import s from './InlineComments.module.css';
+import { LIMITS } from '@/contract/limits';
 
 interface Props {
   postId: string;
@@ -92,29 +89,9 @@ export function InlineComments({ postId, open, indented = true }: Props) {
     enabled: open,
   });
 
+  // Prefix, not the language-scoped key: every language's copy of the thread moved.
   const invalidateComments = () =>
-    qc.invalidateQueries({ queryKey: qk.posts.comments(postId, language) });
-
-  const bumpCount = (delta: 1 | -1) => {
-    const updater = (old: InfiniteData<Paginated<PostDTO>> | undefined) => {
-      if (!old?.pages) return old;
-      return {
-        ...old,
-        pages: old.pages.map((pg) => ({
-          ...pg,
-          items: (pg.items ?? []).map((p) =>
-            p.id === postId ? { ...p, commentCount: p.commentCount + delta } : p,
-          ),
-        })),
-      };
-    };
-    qc.setQueriesData<InfiniteData<Paginated<PostDTO>>>({ queryKey: ['feed'] }, updater);
-    // Only the author's posts infinite query — not byUsername / followStatus.
-    qc.setQueriesData<InfiniteData<Paginated<PostDTO>>>(
-      { predicate: (q) => q.queryKey[0] === 'users' && q.queryKey[2] === 'posts' },
-      updater,
-    );
-  };
+    qc.invalidateQueries({ queryKey: ['posts', postId, 'comments'] });
 
   const submit = useMutation({
     mutationFn: () => commentsApi.create(postId, { text }),
@@ -122,7 +99,7 @@ export function InlineComments({ postId, open, indented = true }: Props) {
       setText('');
       clearDraft(draftKey);
       invalidateComments();
-      bumpCount(1);
+      bumpCommentCount(qc, postId, 1);
     },
     onError: (err) => toast.error((err as unknown as ApiError).message),
   });
@@ -141,7 +118,7 @@ export function InlineComments({ postId, open, indented = true }: Props) {
     mutationFn: (id: string) => commentsApi.remove(id),
     onSuccess: () => {
       invalidateComments();
-      bumpCount(-1);
+      bumpCommentCount(qc, postId, -1);
     },
     onError: (err) => toast.error((err as unknown as ApiError).message),
   });
@@ -208,7 +185,8 @@ export function InlineComments({ postId, open, indented = true }: Props) {
   const startEdit = (c: CommentDTO) => {
     setMenuOpenId(null);
     setEditingId(c.id);
-    setEditText(c.text);
+    // Edit what was written, never the machine translation shown over it.
+    setEditText(c.originalText ?? c.text);
   };
 
   const cancelEdit = () => {
@@ -266,7 +244,7 @@ export function InlineComments({ postId, open, indented = true }: Props) {
                     onKeyDown={onKeyDown}
                     placeholder={t('post.commentPlaceholder')}
                     rows={1}
-                    maxLength={2000}
+                    maxLength={LIMITS.commentText}
                     aria-label="Write a comment"
                   />
                   {acTrigger && acResults.length > 0 && (
@@ -375,7 +353,7 @@ export function InlineComments({ postId, open, indented = true }: Props) {
                           value={editText}
                           onChange={(e) => setEditText(e.target.value)}
                           rows={2}
-                          maxLength={2000}
+                          maxLength={LIMITS.commentText}
                           autoFocus
                         />
                         <div className={s.composeActions}>

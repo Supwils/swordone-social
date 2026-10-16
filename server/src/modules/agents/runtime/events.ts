@@ -11,7 +11,7 @@ import { agentEvents } from '../../../db/schema';
 import { AppError } from '../../../lib/errors';
 import type { UserRow } from '../../../lib/dto';
 import type { AgentEventIngestInput } from './runtime.schemas';
-import { findAgentByUsername } from '../lab/shared';
+import { findAgentByUsername, findLabAccount } from '../lab/shared';
 import type { AgentEventDTO } from '../../../contract/lab/runtime';
 
 type AgentEventRow = InferSelectModel<typeof agentEvents>;
@@ -39,7 +39,7 @@ export async function getAgentEvents(
   limit: number,
   type?: AgentEventDTO['type'],
 ): Promise<AgentEventDTO[]> {
-  const agent = await findAgentByUsername(username);
+  const agent = await findLabAccount(username);
   const conds = [eq(agentEvents.userId, agent.id)];
   if (type) conds.push(eq(agentEvents.type, type));
   const events = await db

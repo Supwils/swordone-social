@@ -37,17 +37,10 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Skeleton } from '@/components/primitives';
 import { getCollapseWatch } from '@/features/lab/api';
+import { labKeys } from '@/features/lab/queries';
 import type { CollapseSeriesDTO, CollapseWatchDTO } from '@/features/lab/types';
+import { day, fmtNum } from '@/features/lab/format';
 import s from '@/features/lab/lab.module.css';
-
-function fmt(value: number | null, digits: number): string {
-  return value === null ? '—' : value.toFixed(digits);
-}
-
-/** ISO instant → `YYYY-MM-DD`, the convention every other lab panel uses. */
-function day(iso: string | null): string {
-  return iso ? iso.slice(0, 10) : '—';
-}
 
 const VERDICT_TONE: Record<CollapseWatchDTO['verdict'], string> = {
   collapsing: s.conc_bad,
@@ -65,7 +58,7 @@ export function CollapsePanel({
 }) {
   const { t } = useTranslation();
   const q = useQuery({
-    queryKey: ['agent-collapse', username, range],
+    queryKey: labKeys.collapse(username, range),
     queryFn: () => getCollapseWatch(username, range),
     staleTime: 60_000,
   });
@@ -164,14 +157,14 @@ function fitSentence(series: CollapseSeriesDTO, data: CollapseWatchDTO, t: TFunc
   switch (series.fit) {
     case 'fitted':
       return t(`lab.collapse.${ns}.fitted`, {
-        first: fmt(series.first, 0),
-        last: fmt(series.last, 0),
-        firstSim: fmt(series.first, 3),
-        lastSim: fmt(series.last, 3),
-        span: fmt(series.spanDays, 1),
-        slope: fmt(series.slopePerDay, series.key === 'length' ? 3 : 5),
-        stderr: fmt(series.slopeStdErr, series.key === 'length' ? 3 : 5),
-        r2: fmt(series.r2, 3),
+        first: fmtNum(series.first, 0),
+        last: fmtNum(series.last, 0),
+        firstSim: fmtNum(series.first, 3),
+        lastSim: fmtNum(series.last, 3),
+        span: fmtNum(series.spanDays, 1),
+        slope: fmtNum(series.slopePerDay, series.key === 'length' ? 3 : 5),
+        stderr: fmtNum(series.slopeStdErr, series.key === 'length' ? 3 : 5),
+        r2: fmtNum(series.r2, 3),
         n: series.n,
         trend: t(`lab.collapse.trend.${series.trend ?? 'flat'}`),
       });

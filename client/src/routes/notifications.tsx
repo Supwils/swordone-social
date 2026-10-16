@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   type InfiniteData,
   useInfiniteQuery,
@@ -25,6 +25,7 @@ import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import type { ApiError, NotificationDTO, Paginated, UserLiteDTO } from '@/api/types';
 import s from './notifications.module.css';
 import { usePageTitle } from '@/lib/usePageTitle';
+import { notificationVerb } from '@/lib/notificationVerb';
 
 /* ---------- grouping helpers ---------- */
 
@@ -109,7 +110,7 @@ export default function NotificationsRoute() {
 
   const [confirmingClear, setConfirmingClear] = useState(false);
 
-  const _markAllRead = () => {
+  const markAllReadLocally = useCallback(() => {
     setUnread(0);
     qc.setQueriesData<InfiniteData<Paginated<NotificationDTO>>>(
       { queryKey: qk.notifications.list },
@@ -124,11 +125,11 @@ export default function NotificationsRoute() {
         };
       },
     );
-  };
+  }, [qc, setUnread]);
 
   const markAll = useMutation({
     mutationFn: () => notificationsApi.markRead({ all: true }),
-    onMutate: _markAllRead,
+    onMutate: markAllReadLocally,
     onError: () => qc.invalidateQueries({ queryKey: qk.notifications.list }),
   });
 
@@ -148,16 +149,17 @@ export default function NotificationsRoute() {
   const rawItems = q.data?.pages.flatMap((p) => p.items) ?? [];
   const groups = groupNotifications(rawItems);
 
+  const hasUnread = rawItems.some((n) => !n.read);
+
   useEffect(() => {
-    if (!q.isSuccess || autoMarked.current || !rawItems.some((n) => !n.read)) return;
+    if (!q.isSuccess || autoMarked.current || !hasUnread) return;
     autoMarked.current = true;
-    _markAllRead();
+    markAllReadLocally();
     notificationsApi.markRead({ all: true }).catch(() => {
       autoMarked.current = false;
       qc.invalidateQueries({ queryKey: qk.notifications.list });
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q.isSuccess, rawItems]);
+  }, [q.isSuccess, hasUnread, markAllReadLocally, qc]);
 
   return (
     <div className={s.page}>
@@ -168,7 +170,7 @@ export default function NotificationsRoute() {
             variant="ghost"
             size="sm"
             onClick={() => markAll.mutate()}
-            disabled={markAll.isPending || !rawItems.some((n) => !n.read)}
+            disabled={markAll.isPending || !hasUnread}
           >
             {t('notifications.markAllRead')}
           </Button>
@@ -231,7 +233,7 @@ export default function NotificationsRoute() {
 function GroupedNotificationRow({ g }: { g: GroupedNotification }) {
   const { t } = useTranslation();
   const href = linkFor(g);
-  const verb = verbFor(g, t);
+  const verb = notificationVerb(g, t);
   const label = actorLabel(g.actors, t);
   const visibleAvatars = g.actors.slice(0, 3);
 
@@ -286,25 +288,6 @@ function GroupedNotificationRow({ g }: { g: GroupedNotification }) {
   );
 
   return href ? <Link to={href}>{row}</Link> : row;
-}
-
-function verbFor(g: GroupedNotification, t: (k: string) => string): string {
-  switch (g.type) {
-    case 'like':
-      return g.comment ? t('notifications.likedComment') : t('notifications.likedPost');
-    case 'comment':
-      return t('notifications.commentedOn');
-    case 'reply':
-      return t('notifications.replied');
-    case 'follow':
-      return t('notifications.followed');
-    case 'mention':
-      return t('notifications.mentioned');
-    case 'message':
-      return t('notifications.messagedYou');
-    case 'echo':
-      return t('notifications.echoedPost');
-  }
 }
 
 function linkFor(g: GroupedNotification): string | null {

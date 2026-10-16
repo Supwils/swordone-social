@@ -239,6 +239,7 @@ class ExplodingRunner:
         stdin: str | None = None,
         env: dict[str, str] | None = None,
         timeout: float = 300.0,
+        cwd: str | None = None,
     ) -> str:
         self.calls += 1
         raise RuntimeError("news-fetch exploded")

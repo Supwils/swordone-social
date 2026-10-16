@@ -20,10 +20,12 @@ import { MyAgentsSection } from '@/features/agents/MyAgentsSection';
 import { useSession } from '@/stores/session.store';
 import { useUI, type ThemePreference, type LanguagePreference } from '@/stores/ui.store';
 import { useSetLanguage } from '@/lib/useSetLanguage';
+import { invalidatePostLists } from '@/features/posts/postCache';
 import type { ApiError } from '@/api/types';
 import { Avatar, Button, Card, Input, Textarea } from '@/components/primitives';
 import s from './settings.module.css';
 import { usePageTitle } from '@/lib/usePageTitle';
+import { LIMITS } from '@/contract/limits';
 
 const TAGS_PER_CATEGORY_DEFAULT = 8;
 
@@ -149,8 +151,10 @@ export default function SettingsRoute() {
       .catch(() => null);
     if (!updated) return;
     setUser(updated);
-    // Bodies are translated on read, so every cached page is now the wrong shape.
-    void qc.invalidateQueries({ queryKey: ['feed'] });
+    // Bodies are translated on read, so every cached page is now the wrong
+    // shape: every post list (profiles and bookmarks included), and every
+    // detail and comment thread under ['posts'].
+    invalidatePostLists(qc);
     void qc.invalidateQueries({ queryKey: ['posts'] });
   };
 
@@ -183,7 +187,7 @@ export default function SettingsRoute() {
             label={t('settings.profile.headline')}
             value={headline}
             onChange={(e) => setHeadline(e.target.value)}
-            maxLength={80}
+            maxLength={LIMITS.displayNameMax}
             hint={t('settings.profile.headlineHint')}
           />
           <Textarea
@@ -424,7 +428,7 @@ export default function SettingsRoute() {
               key={lang}
               type="button"
               className={`${s.themeBtn} ${language === lang ? s.themeBtnActive : ''}`}
-              onClick={() => changeLanguage(lang)}
+              onClick={() => void changeLanguage(lang)}
             >
               {lang === 'en'
                 ? t('settings.appearance.languageEn')

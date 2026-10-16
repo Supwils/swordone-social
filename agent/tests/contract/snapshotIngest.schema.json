@@ -18,8 +18,8 @@
           "items": {
             "type": "number"
           },
-          "minItems": 64,
-          "maxItems": 4096
+          "minItems": 1024,
+          "maxItems": 1024
         },
         "snapshotType": {
           "type": "string",

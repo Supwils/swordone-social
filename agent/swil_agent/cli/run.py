@@ -15,8 +15,9 @@ Exit codes are the external contract (`cli/app.py`); the mapping, by command:
     written or the reply was unusable) exits 0, matching
     "something ran". This mirrors `act`'s "attempted vs never-attempted" shape
     rather than inventing a third scheme.
-  * `cycle` -- `act`'s and `dream`'s codes, plus 64 for a refused sweep
-    resume.
+  * `cycle` -- `act`'s and `dream`'s codes, plus 64 for a refused resume
+    (a sweep's thread from outside that sweep, or a thread stopped inside
+    `execute` / `write`).
   * Everything else -- ANY exception, not an enumerated list of them --
     also exits 75, via ONE broad guard wrapping composition-plus-run in each
     command; `cli/errors.py`'s `skip_for_exception` draws the one
@@ -81,7 +82,7 @@ from swil_agent.graph.checkpoint import (
 from swil_agent.graph.cycle import Phases, run_cycle
 from swil_agent.graph.deps import agent_dir_name
 from swil_agent.graph.outcome import act_result_of, cycle_granted_dream, dream_result_of
-from swil_agent.graph.run import run_graph
+from swil_agent.graph.run import UnsafeResumeError, run_graph
 from swil_agent.graph.state import BUILTIN_TENANT, thread_id
 
 logger = logging.getLogger("swil_agent.cli")
@@ -97,7 +98,10 @@ def act(
     backend: str | None = typer.Option(
         None,
         "--backend",
-        help="Override the backend: claude | codex | deepseek | api. Outranks personality.md.",
+        help=(
+            "Override the backend: claude | codex | cursor | grok | deepseek | api. "
+            "Outranks personality.md."
+        ),
     ),
     model: str | None = typer.Option(
         None, "--model", help="Override the model id. Outranks personality.md."
@@ -225,7 +229,10 @@ def dream(
     backend: str | None = typer.Option(
         None,
         "--backend",
-        help="Override the backend: claude | codex | deepseek | api. Outranks personality.md.",
+        help=(
+            "Override the backend: claude | codex | cursor | grok | deepseek | api. "
+            "Outranks personality.md."
+        ),
     ),
     model: str | None = typer.Option(
         None, "--model", help="Override the model id. Outranks personality.md."
@@ -303,7 +310,10 @@ def cycle(
     backend: str | None = typer.Option(
         None,
         "--backend",
-        help="Override the backend: claude | codex | deepseek | api. Outranks personality.md.",
+        help=(
+            "Override the backend: claude | codex | cursor | grok | deepseek | api. "
+            "Outranks personality.md."
+        ),
     ),
     model: str | None = typer.Option(
         None, "--model", help="Override the model id. Outranks personality.md."
@@ -339,7 +349,9 @@ def cycle(
     database (`latest_round_id`) rather than recomputed from the clock, which
     would produce a different thread and silently start a fresh cycle. A
     sweep's thread (`-r`) resumes only under that sweep's own
-    `SWIL_ROUND_ID`; otherwise exit 64 -- run a fresh manual `cycle`.
+    `SWIL_ROUND_ID`; otherwise exit 64 -- run a fresh manual `cycle`. A
+    thread that stopped inside `execute` or `write` is refused with 64 too
+    (`graph/run.py` `UnsafeResumeError`): neither node is safe to re-run.
     """
     settings = compose.load_settings()
     enforce_production_guard(settings, i_mean_production=i_mean_production)
@@ -382,24 +394,26 @@ def cycle(
                 else _fresh_round_id(settings, stores.checkpointer, dir_name)
             )
             logger.info("%s — round %s", name, round_id)
+            phase = compose.cycle_deps_for(
+                persona,
+                persona_source,
+                settings,
+                dry_run=dry_run,
+                auto=auto,
+                budget=budget,
+                seed=seed,
+                backend=llm,
+            )
             final = run_cycle(
                 persona=persona,
-                deps=compose.cycle_deps_for(
-                    persona,
-                    persona_source,
-                    settings,
-                    dry_run=dry_run,
-                    auto=auto,
-                    budget=budget,
-                    seed=seed,
-                    backend=llm,
-                ).deps,
+                deps=phase.deps,
                 lease_db=stores.lease_db,
                 checkpointer=stores.checkpointer,
                 round_id=round_id,
                 resume=resume,
+                finish_deps=phase.finish,
             )
-    except SweepResumeRefusedError as exc:
+    except (SweepResumeRefusedError, UnsafeResumeError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(EXIT_USAGE) from exc
     except Exception as exc:

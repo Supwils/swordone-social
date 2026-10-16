@@ -13,7 +13,7 @@ import { and, count, eq, inArray, ne } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../../db/client';
 import { comments, follows, likes, posts } from '../../../db/schema';
-import { ARMS, BOARDS, type ArmId } from '../lab/roster';
+import { ARMS, BOARDS, armOf, type ArmId } from '../lab/roster';
 import type { Homophily } from '../../../contract/lab/arms';
 import { zeroByArm, type RosterUser } from './rounds';
 
@@ -29,9 +29,6 @@ const ARM_SIZE: ReadonlyMap<ArmId, number> = new Map(ARMS.map((a) => [a.id, a.us
 const BOARD_OF: ReadonlyMap<string, string> = new Map(
   Object.entries(BOARDS).flatMap(([board, members]) => members.map((u) => [u, board] as const)),
 );
-const ARM_OF: ReadonlyMap<string, ArmId> = new Map(
-  ARMS.flatMap((a) => a.usernames.map((u) => [u, a.id] as const)),
-);
 
 /**
  * Chance that a cross-board edge from `username` lands in its own arm: the
@@ -39,7 +36,7 @@ const ARM_OF: ReadonlyMap<string, ArmId> = new Map(
  * are in other arms, so none of the k − 1 is excluded. Null off the roster.
  */
 export function crossBoardExpectation(username: string): number | null {
-  const arm = ARM_OF.get(username);
+  const arm = armOf(username);
   const board = BOARD_OF.get(username);
   if (!arm || !board) return null;
   const boardSize = BOARDS[board].length;

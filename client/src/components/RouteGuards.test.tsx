@@ -1,9 +1,10 @@
+import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { Link, MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { useSession } from '@/stores/session.store';
 import { makeUser } from '@/test/fixtures';
-import { OpenRoute, ProtectedRoute, PublicRoute } from './RouteGuards';
+import { OpenRoute, ProtectedRoute, PublicRoute, RequireAuth } from './RouteGuards';
 
 /**
  * These guards decide what a signed-out visitor can see, which is the whole
@@ -85,5 +86,54 @@ describe('PublicRoute', () => {
     useSession.setState({ user: someUser, bootstrap: 'ready' });
     renderGuarded('public');
     expect(screen.getByText('feed page')).toBeTruthy();
+  });
+});
+
+describe('RequireAuth as a nested layout', () => {
+  function renderLayout(initial: string, mounts: { n: number }) {
+    function Shell() {
+      useEffect(() => {
+        mounts.n += 1;
+      }, []);
+      return (
+        <div>
+          <Link to="/feed">to feed</Link>
+          <Outlet />
+        </div>
+      );
+    }
+    return render(
+      <MemoryRouter initialEntries={[initial]}>
+        <Routes>
+          <Route
+            element={
+              <OpenRoute>
+                <Shell />
+              </OpenRoute>
+            }
+          >
+            <Route path="/lab" element={<div>lab content</div>} />
+            <Route element={<RequireAuth />}>
+              <Route path="/feed" element={<div>feed page</div>} />
+            </Route>
+          </Route>
+          <Route path="/login" element={<div>login page</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it('keeps the shell mounted when a member crosses from open to personal pages', () => {
+    useSession.setState({ user: someUser, bootstrap: 'ready' });
+    const mounts = { n: 0 };
+    renderLayout('/lab', mounts);
+    fireEvent.click(screen.getByText('to feed'));
+    expect(screen.getByText('feed page')).toBeTruthy();
+    expect(mounts.n).toBe(1);
+  });
+
+  it('sends a signed-out visitor to /login from a personal page', () => {
+    renderLayout('/feed', { n: 0 });
+    expect(screen.getByText('login page')).toBeTruthy();
   });
 });

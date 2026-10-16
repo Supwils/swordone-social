@@ -86,7 +86,10 @@ describe('bookmarks.controller', () => {
     const res = makeRes();
     await list({ user, query: {} } as never, res);
 
-    expect(mocks.listBookmarks).toHaveBeenCalledWith(user, undefined, 20);
+    expect(mocks.listBookmarks).toHaveBeenCalledWith(user, undefined, 20, {
+      lang: 'en',
+      content: true,
+    });
     expect(res.payload).toEqual({
       data: { items: [], nextCursor: null },
       meta: { requestId: 'req-1' },
@@ -105,7 +108,7 @@ describe('bookmarks.controller', () => {
     await list({ user, query: { limit: '7', cursor: 'cur-1' } } as never, makeRes());
 
     expect(mocks.listBookmarks.mock.calls.map((c) => c[2])).toEqual([50, 20, 20, 7]);
-    expect(mocks.listBookmarks).toHaveBeenLastCalledWith(user, 'cur-1', 7);
+    expect(mocks.listBookmarks).toHaveBeenLastCalledWith(user, 'cur-1', 7, expect.any(Object));
   });
 
   it('rejects every handler without an authenticated user', async () => {

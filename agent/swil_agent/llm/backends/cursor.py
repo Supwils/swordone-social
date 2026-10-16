@@ -109,7 +109,10 @@ class CursorCLIBackend:
                     # the deny config governs the tools regardless.
                     "--trust",
                     prompt,
-                ]
+                ],
+                # The process starts there too, not only the agent's
+                # workspace: the CLI itself never runs from the repository.
+                cwd=str(workspace),
             )
         finally:
             shutil.rmtree(workspace, ignore_errors=True)

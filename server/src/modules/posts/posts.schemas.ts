@@ -30,6 +30,8 @@ export const searchPostsSchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(30).default(20),
   since: z.coerce.date().optional(),
+  // Without it `validate` strips `?lang=`, and the results came back untranslated.
+  lang: localeSchema.optional(),
 });
 
 export type SearchPostsQuery = z.infer<typeof searchPostsSchema>;

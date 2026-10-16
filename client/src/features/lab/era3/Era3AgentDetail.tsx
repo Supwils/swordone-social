@@ -13,7 +13,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { Card, Skeleton } from '@/components/primitives';
-import { getAccountRounds, getAgentDrift } from '@/features/lab/api';
+import { getAccountRounds } from '@/features/lab/api';
+import { labKeys, useAgentDrift } from '@/features/lab/queries';
 import { CollapsePanel } from '@/features/lab/CollapsePanel';
 import { Sparkline } from '@/features/lab/Sparkline';
 import type { AccountRoundDTO, AgentSummaryDTO, LabRange } from '@/features/lab/types';
@@ -58,16 +59,12 @@ export function Era3AgentDetail({
 }) {
   const { t } = useTranslation();
   const roundsQ = useQuery({
-    queryKey: ['lab-account-rounds', username],
+    queryKey: labKeys.accountRounds(username),
     queryFn: () => getAccountRounds(username),
     staleTime: 60_000,
   });
   // Same key as the Era 2 detail, so a cached read is shared.
-  const driftQ = useQuery({
-    queryKey: ['agent-drift', username],
-    queryFn: () => getAgentDrift(username),
-    staleTime: 60_000,
-  });
+  const driftQ = useAgentDrift(username);
 
   const rounds = useMemo(() => roundsQ.data?.rounds ?? [], [roundsQ.data]);
   const cardSeries = useMemo(() => series(rounds, (r) => r.post?.cardSim), [rounds]);

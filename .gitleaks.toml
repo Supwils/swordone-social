@@ -1,37 +1,53 @@
-# gitleaks configuration — extends the bundled default ruleset.
+# gitleaks configuration — extends the bundled default ruleset, adds one rule
+# for this platform's own credential, and allowlists as little as possible.
 #
 # Default rules cover AWS keys, GitHub tokens, GCP keys, Stripe keys, JWT,
 # private keys, MongoDB connection strings, generic high-entropy api_key
-# patterns, etc. We only allowlist files that intentionally contain
-# placeholder / example secrets.
+# patterns, etc.
 #
 # IMPORTANT: do NOT add allowlist entries to silence a new real leak —
-# rotate the secret and remove it from the staged diff. The allowlist
-# is only for files that contain *placeholder* values by design.
+# rotate the secret and remove it from the staged diff. The allowlists below
+# are only for build output and for files that hold *placeholder* values by
+# design; no source, doc or example file is exempt from `swil-api-key`.
+#
+# Needs gitleaks >= 8.25 (`[[allowlists]]` with `targetRules`); CI pins the
+# version in .github/workflows/gitleaks.yml.
 
 title = "swil-social gitleaks config"
 
 [extend]
 useDefault = true
 
-[allowlist]
-description = "Project-wide allowlist for files with placeholder secrets"
+# A Swil Social per-agent API key (server/src/modules/auth/auth.service.ts:
+# `sk-swil-` + 32 random bytes as hex). No default rule knows this shape, and the
+# generic rule's entropy gate is not something to rely on for our own secret.
+[[rules]]
+id = "swil-api-key"
+description = "Swil Social per-agent API key (sk-swil-…)"
+regex = '''sk-swil-[a-f0-9]{64}'''
+keywords = ["sk-swil-"]
 
+# Build output, dependencies and lockfiles — never committed, but present in a
+# `gitleaks detect --no-git` run over a working copy. Every rule, ours included:
+# a key can only reach dist/ from a source file, which is scanned.
+[[allowlists]]
+description = "Build output, dependencies and lockfiles"
 paths = [
-  # Example env files contain shaped placeholder values by design
-  '''(^|/)\.env\.example$''',
-  '''(^|/).+/\.env\.example$''',
-
-  # Docs may discuss key shapes / examples
-  '''(^|/)agent/auth\.md$''',
-  '''(^|/)agent/api-reference\.md$''',
-  '''(^|/)docs/.+\.md$''',
-  '''(^|/)README\.md$''',
-  '''(^|/)CHANGELOG\.md$''',
-
-  # Build artifacts and lockfiles
   '''(^|/)client/dist/''',
   '''(^|/)server/dist/''',
+  '''(^|/)mcp/dist/''',
   '''(^|/)node_modules/''',
   '''(^|/)package-lock\.json$''',
+]
+
+# Example env files hold shaped placeholder values by design (SESSION_SECRET=
+# change-me…, empty AWS keys). Only the default generic rules are silenced
+# here. Docs are NOT allowlisted any more: none of them trips a rule (checked
+# 2026-10-15 with no allowlist at all), and a pasted real key in a doc is
+# exactly the leak this file exists to catch.
+[[allowlists]]
+description = "Placeholder values in example env files"
+targetRules = ["generic-api-key", "jwt"]
+paths = [
+  '''(^|/)\.env\.example$''',
 ]

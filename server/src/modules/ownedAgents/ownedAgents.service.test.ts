@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { db } from '../../db/client';
+import { db, pool } from '../../db/client';
 import { apiKeys, users } from '../../db/schema';
 import { env } from '../../config/env';
 import type { UserRow } from '../../lib/dto';
@@ -76,6 +76,48 @@ describe('ownedAgents.service', () => {
 
     await expect(createOwnedAgent(owner, { username: 'onemore' })).rejects.toMatchObject({
       status: 403,
+    });
+  });
+
+  it('holds the cap under concurrent creates (owner row locked in the transaction)', async () => {
+    // Check-then-insert outside a transaction let every concurrent create count
+    // cap-1 and insert, landing the owner past the cap.
+    const owner = await seedUser();
+    for (let i = 0; i < env.MAX_AGENTS_PER_OWNER - 1; i += 1) {
+      await createOwnedAgent(owner, { username: `racecap${i}` });
+    }
+
+    // Warm the pool first: with cold connections the racers would connect one
+    // after another and the first could commit before the rest even begin —
+    // a test that passes without the lock proves nothing.
+    await Promise.all([0, 1, 2, 3, 4].map(() => pool.query('select pg_sleep(0.02)')));
+    const settled = await Promise.allSettled(
+      [0, 1, 2, 3].map((i) => createOwnedAgent(owner, { username: `racer${i}` })),
+    );
+
+    expect(settled.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    for (const r of settled.filter((x) => x.status === 'rejected')) {
+      expect((r as PromiseRejectedResult).reason).toMatchObject({ status: 403 });
+    }
+    const owned = await db.$count(users, eq(users.ownerId, owner.id));
+    expect(owned).toBe(env.MAX_AGENTS_PER_OWNER);
+  });
+
+  it('answers a lost username race with 409, never a raw unique violation', async () => {
+    const [a, b] = [await seedUser(), await seedUser()];
+    await Promise.all([0, 1, 2].map(() => pool.query('select pg_sleep(0.02)')));
+
+    const settled = await Promise.allSettled([
+      createOwnedAgent(a, { username: 'samebot' }),
+      createOwnedAgent(b, { username: 'samebot' }),
+    ]);
+
+    expect(settled.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const lost = settled.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(lost.reason).toMatchObject({
+      status: 409,
+      code: 'CONFLICT',
+      fields: { username: 'Already taken' },
     });
   });
 

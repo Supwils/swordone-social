@@ -25,8 +25,9 @@ The results directory is the model string with `:` replaced by `_`; the row's
 (`--timeout` / `BENCH_TIMEOUT`, default 1200 s), not the round's 300 s
 `DEFAULT_TIMEOUT`: the Bash `llm_text` had none, and real codex rows took up to
 333 s -- a 300 s cut would silently drop the slowest runs from the series. A
-call that still times out is reported as `TIMEOUT`, not `EMPTY`
-(`TimedRunner.timed_out`). The round's callers keep 300 s.
+call that still times out is reported as `TIMEOUT`, and one whose CLI exited
+non-zero as `FAILED`, never `EMPTY` and never scored (`TimedRunner`). The
+round's callers keep 300 s.
 """
 
 from __future__ import annotations
@@ -61,18 +62,25 @@ DEFAULT_BENCH_TIMEOUT: Final = 1200.0
 
 class TimedRunner:
     """The model under test's `Runner`: every call runs under the bench's
-    timeout (whatever the backend asked for), and a timeout since the last
-    `reset()` is remembered so the bench can say `TIMEOUT` rather than
-    `EMPTY` -- `SubprocessRunner` answers a timed-out call with `""`, which a
-    backend reports exactly like a model with nothing to say."""
+    timeout (whatever the backend asked for), and since the last `reset()` it
+    remembers how a call FAILED, so the bench can say `TIMEOUT` or `FAILED`
+    rather than `EMPTY` and never score what a failed CLI printed.
+
+    A non-zero exit returns `""`, the way the judge treats one (`bench/judge.py`):
+    a `claude` that exited 1 can still print a sentence ("5-hour limit
+    reached, resets at 3pm"), and the round runner's "stdout, WARN on failure"
+    contract would otherwise hand that sentence to the scorers as the
+    persona's answer."""
 
     def __init__(self, inner: StatusRunner, timeout: float) -> None:
         self._inner = inner
         self.timeout = timeout
         self.timed_out = False
+        self.failed_exit: int | None = None
 
     def reset(self) -> None:
         self.timed_out = False
+        self.failed_exit = None
 
     def run(
         self,
@@ -80,11 +88,16 @@ class TimedRunner:
         stdin: str | None = None,
         env: dict[str, str] | None = None,
         timeout: float = DEFAULT_TIMEOUT,
+        cwd: str | None = None,
     ) -> str:
         _ = timeout  # the bench's own limit replaces the backend's default
-        result = self._inner.run_result(argv, stdin, env, self.timeout)
+        result = self._inner.run_result(argv, stdin, env, self.timeout, cwd)
         if result.timed_out:
             self.timed_out = True
+            return ""
+        if result.returncode not in (0, None):
+            self.failed_exit = result.returncode
+            return ""
         return result.stdout
 
 

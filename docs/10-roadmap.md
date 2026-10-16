@@ -200,6 +200,7 @@ Detail for each lives in `history/handoff-archive.md` (rounds 9–27 and earlier
 | S3 | 2026-10-14 | **Runtime slimming** — one LangGraph orchestration for act/dream/cycle, `RunLease`, `cli/` package, `llm/` split, Persona Bench as `swil-agent bench`. |
 | S4 | 2026-10-14 | **One API contract** — zod in `server/src/contract/`, synced to client/mcp/agent; `ci:check` step 1. |
 | S5 | 2026-10-15 | **Hygiene** — Mongo leftovers removed, 17 foreign keys (migration 0006, `NOT VALID`), `ci:check` grows to 17 steps (mcp lint, Prettier, knip), e2e job in CI, agent sqlite-leak gate, docs consolidation. |
+| S6 | 2026-10-15 | **Final review before round 1** — agent reads never translated, one lab window (Era 2 ends at the seal), persona calls isolated from operator config, ingest and series corrections, public-only lab reads, `ci:check` grows to 20 steps. |
 
 ### Round 23 detail — public read mode
 

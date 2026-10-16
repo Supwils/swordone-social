@@ -14,6 +14,7 @@ from typing import Any
 
 from swil_agent.api.client import ApiClient, ApiError
 from swil_agent.api.envelope import WriteNotVerifiedError, _nested_id
+from swil_agent.api.paths import id_segment, username_segment
 
 logger = logging.getLogger("swil_agent.api.resources")
 
@@ -136,7 +137,7 @@ class SocialWrites:
         body: dict[str, str] = {"text": text}
         if parent_id:
             body["parentId"] = parent_id
-        payload = self._client.post(f"/posts/{post_id}/comments", json=body)
+        payload = self._client.post(f"/posts/{id_segment(post_id, 'postId')}/comments", json=body)
         comment_id = _nested_id(payload, "data", "comment", "id")
         if comment_id is None:
             raise WriteNotVerifiedError(f"comment created no id; response={payload}")
@@ -163,7 +164,7 @@ class SocialWrites:
         failure this task exists to catch, and now raises instead of
         passing.
         """
-        payload = self._client.post(f"/posts/{post_id}/like")
+        payload = self._client.post(f"/posts/{id_segment(post_id, 'postId')}/like")
         data = payload.get("data")
         liked = data.get("liked") if isinstance(data, dict) else None
         if liked is not True:
@@ -203,7 +204,7 @@ class SocialWrites:
         success, no memory line); any other `ApiError` /
         `WriteNotVerifiedError` is `landed=False`.
         """
-        response = self._client.raw_post(f"/users/{username}/follow")
+        response = self._client.raw_post(f"/users/{username_segment(username)}/follow")
         if response.status_code != 204:
             raise WriteNotVerifiedError(
                 f"follow returned unexpected status {response.status_code} "
@@ -243,7 +244,8 @@ class SocialWrites:
         if conversation_id is None:
             raise WriteNotVerifiedError(f"conversation created no id; response={conv_payload}")
         msg_payload = self._client.post(
-            f"/conversations/{conversation_id}/messages", json={"text": text}
+            f"/conversations/{id_segment(conversation_id, 'conversationId')}/messages",
+            json={"text": text},
         )
         message_id = _nested_id(msg_payload, "data", "message", "id")
         if message_id is None:

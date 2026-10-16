@@ -1,6 +1,5 @@
 import type { Request, Response } from 'express';
 import { ok } from '../../../lib/respond';
-import { AppError } from '../../../lib/errors';
 import { assertFirstPartyLabWrite } from '../lab/shared';
 import {
   getBenchmarkCompare,
@@ -9,14 +8,14 @@ import {
   ingestBenchmarkRun,
 } from './benchmark';
 import type { BenchmarkRunIngestInput } from './bench.schemas';
+import { authed } from '../../../middlewares/authed';
 
-export async function benchmarkIngest(req: Request, res: Response) {
-  if (!req.user) throw AppError.unauthenticated();
+export const benchmarkIngest = authed(async (req, res) => {
   assertFirstPartyLabWrite(req.user);
   const input = req.body as BenchmarkRunIngestInput;
   const out = await ingestBenchmarkRun(input);
   return ok(res, out, 201);
-}
+});
 
 export async function benchmarkLeaderboard(_req: Request, res: Response) {
   const out = await getBenchmarkLeaderboard();

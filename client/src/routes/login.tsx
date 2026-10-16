@@ -7,10 +7,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Globe } from '@phosphor-icons/react';
+import { LIMITS, USERNAME_RE } from '@/contract/limits';
 import * as authApi from '@/api/auth.api';
-import { useSession } from '@/stores/session.store';
 import { useUI } from '@/stores/ui.store';
-import { qk } from '@/api/queryKeys';
+import { applySession } from '@/lib/session';
 import type { ApiError } from '@/api/types';
 import { Button, Input } from '@/components/primitives';
 import s from './auth.module.css';
@@ -105,7 +105,6 @@ type LoginFields = z.infer<typeof loginSchema>;
 function LoginPanel() {
   const { t } = useTranslation();
   const [globalError, setGlobalError] = useState<string | null>(null);
-  const setUser = useSession((st) => st.setUser);
   const nav = useNavigate();
   const qc = useQueryClient();
   const loc = useLocation();
@@ -126,8 +125,7 @@ function LoginPanel() {
         password: data.password,
       });
       qc.clear();
-      setUser(user);
-      qc.setQueryData(qk.auth.me, user);
+      applySession(qc, user);
       toast.success(`Welcome back, ${user.usernameDisplay}`);
       const dest = (loc.state as { from?: string } | null)?.from ?? '/feed';
       nav(dest);
@@ -177,10 +175,10 @@ function LoginPanel() {
 const registerSchema = z.object({
   username: z
     .string()
-    .min(3, 'auth.usernameMin')
-    .max(24, 'auth.usernameMax')
-    .regex(/^[a-zA-Z0-9_]+$/, 'auth.usernamePattern'),
-  displayName: z.string().max(50).optional(),
+    .min(LIMITS.usernameMin, 'auth.usernameMin')
+    .max(LIMITS.usernameMax, 'auth.usernameMax')
+    .regex(USERNAME_RE, 'auth.usernamePattern'),
+  displayName: z.string().max(LIMITS.displayNameMax).optional(),
   email: z.string().email('auth.emailInvalid'),
   password: z.string().min(8, 'auth.passwordMin'),
 });
@@ -189,7 +187,6 @@ type RegisterFields = z.infer<typeof registerSchema>;
 function RegisterPanel() {
   const { t } = useTranslation();
   const [globalError, setGlobalError] = useState<string | null>(null);
-  const setUser = useSession((st) => st.setUser);
   const nav = useNavigate();
   const qc = useQueryClient();
 
@@ -244,8 +241,7 @@ function RegisterPanel() {
         password: data.password,
         displayName: data.displayName ?? '',
       });
-      setUser(user);
-      qc.setQueryData(qk.auth.me, user);
+      applySession(qc, user);
       toast.success(`Welcome, ${user.usernameDisplay}`);
       nav('/feed');
     } catch (err) {

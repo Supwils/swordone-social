@@ -7,6 +7,9 @@ import * as postsApi from '@/api/posts.api';
 import { Skeleton, EmptyState } from '@/components/primitives';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import { PostCard } from '@/features/posts/PostCard';
+import { flattenPostPages } from '@/features/posts/postCache';
+import { qk } from '@/api/queryKeys';
+import { useUI } from '@/stores/ui.store';
 import { useDebounce } from '@/lib/useDebounce';
 import { track } from '@/lib/analytics';
 import type { Paginated, PostDTO } from '@/api/types';
@@ -14,6 +17,7 @@ import s from '../explore.module.css';
 
 export function ExplorePostsTab() {
   const { t } = useTranslation();
+  const language = useUI((st) => st.language);
   const [searchParams, setSearchParams] = useSearchParams();
   const searchInput = searchParams.get('q') ?? '';
   const debouncedQ = useDebounce(searchInput, 300);
@@ -23,11 +27,12 @@ export function ExplorePostsTab() {
   }, [debouncedQ]);
 
   const q = useInfiniteQuery({
-    queryKey: ['posts', 'search', debouncedQ],
+    queryKey: qk.posts.search(debouncedQ, language),
     queryFn: ({ pageParam, signal }) =>
       postsApi.searchPosts({
         q: debouncedQ || undefined,
         cursor: pageParam as string | undefined,
+        lang: language,
         signal,
       }),
     initialPageParam: null as string | null,
@@ -35,7 +40,7 @@ export function ExplorePostsTab() {
     enabled: true,
   });
 
-  const posts = q.data?.pages.flatMap((p) => p.items) ?? [];
+  const posts = flattenPostPages(q.data);
   const isDebouncing = searchInput !== debouncedQ;
 
   const setQ = (v: string) => {

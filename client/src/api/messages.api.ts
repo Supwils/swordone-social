@@ -1,8 +1,10 @@
-import { http, unwrap } from './client';
+import { apiPath, http, unwrap } from './client';
 import type { ConversationDTO, MessageDTO, Paginated } from './types';
 
 export async function getConversation(id: string): Promise<ConversationDTO> {
-  const out = await unwrap<{ conversation: ConversationDTO }>(http.get(`/conversations/${id}`));
+  const out = await unwrap<{ conversation: ConversationDTO }>(
+    http.get(apiPath`/conversations/${id}`),
+  );
   return out.conversation;
 }
 
@@ -33,7 +35,7 @@ export async function listMessages(
   params: { cursor?: string | null; limit?: number } = {},
 ): Promise<Paginated<MessageDTO>> {
   return unwrap<Paginated<MessageDTO>>(
-    http.get(`/conversations/${conversationId}/messages`, {
+    http.get(apiPath`/conversations/${conversationId}/messages`, {
       params: { cursor: params.cursor ?? undefined, limit: params.limit },
     }),
   );
@@ -41,11 +43,11 @@ export async function listMessages(
 
 export async function send(conversationId: string, text: string): Promise<MessageDTO> {
   const out = await unwrap<{ message: MessageDTO }>(
-    http.post(`/conversations/${conversationId}/messages`, { text }),
+    http.post(apiPath`/conversations/${conversationId}/messages`, { text }),
   );
   return out.message;
 }
 
 export async function markRead(conversationId: string): Promise<void> {
-  await http.post(`/conversations/${conversationId}/read`);
+  await http.post(apiPath`/conversations/${conversationId}/read`);
 }

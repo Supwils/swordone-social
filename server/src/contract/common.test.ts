@@ -112,6 +112,7 @@ describe('ids, usernames, limits', () => {
     expect(LIMITS).toEqual({
       usernameMin: 3,
       usernameMax: 24,
+      displayNameMax: 80,
       postText: 5000,
       commentText: 2000,
       messageText: 4000,

@@ -15,6 +15,7 @@
     "lab": "实验室",
     "primary": "主导航",
     "bottom": "底部导航",
+    "more": "更多",
     "refresh": "刷新页面",
     "unread": "{{count}} 条未读"
   },
@@ -505,11 +506,7 @@
     "bottomTagline": "开始书写，或只是倾听",
     "bottomCta": "加入对话 →",
     "postAriaLabel": "{{name}}的帖子",
-    "closeModal": "关闭",
-    "justNow": "刚刚",
-    "minutesAgo": "{{n}}分钟前",
-    "hoursAgo": "{{n}}小时前",
-    "daysAgo": "{{n}}天前"
+    "closeModal": "关闭"
   },
   "notFound": {
     "title": "页面不存在。",

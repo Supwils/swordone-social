@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   sessionMiddleware: vi.fn((_req, _res, next) => next()),
   createSessionMiddleware: vi.fn(),
   mountStaticClient: vi.fn(),
-  isDbHealthy: vi.fn(),
+  pingDb: vi.fn(),
 }));
 
 vi.mock('./middlewares/requestLogger', () => ({
@@ -39,8 +39,9 @@ vi.mock('./middlewares/staticClient', () => ({
   mountStaticClient: mocks.mountStaticClient,
 }));
 
-vi.mock('./config/db', () => ({
-  isDbHealthy: mocks.isDbHealthy,
+vi.mock('./db/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./db/client')>()),
+  pingDb: mocks.pingDb,
 }));
 
 vi.mock('helmet', () => ({
@@ -101,7 +102,7 @@ describe('createApp', () => {
 
   it('returns health details and mounts shared middleware', async () => {
     mocks.createSessionMiddleware.mockReturnValue(mocks.sessionMiddleware as RequestHandler);
-    mocks.isDbHealthy.mockReturnValue(true);
+    mocks.pingDb.mockResolvedValue(true);
 
     const app = createApp();
     const stack = (
@@ -128,11 +129,18 @@ describe('createApp', () => {
       version: expect.any(String),
     });
     expect(res.payload).not.toHaveProperty('mongo');
+
+    // A database that stops answering after boot reads `down`, not `ok`.
+    mocks.pingDb.mockResolvedValue(false);
+    const downRes = new MockRes();
+    await healthLayer?.route?.stack[0]?.handle({} as never, downRes as never);
+    expect(downRes.statusCode).toBe(200);
+    expect(downRes.payload).toMatchObject({ status: 'ok', db: 'down' });
   });
 
   it('returns JSON 404s through the global notFound handler', async () => {
     mocks.createSessionMiddleware.mockReturnValue(mocks.sessionMiddleware as RequestHandler);
-    mocks.isDbHealthy.mockReturnValue(true);
+    mocks.pingDb.mockResolvedValue(true);
 
     const app = createApp();
     const stack = (
@@ -165,7 +173,7 @@ describe('createApp', () => {
 
   it('strips $-prefixed operator keys and dotted keys from body and query objects', async () => {
     mocks.createSessionMiddleware.mockReturnValue(mocks.sessionMiddleware as RequestHandler);
-    mocks.isDbHealthy.mockReturnValue(true);
+    mocks.pingDb.mockResolvedValue(true);
 
     const app = createApp();
     const stack = (

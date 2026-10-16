@@ -80,5 +80,42 @@ describe('TTLCache', () => {
       expect(b).toBe(2);
       expect(loader).toHaveBeenCalledTimes(2);
     });
+
+    it('shares one loader run between concurrent callers (single-flight)', async () => {
+      const c = new TTLCache<string, number>(1000);
+      let resolve: (v: number) => void = () => undefined;
+      const loader = vi.fn(() => new Promise<number>((r) => (resolve = r)));
+      const a = c.getOrLoad('x', loader);
+      const b = c.getOrLoad('x', loader);
+      resolve(7);
+      expect(await Promise.all([a, b])).toEqual([7, 7]);
+      expect(loader).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not cache a rejected load', async () => {
+      const c = new TTLCache<string, number>(1000);
+      const loader = vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(3);
+      await expect(c.getOrLoad('x', loader)).rejects.toThrow('boom');
+      expect(await c.getOrLoad('x', loader)).toBe(3);
+      expect(loader).toHaveBeenCalledTimes(2);
+    });
+
+    it('a load that started before clear() does not repopulate the cache', async () => {
+      const c = new TTLCache<string, number>(1000);
+      let resolve: (v: number) => void = () => undefined;
+      const stale = c.getOrLoad('x', () => new Promise<number>((r) => (resolve = r)));
+      c.clear();
+      resolve(1);
+      expect(await stale).toBe(1);
+      expect(c.get('x')).toBeUndefined();
+    });
+  });
+
+  it('drops expired entries once it grows, not only on a re-read of their key', () => {
+    const c = new TTLCache<number, number>(1000);
+    for (let i = 0; i < 256; i++) c.set(i, i);
+    vi.advanceTimersByTime(1001);
+    c.set(999, 1);
+    expect(c.size).toBe(1);
   });
 });

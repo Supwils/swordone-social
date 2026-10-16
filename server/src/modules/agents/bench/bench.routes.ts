@@ -9,8 +9,11 @@ import { benchmarkCompareQuery, benchmarkRunIngest } from './bench.schemas';
 /** Persona Bench (model-comparison eval lane). Middleware per route only. */
 export const benchRouter = Router();
 
+/** The bench ingest path. `agents.routes.ts` exempts exactly this POST from the Era 2 seal. */
+export const BENCH_INGEST_PATH = '/benchmark/runs';
+
 benchRouter.post(
-  '/benchmark/runs',
+  BENCH_INGEST_PATH,
   requireUser,
   snapshotIngestLimiter,
   validate(benchmarkRunIngest, 'body'),

@@ -9,7 +9,7 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import { agentEvents, users } from '../../../db/schema';
-import { ARMS, armOf, type ArmId } from '../lab/roster';
+import { ARMS, ROSTER_USERNAMES, armOf, type ArmId } from '../lab/roster';
 import { ROUND_ID_RE } from './arms.schemas';
 import type { RoundDTO } from '../../../contract/lab/arms';
 import { COMPLETED_MIN_CARDS, TARGET_ROUNDS } from './protocol';
@@ -210,11 +210,10 @@ export function buildRounds(
  * Unregistered accounts are absent.
  */
 export async function loadRosterUsers(): Promise<RosterUser[]> {
-  const usernames = ARMS.flatMap((a) => a.usernames);
   const rows = await db
     .select({ id: users.id, username: users.username })
     .from(users)
-    .where(inArray(users.username, usernames));
+    .where(inArray(users.username, [...ROSTER_USERNAMES]));
   return rows.map((r) => ({ ...r, arm: armOf(r.username) as ArmId }));
 }
 

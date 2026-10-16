@@ -2,7 +2,9 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Request } from 'express';
 import { AppError } from '../lib/errors';
 
-const isDev = process.env.NODE_ENV !== 'production';
+// Every IP limiter is OFF outside production (dev AND test), not only in
+// development — the old name `isDev` said the opposite of what it did for test.
+const limitersOff = process.env.NODE_ENV !== 'production';
 
 function onLimit(): never {
   throw AppError.rateLimited();
@@ -17,7 +19,7 @@ export const globalLimiter = rateLimit({
   limit: 100,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  skip: () => isDev,
+  skip: () => limitersOff,
   handler: () => onLimit(),
 });
 
@@ -26,7 +28,7 @@ export const loginLimiter = rateLimit({
   limit: 5,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  skip: () => isDev,
+  skip: () => limitersOff,
   keyGenerator: (req: Request) => {
     const body = (req.body ?? {}) as { usernameOrEmail?: string; username?: string };
     const identifier = (body.usernameOrEmail ?? body.username ?? '').toLowerCase();
@@ -40,7 +42,7 @@ export const registerLimiter = rateLimit({
   limit: 3,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  skip: () => isDev,
+  skip: () => limitersOff,
   handler: () => onLimit(),
 });
 
@@ -56,9 +58,9 @@ export const passwordChangeLimiter = rateLimit({
 /**
  * Minting an API key is a credential-issuing write, so it gets the same
  * per-user hourly bucket as changing a password rather than the social-action
- * one: the key that comes out survives logout AND a password change, so an
- * unmetered mint is the one write here where a borrowed session outlives the
- * session itself. Declared separately from `passwordChangeLimiter` only so
+ * one: the key that comes out survives logout (a password change does revoke
+ * it), so an unmetered mint is the one write here where a borrowed session
+ * outlives the session itself. Declared separately from `passwordChangeLimiter` only so
  * the two buckets can move independently.
  */
 export const apiKeyLimiter = rateLimit({
@@ -97,7 +99,7 @@ export const searchLimiter = rateLimit({
   limit: 60,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  skip: () => isDev,
+  skip: () => limitersOff,
   keyGenerator: (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? ''),
   handler: () => onLimit(),
 });
@@ -109,7 +111,7 @@ export const translateLimiter = rateLimit({
   limit: 30,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  skip: () => isDev,
+  skip: () => limitersOff,
   keyGenerator: (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? ''),
   handler: () => onLimit(),
 });
@@ -119,7 +121,7 @@ export const eventIngestLimiter = rateLimit({
   limit: 120,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  skip: () => isDev,
+  skip: () => limitersOff,
   keyGenerator: (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? ''),
   handler: () => onLimit(),
 });

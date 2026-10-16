@@ -344,3 +344,322 @@ def test_cli_name_check_rejects_a_bogus_command_or_flag() -> None:
     assert _unknown_cli_names("exec uv run --project x swil-agent cycle NAME --bogus") == [
         "--bogus"
     ]
+
+
+# ── opportunistic-round.sh, run end to end against stub workers ─────────────
+#
+# The real script, copied into a throwaway `agent/` beside a STUB
+# `cycle-one.sh`, so no `uv`/`swil-agent` ever starts. `curl`, `claude`, `uv`
+# and `caffeinate` are stubs on PATH: no request leaves the machine (`SWIL_URL`
+# names a closed local port and `curl` never runs), and `AUTO_COMMIT=0` keeps
+# git out of it. `/bin/bash` is the shell launchd runs it with (3.2 on macOS).
+
+_STUB_CYCLE = """#!/bin/bash
+# Stub worker. Records its pid, its process group and a grandchild, then
+# behaves as STUB_MODE says: `term` exits 143 on TERM (the real CLI's
+# SystemExit(143)); `deaf` ignores TERM, and so does its grandchild.
+name="$1"
+out="$STUB_OUT/$name"
+# Traps first: `.started` is the test's cue to signal, so the stub must
+# already be in its final disposition when it appears.
+if [[ "$STUB_MODE" == "deaf" ]]; then trap '' TERM; fi
+if [[ "$STUB_MODE" == "term" ]]; then
+  trap 'echo term > "$out.term"; exit 143' TERM
+fi
+sleep 600 &
+echo "$$ $(ps -o pgid= -p $$ | tr -d ' ') $!" > "$out.started"
+while :; do sleep 1; done
+"""
+
+# A stand-in for `embedder-guard.sh`: records each call, starts nothing.
+_STUB_GUARD = '#!/bin/bash\necho "$1" >> "$STUB_OUT/guard.log"\n'
+
+_STUBS = {
+    # Every probe answers 200, except the embedder's when the test points
+    # EMBEDDER_URL at `embedder.down` -- then the round starts it via the guard.
+    "curl": '#!/bin/sh\ncase "$*" in *embedder.down*) exit 7 ;; esac\nprintf 200\nexit 0\n',
+    "claude": "#!/bin/sh\nexit 0\n",
+    "uv": "#!/bin/sh\nexit 0\n",
+    "caffeinate": '#!/bin/sh\nshift\nexec "$@"\n',
+}
+
+
+def _round_tree(tmp_path: Path, names: list[str]) -> tuple[Path, dict[str, str]]:
+    root = tmp_path / "agent"
+    (root / "scripts").mkdir(parents=True)
+    script = root / "scripts" / "opportunistic-round.sh"
+    script.write_bytes((SCRIPTS / "opportunistic-round.sh").read_bytes())
+    (root / "scripts" / "cycle-one.sh").write_text(_STUB_CYCLE, encoding="utf-8")
+    (root / "scripts" / "embedder-guard.sh").write_text(_STUB_GUARD, encoding="utf-8")
+    for name in names:
+        (root / "agents" / name).mkdir(parents=True)
+        (root / "agents" / name / "personality.md").write_text(
+            f"---\nusername: {name}\nera: 3\n---\n# x\n", encoding="utf-8"
+        )
+    (root / ".env").write_text("SWIL_URL=http://127.0.0.1:9\n", encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool, body in _STUBS.items():
+        (bin_dir / tool).write_text(body, encoding="utf-8")
+        (bin_dir / tool).chmod(0o755)
+    out = tmp_path / "out"
+    out.mkdir()
+    env = {
+        "PATH": f"{bin_dir}:/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "STUB_OUT": str(out),
+        "STUB_MODE": "term",
+        "ALLOW_BATTERY": "1",
+        "AUTO_COMMIT": "0",
+        "CHECKPOINT_KEEP": "0",
+        "NET_WAIT_SECS": "0",
+        "EMBEDDER_URL": "http://127.0.0.1:9",
+        "ACCOUNT_TIMEOUT": "60",
+        "ACCOUNT_KILL_GRACE": "3",
+        "PARALLEL": "5",
+    }
+    return root, env
+
+
+def _started(tmp_path: Path, name: str) -> tuple[int, int, int] | None:
+    marker = tmp_path / "out" / f"{name}.started"
+    if not marker.exists():
+        return None
+    pid, pgid, grandchild = (int(x) for x in marker.read_text(encoding="utf-8").split())
+    return pid, pgid, grandchild
+
+
+def _alive(pid: int) -> bool:
+    import os
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    # A zombie still answers kill(0): ask ps whether it is one.
+    state = subprocess.run(
+        ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True
+    ).stdout.strip()
+    return bool(state) and not state.startswith("Z")
+
+
+def _wait_for(predicate: object, timeout: float = 20.0) -> bool:
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():  # type: ignore[operator]
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def _round_log(root: Path) -> str:
+    return (root / "logs" / "opportunistic.log").read_text(encoding="utf-8")
+
+
+def _reap(tmp_path: Path, names: list[str]) -> None:
+    """Never leave a stub behind, whatever the assertion said."""
+    import contextlib
+    import os
+    import signal
+
+    for name in names:
+        started = _started(tmp_path, name)
+        if started is None:
+            continue
+        for pid in started:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(pid, signal.SIGKILL)
+
+
+@pytest.mark.parametrize("mode", ["term", "deaf"])
+def test_a_timed_out_worker_loses_its_whole_group_and_counts_as_a_timeout(
+    tmp_path: Path, mode: str
+) -> None:
+    """F3. The worker runs in its own session, so `kill -- -$pgid` reaches it
+    and its grandchild; `term` exits on the TERM, `deaf` (TERM ignored by the
+    worker AND its grandchild) needs the KILL after the grace. Either way
+    `run_one` returns 124 and the summary counts a timeout, not a failure."""
+    names = ["solo"]
+    root, env = _round_tree(tmp_path, names)
+    env |= {"ACCOUNT_TIMEOUT": "1", "ACCOUNT_KILL_GRACE": "2", "STUB_MODE": mode}
+    try:
+        result = subprocess.run(
+            ["/bin/bash", str(root / "scripts" / "opportunistic-round.sh"), "--force"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
+        started = _started(tmp_path, "solo")
+        assert result.returncode == 0, result.stderr
+        assert started is not None
+        pid, pgid, grandchild = started
+        assert pgid == pid, "the worker must lead its own process group"
+        log = _round_log(root)
+        assert "round done — ok=0 failed=0 timeout=1" in log, log
+        assert "rc=143" not in log
+        assert ("still alive" in log) is (mode == "deaf"), log
+        assert (tmp_path / "out" / "solo.term").exists() is (mode == "term")
+        assert _wait_for(lambda: not _alive(pid) and not _alive(grandchild), 5)
+        assert not (root / ".agent-state" / "round.lock").exists()
+    finally:
+        _reap(tmp_path, names)
+
+
+def test_sigterm_ends_the_round_forwards_term_and_starts_no_further_batch(
+    tmp_path: Path,
+) -> None:
+    """F7. A TERM during batch 1 stops batch 1's workers (forwarded to their
+    groups -- launchd's own signal cannot reach another session), removes
+    the round lock and exits 143. Batch 2 never starts."""
+    import signal
+
+    names = ["one", "two"]
+    root, env = _round_tree(tmp_path, names)
+    env |= {"PARALLEL": "1"}
+    proc = subprocess.Popen(
+        ["/bin/bash", str(root / "scripts" / "opportunistic-round.sh"), "--force"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    try:
+        assert _wait_for(lambda: any(_started(tmp_path, n) for n in names))
+        [first] = [n for n in names if _started(tmp_path, n)]
+        pid, _, grandchild = _started(tmp_path, first)  # type: ignore[misc]
+        proc.send_signal(signal.SIGTERM)
+        _, stderr = proc.communicate(timeout=30)
+        assert proc.returncode == 143, stderr
+        assert (tmp_path / "out" / f"{first}.term").exists()
+        assert [n for n in names if _started(tmp_path, n)] == [first]
+        assert _wait_for(lambda: not _alive(pid) and not _alive(grandchild), 5)
+        assert not (root / ".agent-state" / "round.lock").exists()
+        log = _round_log(root)
+        assert "round interrupted by SIGTERM" in log, log
+        assert "round done" not in log
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate()
+        _reap(tmp_path, names)
+
+
+def test_a_signalled_round_still_stops_the_embedder_it_started(tmp_path: Path) -> None:
+    """The signal path does section 8's teardown too: an embedder this round
+    started (`owns_embedder=1`) gets its `down`, and the stopped worker's
+    lock file is swept."""
+    import signal
+
+    names = ["one"]
+    root, env = _round_tree(tmp_path, names)
+    env |= {"EMBEDDER_URL": "http://embedder.down"}
+    stale = root / ".agent-state" / "lock_one"
+    proc = subprocess.Popen(
+        ["/bin/bash", str(root / "scripts" / "opportunistic-round.sh"), "--force"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    try:
+        assert _wait_for(lambda: _started(tmp_path, "one") is not None)
+        pid, _, _ = _started(tmp_path, "one")  # type: ignore[misc]
+        stale.write_text(f"{pid}\n", encoding="utf-8")  # as the worker's lease would
+        proc.send_signal(signal.SIGTERM)
+        proc.communicate(timeout=30)
+        assert proc.returncode == 143
+        guard = (tmp_path / "out" / "guard.log").read_text(encoding="utf-8").split()
+        assert guard == ["up", "down"]
+        assert "embedder stopped" in _round_log(root)
+        assert not stale.exists()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate()
+        _reap(tmp_path, names)
+
+
+def test_sigint_exits_130(tmp_path: Path) -> None:
+    import signal
+
+    names = ["one"]
+    root, env = _round_tree(tmp_path, names)
+    proc = subprocess.Popen(
+        ["/bin/bash", str(root / "scripts" / "opportunistic-round.sh"), "--force"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    try:
+        assert _wait_for(lambda: _started(tmp_path, "one") is not None)
+        proc.send_signal(signal.SIGINT)
+        proc.communicate(timeout=30)
+        assert proc.returncode == 130
+        assert not (root / ".agent-state" / "round.lock").exists()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate()
+        _reap(tmp_path, names)
+
+
+def test_the_default_account_timeout_is_derived_not_900() -> None:
+    text = (SCRIPTS / "opportunistic-round.sh").read_text(encoding="utf-8")
+    assert text.count('ACCOUNT_TIMEOUT="${ACCOUNT_TIMEOUT:-1800}"') == 2
+    assert ":-900}" not in text
+    # Job control would make each `run_one` subshell a group leader, and the
+    # perl `setsid` of its worker would then fail (EPERM).
+    assert "set -m" not in [line.strip() for line in text.splitlines()]
+
+
+def test_auto_commit_commits_only_agent_agents_never_the_owners_index(tmp_path: Path) -> None:
+    """F6. The owner had something unrelated staged; the unattended,
+    --no-verify commit must leave it staged and out of HEAD."""
+    text = (SCRIPTS / "opportunistic-round.sh").read_text(encoding="utf-8")
+    section = text[text.index(_COMMIT_SECTION) :]
+    repo = tmp_path / "repo"
+    (repo / "agent" / "agents" / "a").mkdir(parents=True)
+    (repo / "agent" / "archive" / "era-2").mkdir(parents=True)
+    (repo / "agent" / "archive" / "era-2" / "boundary.json").write_text("{}\n", encoding="utf-8")
+    env = {
+        "REPO_DIR": str(repo),
+        "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
+        "HOME": str(tmp_path),
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@example.test",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@example.test",
+    }
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True, env=env
+        ).stdout
+
+    git("init", "-q")
+    git("add", "agent/archive/era-2/boundary.json")
+    git("commit", "-q", "-m", "chore: seed")
+    (repo / "agent" / "agents" / "a" / "memory.md").write_text("x\n", encoding="utf-8")
+    (repo / "unrelated.txt").write_text("owner's half-done change\n", encoding="utf-8")
+    git("add", "unrelated.txt")
+
+    prelude = 'log() { echo "$*"; }\nAUTO_COMMIT=1\nok=1; bad=0; timedout=0\n'
+    result = subprocess.run(
+        ["/bin/bash", "-c", prelude + section],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "committed round output (not pushed)" in result.stdout
+    assert git("show", "--name-only", "--format=", "HEAD").split() == ["agent/agents/a/memory.md"]
+    assert git("diff", "--cached", "--name-only").split() == ["unrelated.txt"]

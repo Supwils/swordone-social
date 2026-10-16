@@ -5,9 +5,10 @@ import { AppError } from '../../lib/errors';
 import type { TranslationDTO } from '../../contract/posts';
 import { decodeCursor, parseLimit } from '../../lib/pagination';
 import { translateEnabled } from '../../config/env';
-import { translateComments } from '../../lib/translate';
-import { autoTranslateOn, detectLang, resolveLang, type Locale } from '../../lib/lang';
+import { translateComments, translateCommentsForRead } from '../../lib/translate';
+import { detectLang, readTranslation, type Locale } from '../../lib/lang';
 import * as commentsService from './comments.service';
+import { authed } from '../../middlewares/authed';
 
 export async function listForPost(req: Request, res: Response) {
   const cursor = decodeCursor(req.query.cursor);
@@ -18,9 +19,7 @@ export async function listForPost(req: Request, res: Response) {
     cursor,
     limit,
   );
-  await translateComments(items, ctxByCommentId, resolveLang(req), {
-    content: autoTranslateOn(req),
-  });
+  await translateCommentsForRead(items, ctxByCommentId, readTranslation(req));
   const out = items
     .map((c) => {
       const ctx = ctxByCommentId.get(c.id);
@@ -49,8 +48,7 @@ export async function translation(req: Request, res: Response) {
   return ok(res, body satisfies TranslationDTO);
 }
 
-export async function create(req: Request, res: Response) {
-  if (!req.user) throw AppError.unauthenticated();
+export const create = authed(async (req, res) => {
   const { comment, ctx } = await commentsService.createComment(
     req.user,
     req.params.id,
@@ -58,20 +56,18 @@ export async function create(req: Request, res: Response) {
     req.body.parentId ?? null,
   );
   return ok(res, { comment: toCommentDTO(comment, ctx) }, 201);
-}
+});
 
-export async function update(req: Request, res: Response) {
-  if (!req.user) throw AppError.unauthenticated();
+export const update = authed(async (req, res) => {
   const { comment, ctx } = await commentsService.updateComment(
     req.user,
     req.params.id,
     req.body.text,
   );
   return ok(res, { comment: toCommentDTO(comment, ctx) });
-}
+});
 
-export async function remove(req: Request, res: Response) {
-  if (!req.user) throw AppError.unauthenticated();
+export const remove = authed(async (req, res) => {
   await commentsService.deleteComment(req.user, req.params.id);
   return noContent(res);
-}
+});

@@ -229,6 +229,73 @@ describe('posts.service', () => {
     expect(row.postCount).toBe(0);
   });
 
+  it('decrements every counter once when the same post is deleted twice concurrently', async () => {
+    const author = await seedUser();
+    const origAuthor = await seedUser();
+    const original = await seedPost(origAuthor.id, { text: 'original' });
+    const [board] = await db
+      .insert(boards)
+      .values({ slug: 'race', name: 'Race', sortOrder: 1 })
+      .returning();
+    const echo = await createPost(
+      author,
+      { text: 'racing #dupe', visibility: 'public', boardId: board.id, echoOf: original.id },
+      [],
+      null,
+    );
+    const [tag] = await db.select().from(tags).where(eq(tags.slug, 'dupe'));
+    expect(tag.postCount).toBe(1);
+
+    const results = await Promise.allSettled([
+      deletePost(echo.post.id, author),
+      deletePost(echo.post.id, author),
+    ]);
+
+    // One delete wins; the other is the 404 any delete of a deleted post gets.
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(lost.reason).toMatchObject({ code: 'NOT_FOUND' });
+    const [u] = await db.select().from(users).where(eq(users.id, author.id));
+    expect(u.postCount).toBe(0);
+    const [t] = await db.select().from(tags).where(eq(tags.id, tag.id));
+    expect(t.postCount).toBe(0);
+    const [b] = await db.select().from(boards).where(eq(boards.id, board.id));
+    expect(b.postCount).toBe(0);
+    const [o] = await db.select().from(posts).where(eq(posts.id, original.id));
+    expect(o.repostCount).toBe(0);
+  });
+
+  it('refuses a missing echo target before uploading any media', async () => {
+    const author = await seedUser();
+    const upload = vi.spyOn(s3, 'uploadBufferToS3');
+    await expect(
+      createPost(
+        author,
+        { text: 'look', visibility: 'public', echoOf: newId() },
+        [Buffer.from('img')],
+        null,
+      ),
+    ).rejects.toMatchObject<Partial<AppError>>({ code: 'NOT_FOUND' });
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('passes the video mimetype through to the upload', async () => {
+    const author = await seedUser();
+    const upload = vi.spyOn(s3, 'uploadVideoBufferToS3').mockResolvedValue({
+      url: 'https://cdn.example.com/post.webm',
+      width: 0,
+      height: 0,
+    });
+    await createPost(
+      author,
+      { text: '', visibility: 'public' },
+      [],
+      Buffer.from('v'),
+      'video/webm',
+    );
+    expect(upload).toHaveBeenCalledWith(expect.any(Buffer), 'posts', 'video/webm');
+  });
+
   it('rejects an unknown boardId before doing any media work', async () => {
     const author = await seedUser();
     await expect(
@@ -509,7 +576,7 @@ describe('posts.service', () => {
       createdAt: new Date(Date.now() - 90 * 24 * 3_600_000),
     });
 
-    const out = await getShowcasePosts(null, 'en');
+    const out = await getShowcasePosts(null, { lang: 'en', content: true });
     const ids = out.map((p) => p.id);
 
     expect(ids).toContain(pub1.id);
@@ -525,7 +592,7 @@ describe('posts.service', () => {
     await seedPost(a.id, { text: 'x2' });
     await seedPost(a.id, { text: 'x3' });
 
-    const out = await getShowcasePosts(null, 'en');
+    const out = await getShowcasePosts(null, { lang: 'en', content: true });
     expect(out.filter((p) => p.author.id === a.id).length).toBeLessThanOrEqual(2);
   });
 
@@ -548,7 +615,7 @@ describe('posts.service', () => {
       boardId: probes.id,
     });
 
-    const out = await getShowcasePosts(null, 'en');
+    const out = await getShowcasePosts(null, { lang: 'en', content: true });
     const texts = out.map((p) => p.text);
     expect(texts).toContain('organic showcase');
     expect(texts).not.toContain('canary showcase');

@@ -12,7 +12,15 @@ import {
   seedUser,
   uniqHash,
 } from '../lab/lab.testSeeds';
-import { clearAlertsCache, clearPulseCache, getAlerts, getInfluences, getPulse } from './pulse';
+import { clearEraSealCache } from '../lab/window';
+import {
+  clearAlertsCache,
+  clearInfluencesCache,
+  clearPulseCache,
+  getAlerts,
+  getInfluences,
+  getPulse,
+} from './pulse';
 
 beforeEach(async () => {
   await resetDb();
@@ -20,6 +28,30 @@ beforeEach(async () => {
   // reset, a later test reading the same key would get an earlier payload.
   clearPulseCache();
   clearAlertsCache();
+  clearInfluencesCache();
+  clearEraSealCache();
+});
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+describe('the sealed Era 2 window (S6 ruling 7)', () => {
+  it('ends at the seal, so Era 2 rows 100 days old still appear in getPulse(30d, 2)', async () => {
+    const sealedAt = new Date(Date.now() - 100 * DAY_MS);
+    sealedAt.setUTCHours(12, 0, 0, 0);
+    const sealed = await seedUser({ username: 'sealedold', isAgent: true, archivedAt: sealedAt });
+    await seedPost(sealed.id, { createdAt: new Date(sealedAt.getTime() - DAY_MS) });
+
+    const out = await getPulse('30d', 2);
+
+    // 30 calendar days ending on the seal's day, not on today.
+    expect(out.points).toHaveLength(30);
+    expect(out.points[out.points.length - 1].date).toBe(sealedAt.toISOString().slice(0, 10));
+    expect(out.points.reduce((n, p) => n + p.posts, 0)).toBe(1);
+
+    // Era 3 still ends today.
+    const live = await getPulse('30d', 3);
+    expect(live.points[live.points.length - 1].date).toBe(new Date().toISOString().slice(0, 10));
+  });
 });
 
 describe('pulse.getPulse', () => {
@@ -180,5 +212,56 @@ describe('pulse influences', () => {
     expect(out.partners[0]).toMatchObject({ username: 'bob', interactions: 3 });
     expect(out.partners[0].proximity).toBeCloseTo(1);
     expect(out.activity).toHaveLength(30); // zero-filled days
+  });
+
+  it('counts only public posts, and engagement on them (SA-F1)', async () => {
+    const carol = await seedUser({ username: 'carolpub', isAgent: true });
+    const dave = await seedUser({ username: 'davepub', isAgent: false });
+    await seedSnapshot(dave.id);
+
+    const davePublic = await seedPost(dave.id);
+    const daveFollowers = await seedPost(dave.id, { visibility: 'followers' });
+    await seedComment(davePublic.id, carol.id);
+    await seedComment(daveFollowers.id, carol.id);
+    await seedLike(carol.id, daveFollowers.id);
+    await seedPost(carol.id);
+    await seedPost(carol.id, { visibility: 'private' });
+
+    const out = await getInfluences('carolpub', '30d');
+
+    expect(out.partners).toHaveLength(1);
+    expect(out.partners[0]).toMatchObject({ username: 'davepub', interactions: 1 });
+    // One public post + one comment on a public post; the rest is not lab data.
+    expect(out.activity.reduce((n, d) => n + d.actions, 0)).toBe(2);
+  });
+
+  it('keys the cache on the canonical username and returns it, whatever the request casing', async () => {
+    await seedUser({ username: 'xiaoman', isAgent: true });
+    const loadSpy = vi.spyOn(db, 'select');
+
+    const first = await getInfluences('XiaoMan', '30d');
+    expect(first.username).toBe('xiaoman');
+    const queries = loadSpy.mock.calls.length;
+
+    const second = await getInfluences('xiaoMAN', '30d');
+    expect(second).toBe(first); // the same cached payload
+    expect(loadSpy.mock.calls.length).toBe(queries); // no query on the hit
+  });
+
+  it('ends a sealed account activity window at its seal', async () => {
+    const sealedAt = new Date(Date.now() - 100 * DAY_MS);
+    const s = await seedUser({ username: 'sealedinf', isAgent: true, archivedAt: sealedAt });
+    await seedPost(s.id, { createdAt: new Date(sealedAt.getTime() - DAY_MS) });
+
+    const out = await getInfluences('sealedinf', '7d');
+
+    expect(out.activity).toHaveLength(7);
+    expect(out.activity[6].date).toBe(sealedAt.toISOString().slice(0, 10));
+    expect(out.activity.reduce((n, d) => n + d.actions, 0)).toBe(1);
+  });
+
+  it('404s an ordinary human', async () => {
+    await seedUser({ username: 'plainpub', isAgent: false });
+    await expect(getInfluences('plainpub', '30d')).rejects.toMatchObject({ status: 404 });
   });
 });

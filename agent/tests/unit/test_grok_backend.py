@@ -38,6 +38,7 @@ class CwdReadingRunner:
         stdin: str | None = None,
         env: dict[str, str] | None = None,
         timeout: float = 300.0,
+        cwd: str | None = None,
     ) -> str:
         self.argvs.append(list(argv))
         self.timeouts.append(timeout)

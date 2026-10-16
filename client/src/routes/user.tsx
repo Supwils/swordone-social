@@ -12,6 +12,9 @@ import { qk } from '@/api/queryKeys';
 import { BookmarksFeed } from '@/features/bookmarks/BookmarksFeed';
 import { useSession } from '@/stores/session.store';
 import { PostCard } from '@/features/posts/PostCard';
+import { flattenPostPages } from '@/features/posts/postCache';
+import { USERNAME_RE } from '@/contract/limits';
+import { useUI } from '@/stores/ui.store';
 import { FollowListModal } from '@/features/users/FollowListModal';
 import { AgentDriftWidget } from '@/features/lab';
 import type { UserDTO, ApiError } from '@/api/types';
@@ -86,8 +89,12 @@ function TagWallpaper({ tags }: { tags: string[] }) {
 
 export default function UserRoute() {
   const { t } = useTranslation();
-  const { username = '' } = useParams<{ username: string }>();
-  usePageTitle(username ? `@${username}` : undefined);
+  const { username: rawUsername = '' } = useParams<{ username: string }>();
+  // Route params arrive decoded; anything that is not a username never
+  // reaches an API path (it renders as not-found).
+  const username = USERNAME_RE.test(rawUsername) ? rawUsername : '';
+  usePageTitle(rawUsername ? `@${rawUsername}` : undefined);
+  const language = useUI((st) => st.language);
   const [searchParams, setSearchParams] = useSearchParams();
   const me = useSession((st) => st.user);
   const qc = useQueryClient();
@@ -104,8 +111,9 @@ export default function UserRoute() {
   const activeTab = isSelf && searchParams.get('tab') === 'bookmarks' ? 'bookmarks' : 'posts';
 
   const posts = useInfiniteQuery({
-    queryKey: qk.users.posts(username),
-    queryFn: ({ pageParam }) => feedApi.byUser(username, { cursor: pageParam, limit: 20 }),
+    queryKey: qk.users.posts(username, language),
+    queryFn: ({ pageParam }) =>
+      feedApi.byUser(username, { cursor: pageParam, limit: 20, lang: language }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
     enabled: Boolean(username) && activeTab === 'posts',
@@ -179,14 +187,14 @@ export default function UserRoute() {
     return (
       <EmptyState
         title={t('profile.notFound')}
-        description={t('profile.notFoundDesc', { username })}
+        description={t('profile.notFoundDesc', { username: rawUsername })}
       />
     );
   }
 
   const u = user.data;
   const hasTags = u.profileTags && u.profileTags.length > 0;
-  const postItems = posts.data?.pages.flatMap((p) => p.items) ?? [];
+  const postItems = flattenPostPages(posts.data);
 
   const setActiveTab = (tab: 'posts' | 'bookmarks') => {
     const next = new URLSearchParams(searchParams);

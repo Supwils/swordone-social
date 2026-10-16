@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSession } from '@/stores/session.store';
-import { qk } from '@/api/queryKeys';
 import { onUnauthorized } from '@/api/client';
 import * as authApi from '@/api/auth.api';
 import { useUI } from '@/stores/ui.store';
 import { applyTheme, watchSystemTheme } from '@/lib/applyTheme';
+import { applyNoSession, applySession, endSession } from '@/lib/session';
 
 /**
  * One-time app bootstrap:
@@ -16,10 +16,8 @@ import { applyTheme, watchSystemTheme } from '@/lib/applyTheme';
 export function AuthBootstrap() {
   const setUser = useSession((s) => s.setUser);
   const markReady = useSession((s) => s.markReady);
-  const clear = useSession((s) => s.clear);
   const qc = useQueryClient();
   const theme = useUI((s) => s.theme);
-  const setLanguage = useUI((s) => s.setLanguage);
 
   useEffect(() => {
     applyTheme(theme);
@@ -32,10 +30,9 @@ export function AuthBootstrap() {
       // Anonymous /auth/me is a 401 by design. Clearing the cache there
       // (or on an anonymous like) wipes the public feed the user is reading.
       if (!useSession.getState().user) return;
-      clear();
-      qc.clear();
+      endSession(qc);
     });
-  }, [clear, qc]);
+  }, [qc]);
 
   useEffect(() => {
     let active = true;
@@ -43,13 +40,8 @@ export function AuthBootstrap() {
       .me()
       .then((user) => {
         if (!active) return;
-        setUser(user);
-        if (user) {
-          qc.setQueryData(qk.auth.me, user);
-          if (user.preferences?.language) {
-            setLanguage(user.preferences.language);
-          }
-        }
+        if (user) applySession(qc, user);
+        else applyNoSession();
       })
       .catch(() => {
         if (!active) return;
@@ -61,10 +53,7 @@ export function AuthBootstrap() {
     return () => {
       active = false;
     };
-    // setLanguage is a Zustand action — a stable reference for the store's
-    // lifetime — so listing it satisfies the linter without re-running the
-    // effect and re-issuing /auth/me.
-  }, [setUser, markReady, qc, setLanguage]);
+  }, [setUser, markReady, qc]);
 
   return null;
 }

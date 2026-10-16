@@ -51,12 +51,13 @@ threaded into `sync_backend_step`, `execute_step` and `finalize_step`;
 those steps guards INTERNALLY, so a mis-wired edge writes nothing rather
 than writing the wrong thing.
 
-**The deadline.** LangGraph refuses `timeout=` on a sync node at `compile()`
-time, and the async form returns control while ORPHANING the subprocess
-(both measured; spec §5.4 as corrected). So a node making several bounded
-calls is bounded in aggregate by an explicit deadline computed at node entry
--- `dream` is that node: one bounded LLM call plus the reads that build its
-prompt.
+**No node-level deadline.** LangGraph refuses `timeout=` on a sync node at
+`compile()` time, and the async form returns control while ORPHANING the
+subprocess (both measured; spec §5.4 as corrected). Every call that can hang
+is bounded where it can be killed instead: the subprocess runner's per-call
+timeout (`llm/runner.py`, 600s on grok) and the HTTP clients' own timeouts.
+The whole cycle is bounded by the round's per-account timeout
+(`opportunistic-round.sh` ACCOUNT_TIMEOUT).
 """
 
 from __future__ import annotations
@@ -67,7 +68,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final
 
 from swil_agent.api.resources import Resources
 from swil_agent.config import Settings
@@ -79,13 +79,6 @@ from swil_agent.models import Persona
 from swil_agent.persona.source import PersonaSource
 
 NodeFn = Callable[[CycleState], CycleState]
-
-
-# The `dream` node's aggregate budget. One LLM call capped at
-# `SubprocessRunner`'s 300s, plus the group-memory read that builds its
-# prompt -- 600s is that with room, not a limit anyone should hit.
-# Overridable per cycle via `CycleDeps.dream_deadline_seconds`.
-DREAM_DEADLINE_SECONDS: Final = 600.0
 
 
 class NodeStateError(RuntimeError):
@@ -124,12 +117,9 @@ class CycleDeps:
         takes a fresh `datetime.now()` for its act command and another for
         its dream command. Within one cycle that is a difference of minutes
         in an archive stamp.
-      * `memory_text`, `context_now` and `feed_context` are snapshots. If
-        loop 3 (multi-round, `MAX_ROUNDS=1` by default, i.e. OFF) is ever
-        turned on, round 2 must be given REBUILT deps -- reusing round 1's
-        `memory_text` would hide round 1's own posts from
-        `ActContext.today_post_count`, and the rhythm gate would let the
-        account post again over its ceiling.
+      * `memory_text`, `context_now` and `feed_context` are snapshots, taken
+        by the builder's `finish` after the leases are held. A run has one
+        act round, which is what makes one snapshot sound.
 
     `llm_backend` / `llm_model` are the resolved values `backend` was built
     from (`llm/selection.py`: flag > frontmatter > env > default), which the
@@ -158,9 +148,13 @@ class CycleDeps:
     rng: random.Random = field(default_factory=random.Random)
     now: datetime = field(default_factory=datetime.now)
     captured_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    dream_deadline_seconds: float = DREAM_DEADLINE_SECONDS
     monotonic: Callable[[], float] = time.monotonic
     probe_board: str | None = None
+
+
+# Completes a run's `CycleDeps` AFTER its leases are held (`run_graph`'s
+# `finish_deps`): the memory read, the world context and the feed.
+FinishDeps = Callable[[CycleDeps], CycleDeps]
 
 
 def _require[T](value: T | None, *, key: str, node: str) -> T:

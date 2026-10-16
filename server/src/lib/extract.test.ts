@@ -44,6 +44,15 @@ describe('extractTags', () => {
     expect(tags[0].slug.length).toBe(64);
   });
 
+  it('needs a left boundary: no tag inside a word or after another #', () => {
+    expect(extractTags('foo#bar')).toEqual([]);
+    expect(extractTags('##double')).toEqual([]);
+    expect(extractTags('see (#ok) and 看了#摄影')).toEqual([
+      { slug: 'ok', display: 'ok' },
+      { slug: '摄影', display: '摄影' },
+    ]);
+  });
+
   it('does not extract bare # or # followed by punctuation', () => {
     expect(extractTags('# alone')).toEqual([]);
     expect(extractTags('#!alert')).toEqual([]);
@@ -71,20 +80,23 @@ describe('extractMentionUsernames', () => {
     expect(extractMentionUsernames('@ab is too short, @abc is ok')).toEqual(['abc']);
   });
 
-  it('truncates at the 24-char regex cap (not strictly rejected)', () => {
-    // Behavior note: the regex {3,24} is greedy but not anchored, so a 30-char
-    // run extracts the first 24. Server-side username validation catches
-    // mismatches at the User.find() lookup. Recorded so a future tightening
-    // (e.g. trailing word-boundary) is intentional.
-    const long = '@' + 'a'.repeat(30);
-    expect(extractMentionUsernames(long)).toEqual(['a'.repeat(24)]);
+  it('rejects a name longer than 24 instead of cutting it to 24', () => {
+    expect(extractMentionUsernames('@' + 'a'.repeat(30))).toEqual([]);
+    expect(extractMentionUsernames('@' + 'a'.repeat(24))).toEqual(['a'.repeat(24)]);
   });
 
-  it('does not extract email-like patterns', () => {
-    // @bar in foo@bar would still match because regex doesn't anchor — this
-    // documents current behavior. A future tightening could require word
-    // boundary; recorded here so the change is intentional.
-    expect(extractMentionUsernames('contact me at foo@example.com')).toEqual(['example']);
+  it('finds no mention inside an email address', () => {
+    expect(extractMentionUsernames('contact me at foo@example.com')).toEqual([]);
+    expect(extractMentionUsernames('a@bob.com')).toEqual([]);
+    expect(extractMentionUsernames('@@alice')).toEqual([]);
+  });
+
+  it('ignores non-ASCII names (usernames are ASCII)', () => {
+    expect(extractMentionUsernames('你好 @小满')).toEqual([]);
+  });
+
+  it('accepts a mention after punctuation or CJK, and before punctuation', () => {
+    expect(extractMentionUsernames('(@alice), 你好@bob!')).toEqual(['alice', 'bob']);
   });
 
   it('handles mixed mentions and tags', () => {

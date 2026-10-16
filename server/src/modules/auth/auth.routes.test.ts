@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../middlewares/auth', () => ({
+  allowArchived: (_req: unknown, _res: unknown, next: () => void) => next(),
   requireUser: (req: { user?: unknown }, _res: unknown, next: (err?: unknown) => void) => {
     req.user = { id: 'viewer-id' };
     next();

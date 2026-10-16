@@ -17,21 +17,19 @@ import {
   ArrowSquareOut,
   Atom,
 } from '@phosphor-icons/react';
-import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useSession } from '@/stores/session.store';
 import { useRealtime } from '@/stores/realtime.store';
-import * as authApi from '@/api/auth.api';
 import { Avatar } from '@/components/primitives/Avatar';
 import { Button } from '@/components/primitives/Button';
 import { Dialog } from '@/components/primitives/Dialog';
 import { PostComposer } from '@/features/posts/PostComposer';
+import { useLogout } from '@/lib/useLogout';
 import s from './Sidebar.module.css';
 
 export function Sidebar() {
   const { t } = useTranslation();
   const user = useSession((st) => st.user);
-  const clear = useSession((st) => st.clear);
   const unreadN = useRealtime((st) => st.unreadNotifications);
   const unreadC = useRealtime((st) => st.unreadConversations);
   const nav = useNavigate();
@@ -44,18 +42,7 @@ export function Sidebar() {
     nav(user ? '/feed' : '/global');
   };
 
-  const handleLogout = async () => {
-    try {
-      await authApi.logout();
-    } catch {
-      // Server-side logout is best-effort — the local session clears either way.
-    } finally {
-      clear();
-      qc.clear();
-      toast.success(t('nav.signedOut'));
-      nav('/login');
-    }
-  };
+  const handleLogout = useLogout();
 
   const linkClass = ({ isActive }: { isActive: boolean }) => clsx(s.link, isActive && s.linkActive);
 

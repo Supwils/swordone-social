@@ -6,18 +6,25 @@ import type { Paginated, PostDTO } from '@/api/types';
 import { EmptyState, PostCardSkeleton } from '@/components/primitives';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import { PostCard } from '@/features/posts/PostCard';
+import { flattenPostPages } from '@/features/posts/postCache';
+import { useUI } from '@/stores/ui.store';
 
 export function BookmarksFeed() {
   const { t } = useTranslation();
+  const language = useUI((st) => st.language);
   const q = useInfiniteQuery({
-    queryKey: qk.bookmarks.list,
+    queryKey: qk.bookmarks.list(language),
     queryFn: ({ pageParam, signal }) =>
-      bookmarksApi.listBookmarks({ cursor: pageParam as string | undefined, signal }),
+      bookmarksApi.listBookmarks({
+        cursor: pageParam as string | undefined,
+        lang: language,
+        signal,
+      }),
     initialPageParam: null as string | null,
     getNextPageParam: (last: Paginated<PostDTO>) => last.nextCursor,
   });
 
-  const posts = q.data?.pages.flatMap((p) => p.items) ?? [];
+  const posts = flattenPostPages(q.data);
 
   if (q.isLoading) {
     return (

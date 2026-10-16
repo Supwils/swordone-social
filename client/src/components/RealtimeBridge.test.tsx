@@ -6,6 +6,7 @@ import { useRealtime } from '@/stores/realtime.store';
 import { qk } from '@/api/queryKeys';
 import type { MessageDTO, NotificationDTO, Paginated } from '@/api/types';
 import { makeMessage, makeNotification, makeUser, makeUserLite } from '@/test/fixtures';
+import i18n from '@/i18n';
 
 /**
  * The socket is faked at the module boundary: handlers are captured in a map
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => {
     off: vi.fn((event: string) => {
       handlers.delete(event);
     }),
+    connect: vi.fn(),
   };
   return {
     handlers,
@@ -32,6 +34,7 @@ const mocks = vi.hoisted(() => {
     notifUnread: vi.fn(() => Promise.resolve(5)),
     msgUnread: vi.fn(() => Promise.resolve(2)),
     toast: vi.fn(),
+    me: vi.fn(),
   };
 });
 
@@ -42,6 +45,7 @@ vi.mock('@/api/realtime', () => ({
 }));
 vi.mock('@/api/notifications.api', () => ({ unreadCount: mocks.notifUnread }));
 vi.mock('@/api/messages.api', () => ({ unreadCount: mocks.msgUnread }));
+vi.mock('@/api/auth.api', () => ({ me: mocks.me }));
 vi.mock('sonner', () => ({ toast: mocks.toast }));
 
 import { RealtimeBridge } from './RealtimeBridge';
@@ -130,6 +134,23 @@ describe('RealtimeBridge lifecycle', () => {
     expect(useRealtime.getState().connected).toBe(false);
   });
 
+  it('does not re-subscribe when the signed-in user object changes but the id does not', async () => {
+    // Every profile save replaces the session user object; depending on it
+    // tore down and re-registered every handler (and reconnected).
+    await renderBridgeSeeded();
+    const onCalls = mocks.socket.on.mock.calls.length;
+
+    act(() =>
+      useSession.setState({
+        user: makeUser({ id: 'me', username: 'u-me', usernameDisplay: 'u-me', bio: 'edited' }),
+      }),
+    );
+
+    expect(mocks.socket.on.mock.calls.length).toBe(onCalls);
+    expect(mocks.socket.off).not.toHaveBeenCalled();
+    expect(mocks.connectRealtime).toHaveBeenCalledOnce();
+  });
+
   it('disconnects and zeroes all counters when the user logs out', async () => {
     await renderBridgeSeeded();
     act(() => useRealtime.setState({ newFeedPostCount: 3 }));
@@ -204,6 +225,7 @@ describe('RealtimeBridge notifications', () => {
     fire('notification', makeNotification({ id: 'n-4', actor, type: 'reply' }));
     fire('notification', makeNotification({ id: 'n-5', actor, type: 'mention' }));
     fire('notification', makeNotification({ id: 'n-6', actor, type: 'message' }));
+    fire('notification', makeNotification({ id: 'n-7', actor, type: 'echo' }));
 
     expect(mocks.toast.mock.calls.map((c) => c[0])).toEqual([
       'Alice liked your post',
@@ -212,6 +234,8 @@ describe('RealtimeBridge notifications', () => {
       'Alice replied to your comment',
       'Alice mentioned you',
       'Alice sent you a message',
+      // The toast used to fall through to the bare name for an echo.
+      `Alice ${i18n.t('notifications.echoedPost')}`,
     ]);
   });
 
@@ -310,5 +334,92 @@ describe('RealtimeBridge messages', () => {
     fire('post:new');
     fire('post:new');
     expect(useRealtime.getState().newFeedPostCount).toBe(2);
+  });
+});
+
+describe('RealtimeBridge server-initiated disconnect', () => {
+  // `io server disconnect` is the one reason Socket.IO never retries itself.
+  it('reconnects while /auth/me still answers for the signed-in user', async () => {
+    mocks.me.mockResolvedValue(makeUser({ id: 'me' }));
+    await renderBridgeSeeded();
+
+    fire('disconnect', 'io server disconnect');
+
+    await waitFor(() => expect(mocks.socket.connect).toHaveBeenCalledOnce());
+    expect(mocks.me).toHaveBeenCalledOnce();
+  });
+
+  it('does not reconnect when the session is really gone', async () => {
+    let answered = false;
+    mocks.me.mockImplementation(() => {
+      answered = true;
+      return Promise.resolve(null);
+    });
+    await renderBridgeSeeded();
+
+    fire('disconnect', 'io server disconnect');
+    await waitFor(() => expect(answered).toBe(true));
+    // Sync point: me() had already resolved when its .then was attached, so
+    // one drained microtask turn guarantees the callback has run.
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mocks.socket.connect).not.toHaveBeenCalled();
+  });
+
+  it('leaves every other disconnect reason to Socket.IO itself', async () => {
+    await renderBridgeSeeded();
+
+    fire('disconnect', 'transport close');
+
+    expect(mocks.me).not.toHaveBeenCalled();
+    expect(mocks.socket.connect).not.toHaveBeenCalled();
+  });
+
+  it('gives up after a bounded number of kicks so a refused session cannot loop', async () => {
+    mocks.me.mockResolvedValue(makeUser({ id: 'me' }));
+    await renderBridgeSeeded();
+
+    for (let i = 0; i < 5; i++) {
+      fire('disconnect', 'io server disconnect');
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+
+    await waitFor(() => expect(mocks.socket.connect).toHaveBeenCalledTimes(3));
+    expect(mocks.me).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not connect if the user signs out while /auth/me is in flight', async () => {
+    let answer: (u: ReturnType<typeof makeUser>) => void = () => undefined;
+    mocks.me.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    await renderBridgeSeeded();
+
+    fire('disconnect', 'io server disconnect');
+    expect(mocks.me).toHaveBeenCalledOnce();
+    act(() => useSession.setState({ user: null }));
+
+    await act(async () => {
+      answer(makeUser({ id: 'me' }));
+      await Promise.resolve();
+    });
+    expect(mocks.socket.connect).not.toHaveBeenCalled();
+  });
+
+  it('does not connect if the bridge unmounts while /auth/me is in flight', async () => {
+    let answer: (u: ReturnType<typeof makeUser>) => void = () => undefined;
+    mocks.me.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    const { unmount } = await renderBridgeSeeded();
+
+    fire('disconnect', 'io server disconnect');
+    unmount();
+
+    await act(async () => {
+      answer(makeUser({ id: 'me' }));
+      await Promise.resolve();
+    });
+    expect(mocks.socket.connect).not.toHaveBeenCalled();
   });
 });

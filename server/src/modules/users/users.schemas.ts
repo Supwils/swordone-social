@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { LIMITS, LOCALES, usernameLookupSchema } from '../../contract/common';
 
 export const updateMeSchema = z.object({
-  displayName: z.string().trim().min(1).max(80).optional(),
+  displayName: z.string().trim().min(1).max(LIMITS.displayNameMax).optional(),
   bio: z.string().max(280).optional(),
   headline: z.string().max(80).optional(),
   location: z.string().max(80).nullable().optional(),

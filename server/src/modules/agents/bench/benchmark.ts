@@ -5,9 +5,10 @@
  * six times the 300-line service ceiling). Imported directly since the S2
  * module split; there is no barrel.
  */
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import { benchmarkRuns } from '../../../db/schema';
+import { meanOf, populationSd } from '../../../lib/numeric';
 import { TTLCache } from '../../../lib/ttlCache';
 import type { BenchmarkRunIngestInput } from './bench.schemas';
 import type {
@@ -44,39 +45,33 @@ export async function ingestBenchmarkRun(input: BenchmarkRunIngestInput): Promis
   return { id: doc.id };
 }
 
-interface BenchRow {
+/** What the leaderboard and the matrix read: no `output` / `ruleDetail` bodies. */
+interface BenchScoreRow {
   persona: string;
   personaDisplay: string;
   model: string;
   taskId: string;
   taskKind: string;
-  runIndex: number;
-  output: string;
   vectorFidelity: number | null;
   judgeScore: number | null;
   ruleScore: number | null;
-  ruleDetail: string;
   latencyMs: number | null;
 }
 
-const avgOf = (xs: Array<number | null>): number | null => {
-  const v = xs.filter((x): x is number => typeof x === 'number');
-  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
-};
-const stddevOf = (xs: number[]): number => {
-  if (xs.length < 2) return 0;
-  const m = xs.reduce((a, b) => a + b, 0) / xs.length;
-  return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length);
-};
-
-/** Load the most-recent batch's rows — the leaderboard reflects the latest sweep. */
-async function loadLatestBenchRows(): Promise<BenchRow[]> {
+/** The newest batch id — the leaderboard reflects the latest sweep. */
+async function latestBatchId(): Promise<string | null> {
   const [latest] = await db
     .select({ batchId: benchmarkRuns.batchId })
     .from(benchmarkRuns)
     .orderBy(desc(benchmarkRuns.createdAt))
     .limit(1);
-  if (!latest?.batchId) return [];
+  return latest?.batchId || null;
+}
+
+/** The latest batch's scores, without the run outputs nothing here renders. */
+async function loadLatestBenchScores(): Promise<BenchScoreRow[]> {
+  const batchId = await latestBatchId();
+  if (!batchId) return [];
   return db
     .select({
       persona: benchmarkRuns.persona,
@@ -84,16 +79,13 @@ async function loadLatestBenchRows(): Promise<BenchRow[]> {
       model: benchmarkRuns.model,
       taskId: benchmarkRuns.taskId,
       taskKind: benchmarkRuns.taskKind,
-      runIndex: benchmarkRuns.runIndex,
-      output: benchmarkRuns.output,
       vectorFidelity: benchmarkRuns.vectorFidelity,
       judgeScore: benchmarkRuns.judgeScore,
       ruleScore: benchmarkRuns.ruleScore,
-      ruleDetail: benchmarkRuns.ruleDetail,
       latencyMs: benchmarkRuns.latencyMs,
     })
     .from(benchmarkRuns)
-    .where(eq(benchmarkRuns.batchId, latest.batchId));
+    .where(eq(benchmarkRuns.batchId, batchId));
 }
 
 const benchLeaderboardCache = new TTLCache<string, BenchmarkLeaderboardDTO>(30_000);
@@ -101,8 +93,8 @@ export async function getBenchmarkLeaderboard(): Promise<BenchmarkLeaderboardDTO
   return benchLeaderboardCache.getOrLoad('latest', computeBenchmarkLeaderboard);
 }
 async function computeBenchmarkLeaderboard(): Promise<BenchmarkLeaderboardDTO> {
-  const rows = await loadLatestBenchRows();
-  const byModel = new Map<string, BenchRow[]>();
+  const rows = await loadLatestBenchScores();
+  const byModel = new Map<string, BenchScoreRow[]>();
   const personas = new Map<string, string>();
   const tasks = new Map<string, string>();
   for (const r of rows) {
@@ -114,7 +106,8 @@ async function computeBenchmarkLeaderboard(): Promise<BenchmarkLeaderboardDTO> {
 
   const out: BenchmarkLeaderboardRowDTO[] = [];
   for (const [modelName, mrows] of byModel) {
-    // Consistency: average within-(persona,task) stddev of fidelity, inverted.
+    // Consistency: average within-(persona,task) POPULATION SD of fidelity
+    // (÷ n — the form this score has always used), inverted.
     const cellGroups = new Map<string, number[]>();
     for (const r of mrows) {
       if (typeof r.vectorFidelity === 'number') {
@@ -123,16 +116,16 @@ async function computeBenchmarkLeaderboard(): Promise<BenchmarkLeaderboardDTO> {
         cellGroups.get(k)!.push(r.vectorFidelity);
       }
     }
-    const sds = [...cellGroups.values()].filter((g) => g.length >= 2).map(stddevOf);
-    const meanSd = sds.length ? sds.reduce((a, b) => a + b, 0) / sds.length : null;
+    const sds = [...cellGroups.values()].filter((g) => g.length >= 2).map(populationSd);
+    const meanSd = meanOf(sds);
     out.push({
       model: modelName,
       runs: mrows.length,
-      fidelity: avgOf(mrows.map((r) => r.vectorFidelity)),
-      judge: avgOf(mrows.map((r) => r.judgeScore)),
-      rule: avgOf(mrows.map((r) => r.ruleScore)),
+      fidelity: meanOf(mrows.map((r) => r.vectorFidelity)),
+      judge: meanOf(mrows.map((r) => r.judgeScore)),
+      rule: meanOf(mrows.map((r) => r.ruleScore)),
       consistency: meanSd === null ? null : Math.max(0, 1 - meanSd * 4),
-      latencyMs: avgOf(mrows.map((r) => r.latencyMs)),
+      latencyMs: meanOf(mrows.map((r) => r.latencyMs)),
     });
   }
   // Best persona-fidelity first.
@@ -151,10 +144,10 @@ export async function getBenchmarkMatrix(): Promise<BenchmarkMatrixDTO> {
   return benchMatrixCache.getOrLoad('latest', computeBenchmarkMatrix);
 }
 async function computeBenchmarkMatrix(): Promise<BenchmarkMatrixDTO> {
-  const rows = await loadLatestBenchRows();
+  const rows = await loadLatestBenchScores();
   const models = [...new Set(rows.map((r) => r.model))];
   const personaMap = new Map<string, string>();
-  const cellRows = new Map<string, BenchRow[]>();
+  const cellRows = new Map<string, BenchScoreRow[]>();
   for (const r of rows) {
     personaMap.set(r.persona, r.personaDisplay || r.persona);
     const k = `${r.persona}|${r.model}`;
@@ -167,8 +160,8 @@ async function computeBenchmarkMatrix(): Promise<BenchmarkMatrixDTO> {
     cells.push({
       persona,
       model,
-      fidelity: avgOf(group.map((r) => r.vectorFidelity)),
-      judge: avgOf(group.map((r) => r.judgeScore)),
+      fidelity: meanOf(group.map((r) => r.vectorFidelity)),
+      judge: meanOf(group.map((r) => r.judgeScore)),
       n: group.length,
     });
   }
@@ -183,18 +176,31 @@ export async function getBenchmarkCompare(
   persona: string,
   task: string,
 ): Promise<BenchmarkCompareDTO> {
-  const rows = await loadLatestBenchRows();
-  const items: BenchmarkCompareItemDTO[] = rows
-    .filter((r) => r.persona === persona && r.taskId === task)
-    .sort((a, b) => a.model.localeCompare(b.model) || a.runIndex - b.runIndex)
-    .map((r) => ({
-      model: r.model,
-      runIndex: r.runIndex,
-      output: r.output,
-      vectorFidelity: r.vectorFidelity,
-      judgeScore: r.judgeScore,
-      ruleScore: r.ruleScore,
-      ruleDetail: r.ruleDetail,
-    }));
+  // Only the requested cell's rows, filtered in SQL: this is the one read that
+  // needs `output`, and it used to load every output of the batch to keep a few.
+  const batchId = await latestBatchId();
+  const rows = batchId
+    ? await db
+        .select({
+          model: benchmarkRuns.model,
+          runIndex: benchmarkRuns.runIndex,
+          output: benchmarkRuns.output,
+          vectorFidelity: benchmarkRuns.vectorFidelity,
+          judgeScore: benchmarkRuns.judgeScore,
+          ruleScore: benchmarkRuns.ruleScore,
+          ruleDetail: benchmarkRuns.ruleDetail,
+        })
+        .from(benchmarkRuns)
+        .where(
+          and(
+            eq(benchmarkRuns.batchId, batchId),
+            eq(benchmarkRuns.persona, persona),
+            eq(benchmarkRuns.taskId, task),
+          ),
+        )
+    : [];
+  const items: BenchmarkCompareItemDTO[] = rows.sort(
+    (a, b) => a.model.localeCompare(b.model) || a.runIndex - b.runIndex,
+  );
   return { persona, task, items };
 }

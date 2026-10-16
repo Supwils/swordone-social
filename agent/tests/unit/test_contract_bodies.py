@@ -92,6 +92,7 @@ from ._runners import (
     RecordingRunner,
     SilentBackend,
     StubBackend,
+    make_cycle_deps,
     make_persona,
 )
 from .test_register import PERSONALITY as REGISTER_PERSONALITY
@@ -459,8 +460,9 @@ def test_the_trimmed_and_pattern_fields_here_are_the_ones_the_schemas_name() -> 
 def test_lab_event_to_wire_minimal_and_full() -> None:
     minimal = LabEvent(type="cycle", phase="act", outcome="started", summary="cycle started")
     assert_honours("agentEventIngest", minimal.to_wire())
+    # `occurredAt` is accepted only on `type: "anomaly"` (server, S6).
     full = LabEvent(
-        type="cycle",
+        type="anomaly",
         phase="act",
         outcome="success",
         summary="评论了一条",
@@ -852,21 +854,15 @@ def _deps(tmp_path: Path, resources: WiredResources, **overrides: Any) -> CycleD
     fields: dict[str, Any] = {
         "resources": resources,
         "backend": StubBackend("{}"),
-        "persona_source": FakePersonaSource(),
         "embedder": UnitEmbedder(),
-        "dream_state": FakeState(),
         "settings": Settings(swil_url="http://127.0.0.1:9", agent_root=tmp_path),  # type: ignore[call-arg]
-        "agent_root": tmp_path,
-        "health_check": lambda: True,
-        "memory_text": "",
         "llm_backend": "codex",
         "llm_model": "gpt-5.6-luna",
         "now": NOW,
         "captured_at": NOW,
         "monotonic": lambda: 50.0,
     }
-    fields.update(overrides)
-    return CycleDeps(**fields)
+    return make_cycle_deps(tmp_path, **(fields | overrides))
 
 
 @pytest.mark.parametrize("ok", [True, False], ids=["filed", "missing_sampler"])
@@ -1284,7 +1280,9 @@ def test_both_snapshot_excerpts_fit_the_servers_utf16_bound(text: str, expected:
 
 def test_model_supplied_act_fields_are_capped(wire: Wire, tmp_path: Path) -> None:
     """A username, a post id and post text all come from the planner's
-    output; over the server's bound each would 400 its whole event."""
+    output; over the server's bound each would 400 its whole event. A post id
+    or follow username that is not the server's shape never reaches a request
+    at all (`api/paths.py`): those actions are skips with no target fields."""
     long_name = "u" * 600
     long_id = "a" * 200
     actions = [
@@ -1304,10 +1302,13 @@ def test_model_supplied_act_fields_are_capped(wire: Wire, tmp_path: Path) -> Non
     events = wire.events()
     acts = [e for e in events if e["type"] == "cycle" and e.get("action")]
     assert len(acts) == 7
-    followed = next(e for e in acts if e["action"] == "follow" and e["outcome"] == "success")
-    assert followed["summary"] == cap_utf16(f"followed @{long_name}", 500)
+    skipped = [e for e in acts if e["action"] in {"follow", "comment", "like"}]
+    assert len(skipped) == 5
+    assert all(e["outcome"] == "skip" for e in skipped)
+    assert not any("targetId" in e or "reason" in e for e in skipped)
+    sent = next(e for e in acts if e["action"] == "dm" and e["outcome"] == "success")
+    assert sent["summary"] == cap_utf16(f"→@{long_name}", 500)
     assert {len(e["reason"]) for e in acts if "reason" in e} == {300}
-    assert {len(e["targetId"]) for e in acts if "targetId" in e} == {80}
     memory = [e for e in events if e["type"] == "memory"]
     assert any(len(e["summary"]) == 500 for e in memory)
 

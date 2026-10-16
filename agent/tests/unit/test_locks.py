@@ -1,9 +1,13 @@
+import fcntl
 import os
+import subprocess
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
+from swil_agent.locks import file as file_module
 from swil_agent.locks.file import (
     STALE_AFTER_SECONDS,
     FileLock,
@@ -124,11 +128,11 @@ def test_a_rejected_identity_never_creates_a_lock_file(tmp_path: Path) -> None:
 
 def test_lock_raises_when_a_fresh_lock_is_held(tmp_path: Path) -> None:
     path = tmp_path / "lock_zenith"
-    path.write_text("999999", encoding="utf-8")
+    path.write_text(str(os.getpid()), encoding="utf-8")
     with pytest.raises(LockBusy), FileLock(path):
         pass
     # A busy lock must not be touched by the failed acquire attempt.
-    assert path.read_text(encoding="utf-8") == "999999"
+    assert path.read_text(encoding="utf-8") == str(os.getpid())
 
 
 def test_lock_reclaims_a_stale_lock(tmp_path: Path) -> None:
@@ -150,7 +154,7 @@ def test_lock_releases_on_an_exception(tmp_path: Path) -> None:
 
 def test_lock_busy_reports_the_age_in_seconds(tmp_path: Path) -> None:
     path = tmp_path / "lock_zenith"
-    path.write_text("999999", encoding="utf-8")
+    path.write_text(str(os.getpid()), encoding="utf-8")
     old = time.time() - 120
     os.utime(path, (old, old))
     with pytest.raises(LockBusy) as exc_info, FileLock(path):
@@ -221,8 +225,8 @@ def test_lock_treats_a_stat_failure_as_age_zero_and_raises_busy(
 def test_lock_raises_when_the_stale_reclaim_retry_also_loses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The stale-reclaim path is unlink-then-retry-create -- if a second
-    racing process recreates the file between the unlink and our retry, the
+    """The stale-reclaim path is move-aside-then-retry-create -- if a second
+    racing process recreates the file between the move and our retry, the
     retry's create-exclusive fails too. That must surface as LockBusy, not
     a silent double-acquire of the same account."""
     path = tmp_path / "lock_zenith"
@@ -234,5 +238,260 @@ def test_lock_raises_when_the_stale_reclaim_retry_also_loses(
     monkeypatch.setattr(lock, "_try_create", lambda: False)
     with pytest.raises(LockBusy):
         lock.acquire()
-    # The stale file was still unlinked on the way to the failed retry.
+    # The stale file was still moved aside on the way to the failed retry,
+    # and no tombstone is left behind.
     assert not path.exists()
+    assert _lock_files(tmp_path) == []
+
+
+# ── dead-pid reclaim and the one-winner reclaim (S6 AG-F12) ──────────────
+
+
+def _lock_files(directory: Path) -> list[str]:
+    """Everything but the kept reclaim guard (`.<name>.reclaim`)."""
+    return sorted(p.name for p in directory.iterdir() if not p.name.endswith(".reclaim"))
+
+
+def _tombstones(directory: Path) -> list[str]:
+    return [p.name for p in directory.iterdir() if ".reclaim-" in p.name]
+
+
+def _dead_pid() -> int:
+    """A pid that existed a moment ago and no longer does."""
+    child = subprocess.Popen(["true"])
+    child.wait()
+    return child.pid
+
+
+def test_a_fresh_lock_whose_pid_is_dead_is_reclaimed_at_once(tmp_path: Path) -> None:
+    """A crashed run's lock used to block its account for 1800 s; the round
+    script already sweeps a dead `head -1` pid, and now the lock agrees."""
+    path = tmp_path / "lock_zenith"
+    path.write_text(f"{_dead_pid()}\n", encoding="utf-8")
+    with FileLock(path, identity="mine"):
+        assert read_lock_identity(path) == "mine"
+        assert path.read_text(encoding="utf-8").splitlines()[0] == str(os.getpid())
+    assert _lock_files(tmp_path) == []
+
+
+@pytest.mark.parametrize("content", ["", "\n", "not-a-pid\n", "0\n", "-5\n"])
+def test_a_fresh_lock_without_a_live_readable_pid_is_still_held(
+    tmp_path: Path, content: str
+) -> None:
+    """An empty file is a winner's lock between its create and its write:
+    reading it as dead would be a double hold. Only a real, dead pid is."""
+    path = tmp_path / "lock_zenith"
+    path.write_text(content, encoding="utf-8")
+    with pytest.raises(LockBusy), FileLock(path):
+        pass
+    assert path.read_text(encoding="utf-8") == content
+
+
+def test_a_live_pid_of_another_user_is_held(tmp_path: Path) -> None:
+    """pid 1 answers EPERM, not ESRCH: alive."""
+    path = tmp_path / "lock_zenith"
+    path.write_text("1\n", encoding="utf-8")
+    with pytest.raises(LockBusy), FileLock(path):
+        pass
+
+
+def test_a_second_reclaimer_cannot_take_the_first_ones_new_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both judged the same stale file. A reclaims and creates; B, arriving
+    late, moves A's FRESH file aside, sees it is not the one it judged, puts
+    it back, and is busy. Unlink-then-create let B delete A's lock and create
+    its own: two holders of one account."""
+    path = tmp_path / "lock_zenith"
+    path.write_text(f"{_dead_pid()}\n", encoding="utf-8")
+    a = FileLock(path, identity="a")
+    b = FileLock(path, identity="b")
+    real_reclaim = b._reclaim
+
+    def late(seen: object) -> bool:
+        a.acquire()
+        return real_reclaim(seen)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(b, "_reclaim", late)
+    with pytest.raises(LockBusy):
+        b.acquire()
+    assert read_lock_identity(path) == "a"
+    a.release()
+    assert _lock_files(tmp_path) == []
+
+
+def test_a_restore_never_overwrites_a_lock_created_in_the_meantime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The file changes between the in-guard look and the move (its holder's
+    heartbeat), and a third process creates a lock at the empty path before
+    the restore: the restore must not clobber it."""
+    path = tmp_path / "lock_zenith"
+    path.write_text(f"{_dead_pid()}\n", encoding="utf-8")
+    lock = FileLock(path, identity="b")
+    seen = file_module._inspect(path)
+    assert seen is not None
+    real_rename, real_link = os.rename, os.link
+
+    def _heartbeat_then_rename(src: str | Path, dst: str | Path) -> None:
+        os.utime(path, (seen.mtime - 100, seen.mtime - 100))
+        real_rename(src, dst)
+
+    def _contended_link(src: str | Path, dst: str | Path) -> None:
+        Path(dst).write_text("c-holder\n", encoding="utf-8")
+        real_link(src, dst)
+
+    monkeypatch.setattr(os, "rename", _heartbeat_then_rename)
+    monkeypatch.setattr(os, "link", _contended_link)
+    assert lock._reclaim(seen) is False
+    assert path.read_text(encoding="utf-8") == "c-holder\n"
+    assert _tombstones(tmp_path) == []
+
+
+def test_a_moved_file_that_changed_is_put_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "lock_zenith"
+    path.write_text(f"{_dead_pid()}\n", encoding="utf-8")
+    seen = file_module._inspect(path)
+    assert seen is not None
+    real_rename = os.rename
+
+    def _heartbeat_then_rename(src: str | Path, dst: str | Path) -> None:
+        os.utime(path, (seen.mtime - 100, seen.mtime - 100))
+        real_rename(src, dst)
+
+    monkeypatch.setattr(os, "rename", _heartbeat_then_rename)
+    assert FileLock(path)._reclaim(seen) is False
+    assert path.exists()
+    assert _tombstones(tmp_path) == []
+
+
+def test_a_reclaim_already_in_progress_is_busy(tmp_path: Path) -> None:
+    path = tmp_path / "lock_zenith"
+    path.write_text(f"{_dead_pid()}\n", encoding="utf-8")
+    guard = os.open(tmp_path / ".lock_zenith.reclaim", os.O_CREAT | os.O_RDWR)
+    try:
+        fcntl.flock(guard, fcntl.LOCK_EX)
+        with pytest.raises(LockBusy), FileLock(path):
+            pass
+    finally:
+        os.close(guard)
+    with FileLock(path):
+        pass
+
+
+def test_a_lock_released_before_the_reclaimer_looks_again_is_simply_taken(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "lock_zenith"
+    path.write_text(f"{_dead_pid()}\n", encoding="utf-8")
+    seen = file_module._inspect(path)
+    assert seen is not None
+    path.unlink()
+    assert FileLock(path)._reclaim(seen) is True
+
+
+def test_concurrent_reclaimers_of_one_stale_lock_leave_exactly_one_holder(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "lock_zenith"
+    for _round in range(25):
+        path.write_text(f"{_dead_pid()}\n", encoding="utf-8")
+        locks = [FileLock(path, identity=f"t{i}") for i in range(8)]
+        start = threading.Barrier(len(locks))
+        winners: list[FileLock] = []
+
+        def contend(lock: FileLock, start: threading.Barrier, winners: list[FileLock]) -> None:
+            start.wait()
+            try:
+                lock.acquire()
+            except LockBusy:
+                return
+            winners.append(lock)
+
+        threads = [threading.Thread(target=contend, args=(lock, start, winners)) for lock in locks]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert len(winners) == 1
+        assert read_lock_identity(path) == winners[0]._identity
+        winners[0].release()
+        assert _lock_files(tmp_path) == []
+
+
+def test_a_lock_released_between_the_create_and_the_look_is_raced_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "lock_zenith"
+    lock = FileLock(path)
+    real_create = lock._try_create
+    attempts: list[bool] = []
+
+    def first_loses() -> bool:
+        if not attempts:
+            attempts.append(False)
+            return False  # the holder released right after this create failed
+        attempts.append(True)
+        return real_create()
+
+    monkeypatch.setattr(lock, "_try_create", first_loses)
+    lock.acquire()
+    assert path.exists()
+    lock.release()
+
+
+def test_moving_aside_a_file_that_is_already_gone_frees_the_path(tmp_path: Path) -> None:
+    path = tmp_path / "lock_zenith"
+    path.write_text(f"{_dead_pid()}\n", encoding="utf-8")
+    seen = file_module._inspect(path)
+    assert seen is not None
+    path.unlink()
+    assert FileLock(path)._move_aside(seen) is True
+    assert _tombstones(tmp_path) == []
+
+
+def test_an_os_error_during_the_reclaim_is_busy_with_the_cause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Not a raw `OSError` out of a lease: busy, naming why."""
+    path = tmp_path / "lock_zenith"
+    path.write_text(f"{_dead_pid()}\n", encoding="utf-8")
+    real_inspect = file_module._inspect
+
+    def failing_on_the_tombstone(target: Path) -> object:
+        if ".reclaim-" in target.name:
+            raise PermissionError("EACCES")
+        return real_inspect(target)
+
+    monkeypatch.setattr(file_module, "_inspect", failing_on_the_tombstone)
+    with pytest.raises(LockBusy, match="reclaim failed: EACCES") as info, FileLock(path):
+        pass
+    assert info.value.detail == "EACCES"
+    # The file it could not verify is put back, not deleted.
+    assert path.exists()
+    assert _tombstones(tmp_path) == []
+
+
+def test_a_failed_restore_is_busy_with_the_cause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "lock_zenith"
+    path.write_text(f"{_dead_pid()}\n", encoding="utf-8")
+    seen = file_module._inspect(path)
+    assert seen is not None
+    real_rename = os.rename
+
+    def _heartbeat_then_rename(src: str | Path, dst: str | Path) -> None:
+        os.utime(path, (seen.mtime - 100, seen.mtime - 100))
+        real_rename(src, dst)
+
+    def _no_link(src: str | Path, dst: str | Path) -> None:
+        raise OSError("EXDEV")
+
+    monkeypatch.setattr(os, "rename", _heartbeat_then_rename)
+    monkeypatch.setattr(os, "link", _no_link)
+    with pytest.raises(OSError, match="EXDEV"):
+        FileLock(path)._reclaim(seen)
+    assert _tombstones(tmp_path) == []

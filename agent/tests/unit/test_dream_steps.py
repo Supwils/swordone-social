@@ -42,6 +42,7 @@ from ._runners import (
     ScriptedBackend,
     SilentBackend,
     StubBackend,
+    make_cycle_deps,
 )
 
 NOW = datetime(2026, 10, 14, 20, 0, 0)
@@ -232,17 +233,6 @@ def test_dream_step_fails_on_garbage_and_writes_nothing(root: Path) -> None:
 def test_dream_step_survives_a_failing_notifications_read(root: Path) -> None:
     resources = FakeResources()
     resources.fail("notifications")
-    step = dream_step(
-        persona=_persona(root),
-        resources=resources,
-        backend=StubBackend(GOOD_REPLY),
-        memory_text="",
-    )
-    assert step.recent is not None
-
-
-def test_dream_step_survives_a_dead_events_endpoint(root: Path) -> None:
-    resources = FakeResources(lab_event_raises=RuntimeError("events down"))
     step = dream_step(
         persona=_persona(root),
         resources=resources,
@@ -490,22 +480,13 @@ def _bare_persona_fields() -> dict[str, object]:
 
 def _deps(root: Path, **overrides: object) -> CycleDeps:
     fields: dict[str, object] = {
-        "resources": FakeResources(),
         "backend": StubBackend(GOOD_REPLY),
         "persona_source": _source(root),
-        "embedder": FakeEmbedder(),
-        "dream_state": FakeState(),
-        "settings": Settings(agent_root=root),
-        "agent_root": root,
-        "health_check": lambda: True,
-        "memory_text": "",
-        "llm_backend": "claude",
         "llm_model": "opus",
         "now": NOW,
         "captured_at": CAPTURED_AT,
     }
-    fields.update(overrides)
-    return CycleDeps(**fields)  # type: ignore[arg-type]
+    return make_cycle_deps(root, **(fields | overrides))
 
 
 def test_the_cycle_graph_has_no_gate_and_no_rule_check() -> None:

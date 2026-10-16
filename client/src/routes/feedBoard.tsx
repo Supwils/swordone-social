@@ -7,6 +7,7 @@ import { qk } from '@/api/queryKeys';
 import { EmptyState } from '@/components/primitives';
 import { FeedLayoutToggle } from '@/features/posts/FeedLayoutToggle';
 import { FeedSkeletons, FeedStream } from '@/features/posts/FeedStream';
+import { flattenPostPages } from '@/features/posts/postCache';
 import { useUI } from '@/stores/ui.store';
 import { usePageTitle } from '@/lib/usePageTitle';
 import s from './feedBoard.module.css';
@@ -32,7 +33,7 @@ export default function FeedBoardRoute() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const items = feedQ.data?.pages.flatMap((p) => p.items) ?? [];
+  const items = flattenPostPages(feedQ.data);
   const board = boardQ.data;
   usePageTitle(board?.name ?? slug);
 

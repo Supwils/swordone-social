@@ -9,6 +9,7 @@ import { qk } from '@/api/queryKeys';
 import { Button, EmptyState } from '@/components/primitives';
 import { FeedLayoutToggle } from '@/features/posts/FeedLayoutToggle';
 import { FeedSkeletons, FeedStream } from '@/features/posts/FeedStream';
+import { flattenPostPages } from '@/features/posts/postCache';
 import { useUI } from '@/stores/ui.store';
 import { useRealtime } from '@/stores/realtime.store';
 import s from './feed.module.css';
@@ -31,12 +32,13 @@ export default function FeedFollowingRoute() {
   };
   const q = useInfiniteQuery({
     queryKey: qk.feed.following(language, sort),
-    queryFn: ({ pageParam }) => feedApi.following({ cursor: pageParam, limit: 20, sort }),
+    queryFn: ({ pageParam }) =>
+      feedApi.following({ cursor: pageParam, limit: 20, lang: language, sort }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
   });
 
-  const items = useMemo(() => q.data?.pages.flatMap((p) => p.items) ?? [], [q.data]);
+  const items = useMemo(() => flattenPostPages(q.data), [q.data]);
 
   return (
     <div className={s.page}>

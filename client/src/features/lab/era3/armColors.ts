@@ -2,16 +2,11 @@
  * Era 3 arm identity for the dashboard: display order, names and colours.
  * Colours are existing theme tokens, so both themes work without new palette.
  */
-import type { ArmId } from '@/features/lab/types';
+import { ARM_IDS, type ArmId } from '@/contract/limits';
+import { MODEL_FAMILY_LABEL } from '@/lib/modelFamily';
 
-/** Display order — the pre-registration's arm order (mirrors server `ARMS`). */
-export const ARM_IDS: readonly ArmId[] = [
-  'openai',
-  'grok',
-  'gemini',
-  'claude-opus',
-  'claude-haiku',
-];
+/** Display order — the pre-registration's arm order, owned by the contract. */
+export { ARM_IDS };
 
 export const ARM_COLOR: Record<ArmId, string> = {
   openai: 'var(--color-success)',
@@ -21,11 +16,7 @@ export const ARM_COLOR: Record<ArmId, string> = {
   'claude-haiku': 'var(--color-warning)',
 };
 
-/** Brand names, identical in every locale. */
-export const ARM_LABEL: Record<ArmId, string> = {
-  openai: 'OpenAI',
-  grok: 'Grok',
-  gemini: 'Gemini',
-  'claude-opus': 'Claude Opus',
-  'claude-haiku': 'Claude Haiku',
-};
+/** Brand names, identical in every locale (shared with the account badge). */
+export const ARM_LABEL: Record<ArmId, string> = Object.fromEntries(
+  ARM_IDS.map((id) => [id, MODEL_FAMILY_LABEL[id]]),
+) as Record<ArmId, string>;

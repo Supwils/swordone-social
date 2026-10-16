@@ -1,5 +1,5 @@
-"""The dream phase's nodes: `dream` (cooldown + the one LLM call, under a
-deadline), `write` and `snapshot`.
+"""The dream phase's nodes: `dream` (cooldown + the one LLM call), `write`
+and `snapshot`.
 
 Each adapts `CycleState` to the `dream/round.py` steps it imports by name; a
 test patches a step HERE, on the module whose node looks it up at call time.
@@ -7,29 +7,11 @@ test patches a step HERE, on the module whose node looks it up at call time.
 
 from __future__ import annotations
 
-import logging
 from typing import Final
 
 from swil_agent.dream.round import cooldown_step, dream_step, snapshot_step, write_step
-from swil_agent.graph.deps import CycleDeps, NodeFn, agent_dir_name
+from swil_agent.graph.deps import CycleDeps, NodeFn
 from swil_agent.graph.state import CycleState
-
-# The dream node's own FAIL line is a DREAM-PHASE record and must land in
-# `agent/logs/dream.log`, not the act log -- the two files are different
-# destinations and the `cycle` command
-# routes a record to one or the other by the LOGGER THAT EMITTED IT
-# (`cli/logs.py`'s `_DREAM_LOG_SOURCES`). The node layer is the one place that emits
-# both phases: the deadline FAIL below is the dream's, and the logout record
-# (`graph/nodes_tail.py`) is the cycle's own terminal line, which belongs with the act log.
-# A single module logger cannot
-# express that, so the dream-phase one is named as a child -- inheriting
-# `swil_agent.graph.nodes`' level and handlers, so `caplog.at_level(..., logger=
-# "swil_agent.graph.nodes")` still sees it. Both names are spelled out rather than
-# derived from `__name__`: they predate the S3 §9 split of `graph/nodes.py`, and
-# `cli/logs.py` routes on them.
-dream_logger = logging.getLogger("swil_agent.graph.nodes.dream")
-
-_DEADLINE_REASON: Final = "dream deadline exceeded before the LLM call"
 
 # What a shadow round records instead of dreaming. `run_cycle` routes a dry
 # cycle straight from the act phase to logout, so this reason is normally
@@ -39,12 +21,13 @@ _DRY_RUN_REASON: Final = "dry run: the dream phase is skipped entirely"
 
 
 def make_dream_node(deps: CycleDeps) -> NodeFn:
-    """`cooldown_step` -> `dream_step`, under an explicit deadline.
+    """`cooldown_step` -> `dream_step`.
 
     One node because the cooldown must decide before the paid LLM call. The
-    deadline is checked before that call; exceeding it degrades to the shape
-    of a failed dream (proceeded, no list, a reason) rather than raising, so a
-    cycle that has already acted still reaches its logout record.
+    call is bounded where it can actually be killed -- the subprocess runner's
+    per-call timeout -- not by a node-level deadline: the only thing that ran
+    before it here is the cooldown's local file reads, so a deadline checked
+    between the two bounded nothing.
 
     `dry_run` is checked here as well as on the edge that routes a shadow
     round to logout: `dream_step` posts a lab event and spends an LLM call.
@@ -54,8 +37,6 @@ def make_dream_node(deps: CycleDeps) -> NodeFn:
         if deps.dry_run:
             return {"proceeded": False, "dream_reason": _DRY_RUN_REASON}
         persona = state["persona"]
-        deadline = deps.monotonic() + deps.dream_deadline_seconds
-
         cooldown = cooldown_step(
             persona=persona,
             persona_source=deps.persona_source,
@@ -66,10 +47,6 @@ def make_dream_node(deps: CycleDeps) -> NodeFn:
         )
         if not cooldown.proceed:
             return {"proceeded": False, "dream_reason": cooldown.reason}
-
-        if deps.monotonic() >= deadline:
-            dream_logger.warning("FAIL %s — %s", agent_dir_name(persona), _DEADLINE_REASON)
-            return {"proceeded": True, "dream_reason": _DEADLINE_REASON}
 
         dreamt = dream_step(
             persona=persona,

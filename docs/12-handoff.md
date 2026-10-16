@@ -1,8 +1,8 @@
 ---
-title: Handoff — current state (Era 3 staged, S1–S5 built locally)
+title: Handoff — current state (Era 3 staged, S1–S6 built locally)
 status: stable
 last-updated: 2026-10-15
-owner: s5-hygiene
+owner: s6-review-fixes
 ---
 
 # Handoff
@@ -14,7 +14,7 @@ here. Closed dated entries (everything up to 2026-09-18, plus the 2026-10-14
 
 ## Where things stand — 2026-10-15
 
-- **S1–S5 are built locally. Nothing from Era 3 has been migrated, deployed,
+- **S1–S6 are built locally. Nothing from Era 3 has been migrated, deployed,
   registered or run against production.** `com.swil.round` is unloaded.
 - **S1** — Era 2 sealed (36 accounts in `agent/archive/era-2/`), Era 3 roster staged
   (20 accounts, five arms x four, persona format v2, enforcing duplicate guard,
@@ -24,10 +24,62 @@ here. Closed dated entries (everything up to 2026-09-18, plus the 2026-10-14
   `cli/` package, `llm/` split, Persona Bench in Python, Bash runtime retired).
 - **S4** — one API contract (zod in `server/src/contract/`, synced to client, mcp and agent).
 - **S5** — hygiene (spec `docs/superpowers/specs/2026-10-15-s5-hygiene-design.md`, section below).
+- **S6** — whole-project review fixes (plan `docs/superpowers/plans/2026-10-15-s6-review-fixes.md`, section below).
 
-S2 (`d4bc187`), S3 (`b1b8435`) and S4 (`db68cef`) are committed but not pushed; S5 is
-uncommitted. All as the owner directs; `npm run ci:check`
-(17 steps) is green at the end of S5.
+S2 (`cbdf77d`), S3 (`5f5c367`), S4 (`4ac01d2`), S5 (`9932513`) and S6 (the commit after
+it) are committed and pushed to branch `era3-launch` (PR to `main`, not merged).
+`npm run ci:check` (20 steps) is green at the end of S6.
+
+## S6: whole-project review fixes — 2026-10-15
+
+**Status: done, uncommitted, nothing deployed, no production access.** Five reviews
+(server core, server lab + contract, client, agent runtime, tooling) found 94 issues;
+the fixes ran as ten reviewed tasks. Parked: keyset cursors dropping microseconds
+(needs a migration or loses index use), a redundant notifications index and two unused
+columns (migrations), folding `Persona.declared_backend` (would retire the `SWIL_LLM_*`
+layer).
+
+- **Persona calls are isolated from the operator's machine (experiment input — read
+  `13-observation-lab.md` 2026-10-15 before comparing).** Measured from the repo root,
+  `claude -p --tools ""` loaded 64 MCP tools (Gmail send, Blender execute, Drive…),
+  8 hooks injecting ~66k tokens, 22 plugins, CLAUDE.md and auto-memory; codex read
+  files by absolute path (a canary in the scratchpad was printed) and loaded the
+  operator's config; grok's `--tools ""` did not empty its built-ins on 1.0.52. Now:
+  claude `--strict-mcp-config --setting-sources "" --disable-slash-commands
+  --no-session-persistence` + a per-call temp cwd + an explicit `--effort` pin; codex
+  `--ignore-user-config --ignore-rules -C <tmp>` + a tool lockdown + explicit
+  `-c` pins; grok an env + `--disallowed-tools` list (doctor FAILs on any grok version
+  but the audited 1.0.52); every CLI runs in its own process group, killed as a group.
+  **Residue no flag reaches** (owner decision before round 1): codex
+  `~/.codex/AGENTS.md`, grok `~/.grok` rules/skills/hooks, cursor user rules/hooks.
+- **Agent reads are never machine-translated** (first-party agents get originals;
+  before, feeds were translated to English for agents whenever a key was set).
+- **Security:** client-side path traversal (a link in a post could force a follow/like)
+  closed by encoding every API path; the agent encodes and validates every
+  model-written id; notification previews hide deleted/now-private text; a password
+  change revokes the user's API keys; archived accounts can log out / revoke keys;
+  socket handshake and owned-agent keys check account status; SPA security headers
+  (CSP report-only, `X-Frame-Options: DENY`); gitleaks rule for `sk-swil-` keys.
+- **Correctness:** concurrent deletes no longer double-decrement counters;
+  `bookmarkedByMe` on `GET /posts/:id`; logout drops only that session's sockets;
+  translations never land on edited text; per-account lab reads only for lab accounts
+  and public posts; population cohesion no longer historises the 1.0 placeholder;
+  Era 2 lab windows end at the seal and every lab window is calendar days.
+- **Agent runtime:** process env now outranks `agent/.env`; `SWIL_REQUIRE_NON_PROD`
+  fails safe on an unknown value; the round's per-account timeout (now 1800 s) kills
+  the right process group; TERM/INT stop the round (and the embedder it started);
+  the auto-commit is limited to `agent/agents`; `cycle --resume` refuses to re-run a
+  half-done `execute`/`write`; dead-pid lock files are reclaimed at once.
+- **Tooling:** tests refuse any database that is not a local `*_test`/`*_e2e`;
+  hooks via `core.hooksPath` (**run `npm run install-hooks` once** — the old
+  `.git/hooks` symlinks pointed at a pre-move path, so no hook ran since 2026-09-04);
+  pre-push = full `ci:check`; CI lints commit messages; Node 22 everywhere; one Vite
+  major (7); mcp `bin` works; migrations ship in `dist`; e2e typechecked; actions
+  pinned by SHA. `ci:check` is now 20 steps.
+
+**Verified locally.** `npm run ci:check` 20/20 green at the end of S6 (server 1182
+passed / 2 skipped, client 597, mcp 37, agent 2138). Recorded cycle/act/dream goldens
+byte-identical to HEAD.
 
 ## S5: hygiene — 2026-10-15
 
@@ -43,7 +95,7 @@ uncommitted. All as the owner directs; `npm run ci:check`
   and `db:validate-fks -- --yes` are the later, owner-run validation steps. List and
   rationale: `04-data-model.md`. `server/scripts/seed.ts` now refuses a non-local
   `DATABASE_URL` without `--i-mean-remote`, and `--reset` truncates every non-session table.
-- **Gates added to `ci:check` and `ci.yml`** (now 17 steps): mcp lint, Prettier
+- **Gates added to `ci:check` and `ci.yml`** (now 20 steps): mcp lint, Prettier
   format check (server, client, mcp), knip; an `e2e` CI job (Playwright, own
   Postgres service); an agent pytest gate that fails on a leaked sqlite connection
   (`error::ResourceWarning` + `PytestUnraisableExceptionWarning`; the autouse `gc.collect()`
@@ -68,9 +120,22 @@ client 526, mcp 32, agent 2024 at 99.56 %). The `e2e` CI job has only run locall
 Current as of 2026-10-15; supersedes the S1-era copy in the archive.
 
 0. **Land on GitHub first.** Push to a branch / open a PR and get every CI job green
-   before merging to `main` (Railway builds `main` with "Wait for CI"): the new
-   Prettier, knip and mcp-lint gates and the `e2e` job have never run on GitHub, and CI
-   uses Node 20 while local runs use Node 22.
+   before merging to `main` (Railway builds `main` with "Wait for CI"): the S5/S6 gates
+   (Prettier, knip, mcp lint/build, e2e typecheck, commitlint, `uv lock --check`) and the
+   `e2e` job have never run on GitHub. Run `npm run install-hooks` once first.
+   - **Node 22 on Railway and Vercel.** `engines` is `>=22`; confirm each build log
+     shows Node 22 (pin `RAILPACK_NODE_VERSION=22` / the Vercel project's Node version
+     if it picks a newer major).
+   - **CSP.** `client/vercel.json` ships `Content-Security-Policy-Report-Only`. On the
+     first preview deploy check the browser console for reports (the API/socket host
+     is hard-coded in `connect-src`; a different `VITE_API_BASE`/`VITE_SOCKET_URL`
+     host must be added), then switch the header name to `Content-Security-Policy`.
+   - **Operator residue in persona calls** (S6 above): **parked 2026-10-16** for the era
+     (`~/.swil-era3-residue/residue.sh status`; `docs/13` change point). Check it still
+     says `parked` before round 1.
+   - **cursor auth.** A tiny live call during S6 returned "Authentication required"
+     although `cursor-agent status` said logged in — `doctor --smoke` (step 6) must pass
+     for the gemini arm.
 1. Owner reviews the 20 cards.
 2. **Migrate, then deploy server, then deploy client — in that order.**
    - **Quiet window, `com.swil.round` unloaded**
@@ -151,13 +216,14 @@ Current as of 2026-10-15; supersedes the S1-era copy in the archive.
 - **Runtime of record:** Python `swil-agent` (`agent/swil_agent/`). Commands, the
   schedule (`com.swil.round`, opportunistic, 48 h interval) and the embedder are in
   `CLAUDE.md` and `agent/HOWTO.md`. The Bash runtime is gone; there is no rollback to it.
-- **`agent/.env` points at Railway production and wins over the process
-  environment.** Do not run `cycle`/`act` casually; `SWIL_REQUIRE_NON_PROD=1`
-  refuses them there unless `--i-mean-production`.
+- **`agent/.env` points at Railway production.** The process environment outranks
+  it (since S6), so `SWIL_URL=… swil-agent …` targets that host. Do not run
+  `cycle`/`act` casually; `SWIL_REQUIRE_NON_PROD=1` refuses them there unless
+  `--i-mean-production` (any unrecognised value counts as on).
 - **Deploys are manual.** Push does not deploy either side. Order: migrate Neon,
   backend (Railway UI or the GraphQL API; the `railway` CLI hangs on this
   machine), then `cd client && npx vercel --prod`. See `08-deployment.md`.
-- **Gate before any push:** `npm run ci:check` (17 steps, `09-contributing.md`).
+- **Gate before any push:** `npm run ci:check` (20 steps, `09-contributing.md`).
   CI also runs an `e2e` job that `ci:check` does not (it needs Playwright
   browsers); run `npm run test:e2e` locally for changes that touch auth, posts or BYOA.
 - **Seeds and FKs.** Tests and seeds must create parents before children and never
@@ -173,6 +239,7 @@ Current as of 2026-10-15; supersedes the S1-era copy in the archive.
 - **Undeployed SPA deep-link fix (2026-10-11)** — `client/vercel.json`; ships with
   the next client deploy (entry below).
 - **Era 3 launch** — the checklist above; nothing in it has been done.
+- **Sealing Era 3 later** — `eraSeal()` (`lab/window.ts`) is `max(archived_at)` over all archived accounts; scope it to the Era 2 boundary first.
 - **e2e CI job unrun on GitHub** — first run happens on the first push.
 - **Owner action items** (section below) — still mandatory before going public.
 - **Notifications to historical orphan users now fail with 23503.** A notification
@@ -186,11 +253,17 @@ Current as of 2026-10-15; supersedes the S1-era copy in the archive.
   api keys, messages...). Dev-only; remote targets need `--i-mean-remote`.
 - **Prettier gate scope.** It covers `src` of server, client and mcp only — not
   `server/scripts/` (server `format:check` globs `src/` only), `e2e/`, `agent/` (ruff there) or docs.
+- **A Cloudinary API key and secret are in git history** (commit `0cc988d`,
+  `server/src/cloudinaryConfig.js`, March 2025; the only gitleaks history hit).
+  Owner decision 2026-10-16: the account is no longer used, so no rotation is needed;
+  current code does not use Cloudinary.
+- **S6 parked items** — see the S6 section (cursor microseconds, notifications
+  index, unused columns, `declared_backend`).
 - Older recorded follow-ups from rounds before 2026-09-18 are in the archive.
 
 ## S4: one API contract — 2026-10-14
 
-**Status: done, committed (`db68cef`, not pushed), nothing deployed.** No response field, status code
+**Status: done, committed (`4ac01d2`, not pushed), nothing deployed.** No response field, status code
 or route changed. Spec: `docs/superpowers/specs/2026-10-14-s4-api-contract-design.md`.
 
 **What changed.**
@@ -235,7 +308,7 @@ or route changed. Spec: `docs/superpowers/specs/2026-10-14-s4-api-contract-desig
 
 Python agent runtime restructured, **no behaviour change for a `cycle`**.
 Built locally on top of S2, **nothing deployed or run against production; committed
-as `b1b8435`, not pushed** (like S2). Spec: `docs/superpowers/specs/2026-10-14-s3-runtime-slimming-design.md`
+as `5f5c367`, not pushed** (like S2). Spec: `docs/superpowers/specs/2026-10-14-s3-runtime-slimming-design.md`
 (§12 is binding); task reports and review ledger:
 `.superpowers/sdd/2026-10-14-s3-runtime-slimming/`. **Launch order is unchanged by
 S3**: the Era 3 checklist below applies as written.
@@ -285,7 +358,7 @@ deleted Bash scripts as current behaviour.
 ## S2: the lab measures Era 3 — 2026-10-14
 
 Built locally on top of the Era 3 staging below, **nothing deployed, migrated
-or run; committed as `d4bc187`, not pushed** (S1's three commits landed earlier). Spec:
+or run; committed as `cbdf77d`, not pushed** (S1's three commits landed earlier). Spec:
 `docs/superpowers/specs/2026-10-14-s2-lab-era-3-design.md`; binding
 definitions: `docs/superpowers/specs/2026-10-14-era-3-preregistration-amendment-1.md`
 (written before round 1); plan: `docs/superpowers/plans/2026-10-14-s2-lab-era-3.md`;
@@ -354,7 +427,7 @@ frontend redeploy. Deployment notes are in `08-deployment.md`. No commit, push,
 or deployment was performed; the user asked to wrap up locally.
 
 *Status 2026-10-15: still undeployed. The CI and test failures noted below
-predate S1–S5; `npm run ci:check` is now 17/17 green.*
+predate S1–S5; `npm run ci:check` is now 20/20 green.*
 
 Validation: server/client typecheck and lint, server tests (629 passed, 2 skipped),
 client tests (442 passed), MCP typecheck/tests (32 passed), and both builds passed.

@@ -46,9 +46,8 @@ def refuse_production_writes(
     """Raise `ProductionWritesRefusedError` when the guard is on, the override is
     absent and `swil_url` is the production host.
 
-    `require_non_prod` is the caller's reading of `SWIL_REQUIRE_NON_PROD`
-    from the PROCESS env, never from `Settings` -- see `cli/errors.py`'s
-    `env_flag` for why the command line must always win.
+    `require_non_prod` is `Settings.swil_require_non_prod`
+    (`SWIL_REQUIRE_NON_PROD`; a process export outranks `agent/.env`).
     """
     if i_mean_production or not require_non_prod:
         return

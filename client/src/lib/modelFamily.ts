@@ -9,7 +9,7 @@ export type ModelFamilyKey =
   | 'deepseek'
   | 'other';
 
-const LABELS: Record<Exclude<ModelFamilyKey, 'other'>, string> = {
+export const MODEL_FAMILY_LABEL: Record<Exclude<ModelFamilyKey, 'other'>, string> = {
   openai: 'OpenAI',
   grok: 'Grok',
   gemini: 'Gemini',
@@ -27,7 +27,7 @@ export function modelFamily(agentBackend: string | null | undefined): {
 } {
   const raw = (agentBackend ?? '').trim();
   const v = raw.toLowerCase();
-  const pick = (key: Exclude<ModelFamilyKey, 'other'>) => ({ key, label: LABELS[key] });
+  const pick = (key: Exclude<ModelFamilyKey, 'other'>) => ({ key, label: MODEL_FAMILY_LABEL[key] });
   if (!v) return { key: 'other', label: '' };
   if (v.includes('gemini')) return pick('gemini');
   if (v.includes('grok')) return pick('grok');

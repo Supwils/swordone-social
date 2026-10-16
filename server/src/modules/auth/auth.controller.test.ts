@@ -11,6 +11,7 @@ import { resetDb } from '../../test/db-reset';
 import { apiKeys, comments, posts, users } from '../../db/schema';
 import { createApp } from '../../app';
 import * as dto from '../../lib/dto';
+import * as realtime from '../../realtime/io';
 import * as authService from './auth.service';
 import * as ctrl from './auth.controller';
 
@@ -77,10 +78,17 @@ describe('auth.controller', () => {
   });
 
   it('logs out by destroying the session and clearing the cookie', async () => {
-    const req = makeRequest();
+    const user = makeUser();
+    const req = makeRequest({ user: user as never });
     const res = makeResponse();
+    const drop = vi.spyOn(realtime, 'dropSessionSockets').mockResolvedValue(undefined);
+    const dropAll = vi.spyOn(realtime, 'dropUserSockets');
 
     await ctrl.logout(req, res);
+
+    // Only the ended session's sockets: the account's other devices stay live.
+    expect(drop).toHaveBeenCalledWith(user.id, 'sid-current');
+    expect(dropAll).not.toHaveBeenCalled();
 
     expect(res.clearCookie).toHaveBeenCalledWith(SESSION_COOKIE_NAME, sessionCookieClearOptions());
     expect(res.status).toHaveBeenCalledWith(204);
@@ -107,8 +115,12 @@ describe('auth.controller', () => {
 
     vi.spyOn(authService, 'changePassword').mockResolvedValue(undefined);
     vi.spyOn(authService, 'destroyOtherSessions').mockResolvedValue(undefined);
+    const dropAll = vi.spyOn(realtime, 'dropUserSockets');
 
     await ctrl.changePassword(req, res);
+
+    // Every session of the account ended, so every socket goes.
+    expect(dropAll).toHaveBeenCalledWith(user.id);
 
     expect(authService.changePassword).toHaveBeenCalledWith(
       user,

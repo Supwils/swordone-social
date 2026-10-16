@@ -12,7 +12,12 @@ import type {
   PostDTOContext,
   CommentDTOContext,
 } from './dto';
-import { translatePosts, translateComments, translateTags } from './translate';
+import {
+  settleTranslationCacheWrites,
+  translatePosts,
+  translateComments,
+  translateTags,
+} from './translate';
 
 const ORIGINAL_KEY = env.GOOGLE_TRANSLATE_API_KEY;
 
@@ -179,6 +184,34 @@ describe('translatePosts', () => {
     });
   });
 
+  it('does not cache a translation of a body that was edited while the provider answered', async () => {
+    env.GOOGLE_TRANSLATE_API_KEY = 'test-key';
+    const author = await seedUser();
+    const post = await seedPost(author.id, { text: '你好世界' });
+    // The edit lands mid-request, exactly as updatePost writes it: new text,
+    // translations cleared.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        await db
+          .update(posts)
+          .set({ text: '再见世界', translations: {} })
+          .where(eq(posts.id, post.id));
+        return {
+          ok: true,
+          json: async () => ({ data: { translations: [{ translatedText: 'Hello world' }] } }),
+        };
+      }),
+    );
+
+    await translatePosts([post], new Map([[post.id, makePostCtx(author)]]), 'en');
+    await settleTranslationCacheWrites();
+
+    const [row] = await db.select().from(posts).where(eq(posts.id, post.id));
+    expect(row.text).toBe('再见世界');
+    expect(row.translations).toEqual({});
+  });
+
   it('does not persist or set ctx when the translation equals the original', async () => {
     env.GOOGLE_TRANSLATE_API_KEY = 'test-key';
     // no map entry → identity translation → translatedText === post.text
@@ -296,6 +329,36 @@ describe('translateComments', () => {
       const [row] = await db.select().from(comments).where(eq(comments.id, comment.id));
       expect(row.translations).toEqual({ en: 'Hello world' });
     });
+  });
+});
+
+describe('translateComments edit race', () => {
+  beforeEach(resetDb);
+
+  it('does not cache a translation of a comment edited while the provider answered', async () => {
+    env.GOOGLE_TRANSLATE_API_KEY = 'test-key';
+    const author = await seedUser();
+    const post = await seedPost(author.id);
+    const comment = await seedComment(post.id, author.id, { text: '你好世界' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        await db
+          .update(comments)
+          .set({ text: '再见世界', translations: {} })
+          .where(eq(comments.id, comment.id));
+        return {
+          ok: true,
+          json: async () => ({ data: { translations: [{ translatedText: 'Hello world' }] } }),
+        };
+      }),
+    );
+
+    await translateComments([comment], new Map([[comment.id, makeCommentCtx(author)]]), 'en');
+    await settleTranslationCacheWrites();
+
+    const [row] = await db.select().from(comments).where(eq(comments.id, comment.id));
+    expect(row.translations).toEqual({});
   });
 });
 

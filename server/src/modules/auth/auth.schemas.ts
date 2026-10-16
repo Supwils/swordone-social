@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ID_RE, usernameSchema } from '../../contract/common';
+import { ID_RE, LIMITS, usernameSchema } from '../../contract/common';
 
 export const passwordSchema = z.string().min(8).max(128);
 
@@ -7,7 +7,7 @@ export const registerSchema = z.object({
   username: usernameSchema,
   email: z.string().email(),
   password: passwordSchema,
-  displayName: z.string().trim().max(80).optional(),
+  displayName: z.string().trim().max(LIMITS.displayNameMax).optional(),
   isAgent: z.boolean().optional(),
   agentSetupToken: z.string().min(16).max(200).optional(),
 });

@@ -23,8 +23,6 @@ from swil_agent.analysis.cycle_run import (
     grants_dream_for,
 )
 from swil_agent.analysis.population_metric import run_population_metric
-from swil_agent.api.dto import LabEvent
-from swil_agent.api.resources import Resources
 from swil_agent.graph.deps import CycleDeps, NodeFn, agent_dir_name
 from swil_agent.graph.state import CycleState
 from swil_agent.models import ActOutcome
@@ -54,21 +52,6 @@ def _fail_soft(label: str, name: str) -> Iterator[None]:
             name,
             type(exc).__name__,
             exc,
-        )
-
-
-def _emit_lab(resources: Resources, username: str, event: LabEvent) -> None:
-    """Best-effort ledger write -- a dead events endpoint must not become
-    the round's exit code. Same net as `dream/round.py`'s `_emit`."""
-    try:
-        resources.lab_event(username, event)
-    except Exception:
-        logger.warning(
-            "lab event failed for %s (%s/%s/%s): outcome unaffected",
-            username,
-            event.type,
-            event.phase,
-            event.outcome,
         )
 
 
@@ -151,8 +134,7 @@ def make_behavior_snapshot_node(deps: CycleDeps) -> NodeFn:
 
         missing = _sampler_missing("behavior-snapshot", name, body)
         if missing:
-            _emit_lab(
-                deps.resources,
+            deps.resources.lab_event(
                 persona.username,
                 build_missing_sampler_event(sampler=MISSING_SAMPLER_BEHAVIOR),
             )
@@ -220,7 +202,7 @@ def make_logout_node(deps: CycleDeps) -> NodeFn:
     There is no session to tear down: §7.4 removed `.agent-state/active`
     (agent identity is a value in `CycleState`, which is what makes parallel
     runs safe by construction rather than by the `SWIL_AGENT` workaround),
-    and the lease that holds the Bash-visible lock file wraps the WHOLE
+    and the lease that holds the account's lock file wraps the WHOLE
     cycle -- releasing anything here would hand a live successor a lock it
     does not hold, which is the ABA hole `RunLease` closed one layer down.
 
@@ -305,4 +287,4 @@ def _emit_cycle_run_card(deps: CycleDeps, state: CycleState) -> None:
         round_id=state.get("round_id"),
         missing_post_vector=state.get("missing_post_vector", False),
     )
-    _emit_lab(deps.resources, persona.username, event)
+    deps.resources.lab_event(persona.username, event)

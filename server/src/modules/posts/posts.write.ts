@@ -17,13 +17,12 @@ import { assertBoardExists } from '../boards/boards.service';
 import { POST_IMAGE_MAX_BYTES } from './posts.limits';
 import { assertVisibility, mentionRecipientIdsWhoCanSee } from './posts.visibility';
 
-export { assertVisibility, canViewPost, followingSet } from './posts.visibility';
-
 export async function createPost(
   author: UserRow,
   input: CreatePostInput,
   imageBuffers: Buffer[] = [],
   videoBuffer: Buffer | null = null,
+  videoMimetype?: string,
 ): Promise<{ post: PostRow; ctx: PostDTOContext }> {
   await assertAgentDailyQuota(author, 'post');
 
@@ -50,21 +49,9 @@ export async function createPost(
     }
   }
 
-  const tagNames = extractTags(input.text);
-  const mentionUsernames = extractMentionUsernames(input.text);
-
-  const [tagDocs, mentionDocs, media] = await Promise.all([
-    upsertTagsForPost(tagNames),
-    mentionUsernames.length
-      ? db
-          .select()
-          .from(users)
-          .where(and(inArray(users.username, mentionUsernames), eq(users.status, 'active')))
-      : Promise.resolve([] as UserRow[]),
-    uploadPostMedia(imageBuffers, videoBuffer),
-  ]);
-
-  // Resolve echo target (prevent chain echo: A echoes B echoes C → A echoes C)
+  // Resolve echo target (prevent chain echo: A echoes B echoes C → A echoes C).
+  // Every check that can refuse the post runs before any upload: an S3 object
+  // written for a post that then 404s on its echo target is an orphan.
   let echoOfId: string | null = null;
   let echoOriginal: PostRow | null = null;
   if (input.echoOf) {
@@ -84,6 +71,21 @@ export async function createPost(
       echoOriginal = canonical;
     }
   }
+
+  const tagNames = extractTags(input.text);
+  const mentionUsernames = extractMentionUsernames(input.text);
+
+  const [tagDocs, mentionDocs] = await Promise.all([
+    upsertTagsForPost(tagNames),
+    mentionUsernames.length
+      ? db
+          .select()
+          .from(users)
+          .where(and(inArray(users.username, mentionUsernames), eq(users.status, 'active')))
+      : Promise.resolve([] as UserRow[]),
+  ]);
+
+  const media = await uploadPostMedia(imageBuffers, videoBuffer, videoMimetype);
 
   const now = new Date();
   let post: PostRow;
@@ -265,11 +267,18 @@ export async function deletePost(postId: string, actor: UserRow): Promise<void> 
   // independent statements, so a failure after the first left the post deleted
   // while `users.postCount` and `tags.postCount` still counted it, with no
   // reconciliation job to catch it.
-  await db.transaction(async (tx) => {
-    await tx
+  //
+  // The status check above is outside the transaction, so two concurrent
+  // deletes both pass it. The UPDATE re-checks `status = 'active'` and only the
+  // one that flips the row moves the counters; the loser is a 404 like any
+  // delete of an already-deleted post.
+  const flipped = await db.transaction(async (tx) => {
+    const [row] = await tx
       .update(posts)
       .set({ status: 'deleted', deletedAt: new Date() })
-      .where(eq(posts.id, postId));
+      .where(and(eq(posts.id, postId), eq(posts.status, 'active')))
+      .returning({ id: posts.id });
+    if (!row) return false;
 
     await tx
       .update(users)
@@ -299,7 +308,9 @@ export async function deletePost(postId: string, actor: UserRow): Promise<void> 
         .set({ repostCount: sql`${posts.repostCount} - 1` })
         .where(eq(posts.id, post.echoOf));
     }
+    return true;
   });
+  if (!flipped) throw AppError.notFound('Post not found');
 
   // Same fire-and-forget rescore createPost does on the way in, and for the
   // same reason: the original's score is now stale by one repost.

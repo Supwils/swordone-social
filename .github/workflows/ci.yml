@@ -6,12 +6,16 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege: every job only reads the repo.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
 
 jobs:
   typecheck:
@@ -37,9 +41,9 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/swil_test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -109,6 +113,12 @@ jobs:
           # Keep build env minimal — no secrets needed at build time.
           VITE_API_BASE: /api/v1
 
+      - name: Build mcp
+        run: npm --prefix mcp run build
+
+      - name: Typecheck (e2e)
+        run: npm run typecheck:e2e
+
       - name: Knip (unused exports and deps)
         run: npm run knip
 
@@ -135,9 +145,9 @@ jobs:
       # ensure-e2e-db.ts creates swil_e2e_pg itself via the /postgres database.
       E2E_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/swil_e2e_pg
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -163,7 +173,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: playwright-report
           path: |
@@ -171,18 +181,62 @@ jobs:
             test-results/
           retention-days: 7
 
+  commitlint:
+    name: Commit messages
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install root deps
+        run: npm ci --no-audit --no-fund
+
+      # Lints the commits this push / PR adds. Skipped when there is no usable
+      # base (new branch: all-zero sha; force-push: old sha no longer exists).
+      - name: Lint commit range
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            BASE="$PR_BASE"
+          else
+            BASE="$PUSH_BEFORE"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "No usable base commit; skipping commitlint."
+            exit 0
+          fi
+          npx commitlint --from "$BASE" --to HEAD --verbose
+
   python:
     name: Python agent runtime
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
           cache-dependency-glob: 'agent/uv.lock'
+
+      # `uv sync --frozen` installs the lock as-is without checking it against
+      # pyproject.toml; this fails when the two have drifted (ci-check does the same).
+      - name: Lockfile in sync (agent)
+        working-directory: agent
+        run: uv lock --check
 
       - name: Install agent deps
         working-directory: agent
@@ -217,7 +271,7 @@ jobs:
 #     runs-on: ubuntu-latest
 #     needs: typecheck
 #     steps:
-#       - uses: actions/checkout@v4
+#       - uses: actions/checkout@<sha> # pin by SHA like the jobs above
 #       - uses: docker/setup-buildx-action@v3
 #       - uses: docker/build-push-action@v5
 #         with: { context: ., push: false, tags: swil-social:ci }

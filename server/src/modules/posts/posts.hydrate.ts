@@ -12,6 +12,18 @@ import {
 import { canViewPost, followingSet } from './posts.visibility';
 
 /**
+ * The DTOs of `postList`, in order, dropping any post whose context
+ * `hydratePosts` did not produce (its author is gone). Every post read ends with
+ * this, so it lives beside the hydrate it pairs with.
+ */
+export function toPostDTOs(postList: PostRow[], ctxById: Map<string, PostDTOContext>): PostDTO[] {
+  return postList.flatMap((p) => {
+    const ctx = ctxById.get(p.id);
+    return ctx ? [toPostDTO(p, ctx)] : [];
+  });
+}
+
+/**
  * Hydrate a list of posts to their DTO contexts in a single round-trip per
  * relation. Avoids N+1 on feed endpoints. Echo-of originals are also batch-
  * loaded (one extra round-trip covers all echoes in the page).

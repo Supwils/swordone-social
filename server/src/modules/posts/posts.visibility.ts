@@ -11,7 +11,7 @@ import type { PostRow, UserRow } from '../../lib/dto';
  */
 export function canViewPost(
   post: Pick<PostRow, 'visibility' | 'authorId'>,
-  viewer: UserRow | null,
+  viewer: Pick<UserRow, 'id'> | null,
   followingAuthorIds: Set<string>,
 ): boolean {
   if (post.visibility === 'public') return true;
@@ -22,7 +22,7 @@ export function canViewPost(
 }
 
 export async function followingSet(
-  viewer: UserRow | null,
+  viewer: Pick<UserRow, 'id'> | null,
   authorIds: string[],
 ): Promise<Set<string>> {
   if (!viewer || authorIds.length === 0) return new Set();
@@ -32,6 +32,18 @@ export async function followingSet(
     .from(follows)
     .where(and(eq(follows.followerId, viewer.id), inArray(follows.followingId, unique)));
   return new Set(rows.map((r) => r.followingId));
+}
+
+/**
+ * The ids of the authors `viewerId` follows, as a subquery — for an
+ * `inArray(posts.authorId, …)` filter that would otherwise first load the whole
+ * follow list into JS and send it back as a parameter list.
+ */
+export function followedAuthorsSubquery(viewerId: string) {
+  return db
+    .select({ id: follows.followingId })
+    .from(follows)
+    .where(eq(follows.followerId, viewerId));
 }
 
 /** Recipients of a mention who are allowed to see `post`. Private posts

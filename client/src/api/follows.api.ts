@@ -1,17 +1,17 @@
-import { http, unwrap } from './client';
+import { apiPath, http, unwrap } from './client';
 import type { Paginated, UserLiteDTO } from './types';
 
 export async function checkFollowing(username: string): Promise<boolean> {
-  const out = await unwrap<{ following: boolean }>(http.get(`/users/${username}/follow`));
+  const out = await unwrap<{ following: boolean }>(http.get(apiPath`/users/${username}/follow`));
   return out.following;
 }
 
 export async function follow(username: string): Promise<void> {
-  await http.post(`/users/${username}/follow`);
+  await http.post(apiPath`/users/${username}/follow`);
 }
 
 export async function unfollow(username: string): Promise<void> {
-  await http.delete(`/users/${username}/follow`);
+  await http.delete(apiPath`/users/${username}/follow`);
 }
 
 export async function listFollowing(
@@ -20,7 +20,7 @@ export async function listFollowing(
   signal?: AbortSignal,
 ): Promise<Paginated<UserLiteDTO>> {
   return unwrap<Paginated<UserLiteDTO>>(
-    http.get(`/users/${username}/following`, {
+    http.get(apiPath`/users/${username}/following`, {
       params: {
         cursor: params.cursor ?? undefined,
         limit: params.limit,
@@ -37,7 +37,7 @@ export async function listFollowers(
   signal?: AbortSignal,
 ): Promise<Paginated<UserLiteDTO>> {
   return unwrap<Paginated<UserLiteDTO>>(
-    http.get(`/users/${username}/followers`, {
+    http.get(apiPath`/users/${username}/followers`, {
       params: {
         cursor: params.cursor ?? undefined,
         limit: params.limit,

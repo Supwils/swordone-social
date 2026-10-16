@@ -54,7 +54,7 @@ from swil_agent.graph.cycle import (
     Phases,
     build_graph,
 )
-from swil_agent.graph.deps import CycleDeps, NodeStateError
+from swil_agent.graph.deps import NodeStateError
 from swil_agent.graph.outcome import act_result_of, cycle_granted_dream, dream_result_of
 from swil_agent.graph.run import lease_kinds, run_graph
 from swil_agent.locks.file import act_lock_path, dream_lock_path
@@ -66,12 +66,12 @@ from ._golden_seams import DREAM_REPLY, _FakeEmbedderClient, _FakeGuard, _patch_
 from ._phases import run_act_phase, run_dream_phase
 from ._runners import (
     FakeEmbedder,
-    FakePersonaSource,
     FakeResources,
     FakeState,
     RecordingRunner,
     ScriptedBackend,
     StubBackend,
+    make_cycle_deps,
     make_persona,
 )
 
@@ -154,7 +154,11 @@ def test_the_cycle_graph_is_the_pre_s3_graph_node_edge_and_policy_for_policy() -
     """Recorded off `build_cycle()` before Task 4 touched it. `CycleState`
     gained no key and `CYCLE` gained no phase-conditional router: the subset
     graphs are separate graphs, so a checkpoint written before S3 still
-    resumes into the same topology."""
+    resumes into the same topology.
+
+    One edge left since (S6): loop 3's `behavior_snapshot -> login`, which
+    no run ever took (`max_rounds` was always 1). Every node a checkpoint can
+    name as its next step is unchanged, and so is the state schema."""
     assert _nodes(Phases.CYCLE) == {
         "__start__",
         "__end__",
@@ -172,7 +176,6 @@ def test_the_cycle_graph_is_the_pre_s3_graph_node_edge_and_policy_for_policy() -
     assert _edges(Phases.CYCLE) == {
         ("__start__", "login", False),
         ("behavior_snapshot", "dream", True),
-        ("behavior_snapshot", "login", True),
         ("behavior_snapshot", "logout", True),
         ("dream", "logout", True),
         ("dream", "write", True),
@@ -464,19 +467,7 @@ def test_a_subset_run_refuses_a_checkpointer_and_resume(
     tmp_path: Path, phases: Phases, lease_db: sqlite3.Connection
 ) -> None:
     persona = _persona(tmp_path)
-    deps = CycleDeps(
-        resources=FakeResources(),
-        backend=StubBackend(_NOTHING_PLAN),
-        persona_source=FakePersonaSource(),
-        embedder=FakeEmbedder(),
-        dream_state=FakeState(),
-        settings=Settings(agent_root=tmp_path),
-        agent_root=tmp_path,
-        health_check=lambda: True,
-        memory_text="",
-        llm_backend="claude",
-        llm_model=None,
-    )
+    deps = make_cycle_deps(tmp_path)
     db = lease_db
     with checkpointer_at(tmp_path / "ckpt.sqlite") as saver:
         with pytest.raises(ValueError, match="not checkpointed"):
@@ -728,51 +719,20 @@ def test_a_cycle_with_no_outcome_yet_is_not_reported_as_a_failed_round() -> None
 # ── the guards no command path reaches ───────────────────────────────────────
 
 
-def _bare_deps(root: Path) -> CycleDeps:
-    return CycleDeps(
-        resources=FakeResources(),
-        backend=StubBackend(_NOTHING_PLAN),
-        persona_source=FakePersonaSource(),
-        embedder=FakeEmbedder(),
-        dream_state=FakeState(),
-        settings=Settings(agent_root=root),
-        agent_root=root,
-        health_check=lambda: True,
-        memory_text="",
-        llm_backend="claude",
-        llm_model=None,
-    )
-
-
 def test_the_act_logout_will_not_rotate_without_the_runs_lease_database(tmp_path: Path) -> None:
     """`run_graph` always hands the ACT graph its lease database; a caller
     that compiles the graph itself and forgets it gets a loud error at the
     rotation, never an unlocked one."""
     persona = _persona(tmp_path)
-    deps = _bare_deps(tmp_path)
+    deps = make_cycle_deps(tmp_path)
     app = build_graph(Phases.ACT).compile()
 
     with pytest.raises(NodeStateError, match="lease database"):
         app.invoke(
             {"persona": persona, "run_id": "r", "dry_run": False},
-            context=CycleContext(deps_for_round=lambda _index: deps),
+            context=CycleContext(deps=deps),
         )
     assert not dream_lock_path(tmp_path, "zenith").exists()
-
-
-def test_finish_deps_completes_a_single_cycle_deps_only(
-    tmp_path: Path, lease_db: sqlite3.Connection
-) -> None:
-    deps = _bare_deps(tmp_path)
-    with pytest.raises(ValueError, match="finish_deps"):
-        run_graph(
-            lambda _index: deps,
-            phases=Phases.ACT,
-            persona=_persona(tmp_path),
-            lease_db=lease_db,
-            finish_deps=lambda base: base,
-        )
-    assert not act_lock_path(tmp_path, "zenith").exists()
 
 
 def test_an_act_graph_that_ends_without_an_outcome_is_an_unexpected_skip(

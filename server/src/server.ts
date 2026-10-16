@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { createApp } from './app';
 import { env } from './config/env';
-import { connectDb, disconnectDb, syncAllIndexes } from './config/db';
+import { connectDb, disconnectDb } from './db/client';
 import { createSessionMiddleware } from './config/session';
 import { initRealtime } from './realtime/io';
 import { closeRedisAdapter } from './realtime/adapter';
@@ -14,7 +14,6 @@ async function bootstrap(): Promise<void> {
   await initMonitoring();
 
   await connectDb();
-  await syncAllIndexes();
 
   // The same session middleware instance is shared by express and socket.io engines.
   const sessionMiddleware = createSessionMiddleware();

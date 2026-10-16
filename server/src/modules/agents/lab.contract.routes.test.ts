@@ -440,6 +440,7 @@ describe('Era 2 read bodies (?era=2)', () => {
     expect(parsed.every((p) => typeof p.archivedAt === 'string' && p.arm === null)).toBe(true);
     // The lab roster is the public analysis surface: unlike the platform DTOs
     // (publicAgentBackend), it carries a sealed human's agentBackend as stored.
+    // Deliberate (S5 ruling, reaffirmed in S6 — docs/13-observation-lab.md, 2026-10-15).
     expect(parsed.find((p) => p.username === 'simhum')).toMatchObject({
       isAgent: false,
       cohort: 'human',

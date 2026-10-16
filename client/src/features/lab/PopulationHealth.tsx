@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { getHomogenization, getPopulationPulse, listLabAgents } from '@/features/lab/api';
+import { listLabAgents } from '@/features/lab/api';
+import { useHomogenization, usePopulationPulse } from '@/features/lab/queries';
 import { Skeleton } from '@/components/primitives';
 import { Sparkline } from './Sparkline';
 import { lastNonNull, mean, periodDelta } from './stats';
@@ -43,16 +43,8 @@ export function PopulationHealth({
   agents: Awaited<ReturnType<typeof listLabAgents>>;
 }) {
   const { t } = useTranslation();
-  const pulseQ = useQuery({
-    queryKey: ['lab-pulse', era, range],
-    queryFn: () => getPopulationPulse(era, range),
-    staleTime: 60_000,
-  });
-  const homogQ = useQuery({
-    queryKey: ['lab-homogenization', era, range],
-    queryFn: () => getHomogenization(era, range),
-    staleTime: 60_000,
-  });
+  const pulseQ = usePopulationPulse(era, range);
+  const homogQ = useHomogenization(era, range);
 
   const signals = useMemo<Signal[]>(() => {
     const pts = pulseQ.data?.points ?? [];

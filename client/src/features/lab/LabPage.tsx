@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { getAgentOverview, getInteractionGraph, listLabAgents } from '@/features/lab/api';
+import { getAgentOverview, listLabAgents } from '@/features/lab/api';
+import { labKeys, useInteractionGraph } from '@/features/lab/queries';
 import { PopulationHealth } from '@/features/lab/PopulationHealth';
 import { RuntimeHealth } from '@/features/lab/RuntimeHealth';
 import { DistributionPanel } from '@/features/lab/era2/DistributionPanel';
@@ -40,13 +41,13 @@ export default function LabPage() {
   const liveStaleTime = liveMode ? 25_000 : 60_000;
 
   const agentsQ = useQuery({
-    queryKey: ['lab-agents', era],
+    queryKey: labKeys.agents(era),
     queryFn: () => listLabAgents(era, 100),
     staleTime: liveStaleTime,
     refetchInterval: liveRefetchInterval,
   });
   const overviewQ = useQuery({
-    queryKey: ['lab-overview', era],
+    queryKey: labKeys.overview(era),
     queryFn: () => getAgentOverview(era),
     staleTime: liveStaleTime,
     refetchInterval: liveRefetchInterval,
@@ -61,9 +62,7 @@ export default function LabPage() {
   const range: '7d' | '30d' | '90d' =
     rangeParam === '7d' || rangeParam === '90d' ? rangeParam : '30d';
 
-  const graphQ = useQuery({
-    queryKey: ['lab-graph', era, range],
-    queryFn: () => getInteractionGraph(era, range),
+  const graphQ = useInteractionGraph(era, range, {
     staleTime: liveMode ? 25_000 : 120_000,
     refetchInterval: liveRefetchInterval,
     // Feeds the Era 2 cross-species panel only.

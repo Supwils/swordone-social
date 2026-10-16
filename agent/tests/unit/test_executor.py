@@ -38,6 +38,36 @@ def run_and_collect_events(action: Action) -> list[LabEvent]:
     return resources.lab_events
 
 
+# ── model-written path targets (S6 AG-F5) ───────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        Action(kind="comment", post_id="../conversations/" + "a" * 24 + "/messages?", text="hi"),
+        Action(kind="comment", post_id="..", text="hi"),
+        Action(kind="comment", post_id="A" * 24, text="hi"),
+        Action(kind="like", post_id="../../users/vex/follow"),
+        Action(kind="like", post_id="a" * 23),
+        Action(kind="follow", username="../posts/" + "a" * 24 + "/like"),
+        Action(kind="follow", username="ab"),
+        Action(kind="follow", username="v" * 25),
+    ],
+)
+def test_an_invalid_path_target_is_a_skip_before_any_request(
+    action: Action, caplog: pytest.LogCaptureFixture
+) -> None:
+    resources = FakeResources()
+    with caplog.at_level("WARNING", logger="swil_agent.act.executor"):
+        result = execute_action(resources, action, **CTX)
+    assert result.landed is False
+    assert "invalid" in (result.detail or "")
+    assert resources.calls == []
+    assert resources.lab_events[-1].outcome == "skip"
+    assert resources.lab_events[-1].target_id is None
+    assert any(r.getMessage().startswith(f"SKIP testagent {action.kind}") for r in caplog.records)
+
+
 # ── text cleaning (contract 02, "cross-cutting facts") ──────────────────
 
 
@@ -68,7 +98,7 @@ def test_username_is_stripped_of_at_and_whitespace() -> None:
 def test_comment_text_is_collapsed_when_the_model_double_emits() -> None:
     doubled = "这是一段足够长的评论内容用来触发折叠逻辑需要四十字符以上" * 2
     resources = FakeResources()
-    execute_action(resources, Action(kind="comment", post_id="p" * 24, text=doubled), **CTX)
+    execute_action(resources, Action(kind="comment", post_id="f" * 24, text=doubled), **CTX)
     assert resources.comments[0].text == doubled[: len(doubled) // 2]
 
 
@@ -108,7 +138,7 @@ def test_missing_fields_skip_without_calling_the_api(action: Action, detail: str
 
 def test_comment_retries_top_level_when_the_parent_is_unusable() -> None:
     resources = FakeResources(fail_first_comment=True)
-    action = Action(kind="comment", post_id="p" * 24, parent_id="c" * 24, text="hi")
+    action = Action(kind="comment", post_id="f" * 24, parent_id="c" * 24, text="hi")
     result = execute_action(resources, action, **CTX)
 
     assert result.landed is True
@@ -118,7 +148,7 @@ def test_comment_retries_top_level_when_the_parent_is_unusable() -> None:
 
 def test_a_top_level_comment_failure_is_not_retried() -> None:
     resources = FakeResources(fail_first_comment=True)
-    action = Action(kind="comment", post_id="p" * 24, text="hi")
+    action = Action(kind="comment", post_id="f" * 24, text="hi")
     result = execute_action(resources, action, **CTX)
 
     assert result.landed is False
@@ -129,7 +159,7 @@ def test_comment_with_parent_succeeds_without_a_retry() -> None:
     """The plain-success path with a parent_id: no failure, so the retry
     branch never fires and only one comment is recorded."""
     resources = FakeResources()
-    action = Action(kind="comment", post_id="p" * 24, parent_id="c" * 24, text="hi")
+    action = Action(kind="comment", post_id="f" * 24, parent_id="c" * 24, text="hi")
     result = execute_action(resources, action, **CTX)
 
     assert result.landed is True
@@ -153,7 +183,7 @@ def test_comment_retry_that_also_fails_reports_the_retry_error() -> None:
     pins the retry's error, not the primary's, as the value that survived.
     """
     resources = FakeResources(comment_returns_no_id=True)
-    action = Action(kind="comment", post_id="p" * 24, parent_id="c" * 24, text="hi")
+    action = Action(kind="comment", post_id="f" * 24, parent_id="c" * 24, text="hi")
     result = execute_action(resources, action, **CTX)
 
     assert result.landed is False
@@ -167,7 +197,7 @@ def test_comment_retry_that_also_fails_reports_the_retry_error() -> None:
 
 def test_a_200_without_a_resource_id_does_not_count_as_landed() -> None:
     resources = FakeResources(comment_returns_no_id=True)
-    action = Action(kind="comment", post_id="p" * 24, text="hi")
+    action = Action(kind="comment", post_id="f" * 24, text="hi")
     result = execute_action(resources, action, **CTX)
     assert result.landed is False
     assert "not verified" in (result.detail or "")
@@ -184,7 +214,7 @@ def test_an_api_error_response_body_survives_into_detail() -> None:
     """`2>/dev/null` is why `"Invalid id"` is invisible in today's bash
     logs (design spec §7.6) -- the response body must reach `detail`."""
     resources = FakeResources(like_raises=ApiError(400, "Invalid id", None))
-    result = execute_action(resources, Action(kind="like", post_id="p" * 24), **CTX)
+    result = execute_action(resources, Action(kind="like", post_id="f" * 24), **CTX)
     assert result.landed is False
     assert "Invalid id" in (result.detail or "")
 
@@ -241,14 +271,14 @@ def test_follow_other_write_failures_do_not_land(exc: ApiError | WriteNotVerifie
 
 def test_like_success() -> None:
     resources = FakeResources()
-    result = execute_action(resources, Action(kind="like", post_id="p" * 24), **CTX)
+    result = execute_action(resources, Action(kind="like", post_id="f" * 24), **CTX)
     assert result.landed is True
-    assert resources.liked == ["p" * 24]
+    assert resources.liked == ["f" * 24]
 
 
 def test_like_failure_is_not_swallowed() -> None:
     resources = FakeResources(like_raises=ApiError(500, "boom", None))
-    result = execute_action(resources, Action(kind="like", post_id="p" * 24), **CTX)
+    result = execute_action(resources, Action(kind="like", post_id="f" * 24), **CTX)
     assert result.landed is False
     assert resources.liked == []
 
@@ -256,20 +286,20 @@ def test_like_failure_is_not_swallowed() -> None:
 def test_echo_success_carries_the_quote_and_the_echoed_post_id() -> None:
     resources = FakeResources()
     result = execute_action(
-        resources, Action(kind="echo", post_id="p" * 24, text="nice take"), **CTX
+        resources, Action(kind="echo", post_id="f" * 24, text="nice take"), **CTX
     )
     assert result.landed is True
-    assert resources.created_posts[0].echo_of == "p" * 24
+    assert resources.created_posts[0].echo_of == "f" * 24
     assert resources.created_posts[0].text == "nice take"
 
 
 def test_echo_without_a_quote_is_a_plain_repost() -> None:
     """Empty text is fine for echo -- only postId gates the skip."""
     resources = FakeResources()
-    result = execute_action(resources, Action(kind="echo", post_id="p" * 24), **CTX)
+    result = execute_action(resources, Action(kind="echo", post_id="f" * 24), **CTX)
     assert result.landed is True
     assert resources.created_posts[0].text == ""
-    assert resources.created_posts[0].echo_of == "p" * 24
+    assert resources.created_posts[0].echo_of == "f" * 24
 
 
 def test_a_bom_only_quote_falls_back_to_the_plain_echo_summary() -> None:
@@ -277,7 +307,7 @@ def test_a_bom_only_quote_falls_back_to_the_plain_echo_summary() -> None:
     refuse a BOM-only summary, so the fallback must apply."""
     resources = FakeResources()
     result = execute_action(
-        resources, Action(kind="echo", post_id="p" * 24, text="\ufeff\u00a0\ufeff"), **CTX
+        resources, Action(kind="echo", post_id="f" * 24, text="\ufeff\u00a0\ufeff"), **CTX
     )
     assert result.landed is True
     assert resources.lab_events[-1].summary == "echoed post"
@@ -285,7 +315,7 @@ def test_a_bom_only_quote_falls_back_to_the_plain_echo_summary() -> None:
 
 def test_echo_failure_is_not_swallowed() -> None:
     resources = FakeResources(post_raises=ApiError(404, "not found", None))
-    result = execute_action(resources, Action(kind="echo", post_id="p" * 24), **CTX)
+    result = execute_action(resources, Action(kind="echo", post_id="f" * 24), **CTX)
     assert result.landed is False
 
 
@@ -317,7 +347,7 @@ def test_a_failed_dm_never_records_a_conversation_id() -> None:
 
 def test_non_dm_actions_never_populate_conversation_id() -> None:
     resources = FakeResources()
-    result = execute_action(resources, Action(kind="like", post_id="p" * 24), **CTX)
+    result = execute_action(resources, Action(kind="like", post_id="f" * 24), **CTX)
     assert result.conversation_id is None
 
 
@@ -395,15 +425,15 @@ def test_post_lab_event_truncates_the_summary_to_200_chars() -> None:
 
 
 def test_comment_lab_event_carries_the_post_id_as_target() -> None:
-    events = run_and_collect_events(Action(kind="comment", post_id="p" * 24, text="hi"))
-    assert events[-1].target_id == "p" * 24
+    events = run_and_collect_events(Action(kind="comment", post_id="f" * 24, text="hi"))
+    assert events[-1].target_id == "f" * 24
 
 
 def test_like_lab_event_is_pinned_to_the_exact_summary() -> None:
-    events = run_and_collect_events(Action(kind="like", post_id="p" * 24))
+    events = run_and_collect_events(Action(kind="like", post_id="f" * 24))
     assert events[-1].outcome == "success"
     assert events[-1].summary == "liked post"
-    assert events[-1].target_id == "p" * 24
+    assert events[-1].target_id == "f" * 24
 
 
 def test_follow_lab_event_carries_the_followed_username() -> None:

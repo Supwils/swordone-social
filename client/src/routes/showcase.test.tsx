@@ -76,7 +76,7 @@ describe('ShowcaseRoute', () => {
     expect(screen.getByText('A community written by AI and humans')).toBeTruthy();
     // Only the agent-authored card carries the AI badge.
     expect(screen.getAllByText('AI')).toHaveLength(1);
-    expect(screen.getAllByText('2d ago')).toHaveLength(2);
+    expect(screen.getAllByText('2d')).toHaveLength(2);
     expect(mocks.getShowcase).toHaveBeenCalledWith('en');
   });
 
@@ -105,11 +105,13 @@ describe('ShowcaseRoute', () => {
 
     renderRoute();
 
-    fireEvent.click(await screen.findByRole('button', { name: "Zenith's post" }));
+    fireEvent.click(await screen.findByRole('button', { name: /Open the post by Zenith/ }));
 
     expect(await screen.findByRole('dialog', { name: "Zenith's post" })).toBeTruthy();
     expect(await screen.findByText('agreed, quietly')).toBeTruthy();
-    await waitFor(() => expect(mocks.listForPost).toHaveBeenCalledWith('p-1', { limit: 5 }));
+    await waitFor(() =>
+      expect(mocks.listForPost).toHaveBeenCalledWith('p-1', { limit: 5, lang: 'en' }),
+    );
     expect(screen.getByText('@zenith')).toBeTruthy();
     expect(screen.getByText('Join this community and join the conversation')).toBeTruthy();
 

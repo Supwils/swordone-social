@@ -1,5 +1,4 @@
-import { http } from '@/api/client';
-import type { ApiEnvelope } from '@/api/types';
+import { apiPath, http, unwrap } from '@/api/client';
 import type {
   AccountRoundsDTO,
   AgentSummaryDTO,
@@ -29,21 +28,26 @@ import type {
  * server defaults a missing era to 3, so a read that dropped it would serve the
  * live roster to the sealed Era 2 view and look entirely plausible.
  */
-function withEra(qs: URLSearchParams, era: LabEra): string {
+function withEra(qs: URLSearchParams, era: LabEra): URLSearchParams {
   qs.set('era', String(era));
-  return qs.toString();
+  return qs;
+}
+
+/** `path` (built with `apiPath`, so every segment is encoded) plus a query. */
+function withQuery(path: string, qs: URLSearchParams): string {
+  const q = qs.toString();
+  return q ? `${path}?${q}` : path;
 }
 
 export async function listLabAgents(era: LabEra, limit = 50): Promise<AgentSummaryDTO[]> {
   const qs = withEra(new URLSearchParams({ limit: String(limit) }), era);
-  const { data } = await http.get<ApiEnvelope<{ items: AgentSummaryDTO[] }>>(`/agents?${qs}`);
-  return data.data.items;
+  const out = await unwrap<{ items: AgentSummaryDTO[] }>(http.get(withQuery('/agents', qs)));
+  return out.items;
 }
 
 export async function getAgentOverview(era: LabEra): Promise<AgentOverviewDTO> {
   const qs = withEra(new URLSearchParams(), era);
-  const { data } = await http.get<ApiEnvelope<AgentOverviewDTO>>(`/agents/overview?${qs}`);
-  return data.data;
+  return unwrap<AgentOverviewDTO>(http.get(withQuery('/agents/overview', qs)));
 }
 
 export async function getInteractionGraph(
@@ -51,8 +55,7 @@ export async function getInteractionGraph(
   range: LabRange = '30d',
 ): Promise<InteractionGraphDTO> {
   const qs = withEra(new URLSearchParams({ range }), era);
-  const { data } = await http.get<ApiEnvelope<InteractionGraphDTO>>(`/agents/graph?${qs}`);
-  return data.data;
+  return unwrap<InteractionGraphDTO>(http.get(withQuery('/agents/graph', qs)));
 }
 
 export async function getHomogenization(
@@ -60,20 +63,17 @@ export async function getHomogenization(
   range: LabRange = '30d',
 ): Promise<HomogenizationDTO> {
   const qs = withEra(new URLSearchParams({ range }), era);
-  const { data } = await http.get<ApiEnvelope<HomogenizationDTO>>(`/agents/homogenization?${qs}`);
-  return data.data;
+  return unwrap<HomogenizationDTO>(http.get(withQuery('/agents/homogenization', qs)));
 }
 
 export async function getAlerts(era: LabEra, range: LabRange = '30d'): Promise<AlertsDTO> {
   const qs = withEra(new URLSearchParams({ range }), era);
-  const { data } = await http.get<ApiEnvelope<AlertsDTO>>(`/agents/alerts?${qs}`);
-  return data.data;
+  return unwrap<AlertsDTO>(http.get(withQuery('/agents/alerts', qs)));
 }
 
 export async function getPopulationPulse(era: LabEra, range: LabRange = '30d'): Promise<PulseDTO> {
   const qs = withEra(new URLSearchParams({ range }), era);
-  const { data } = await http.get<ApiEnvelope<PulseDTO>>(`/agents/pulse?${qs}`);
-  return data.data;
+  return unwrap<PulseDTO>(http.get(withQuery('/agents/pulse', qs)));
 }
 
 /**
@@ -84,34 +84,25 @@ export async function getPopulationPulse(era: LabEra, range: LabRange = '30d'): 
  */
 export async function getRuntimeHealth(era: LabEra, range: LabRange): Promise<RuntimeHealthDTO> {
   const qs = withEra(new URLSearchParams({ range }), era);
-  const { data } = await http.get<ApiEnvelope<RuntimeHealthDTO>>(`/agents/runtime?${qs}`);
-  return data.data;
+  return unwrap<RuntimeHealthDTO>(http.get(withQuery('/agents/runtime', qs)));
 }
 
 /** Era 3 arms report (S2 §7) — pre-registered metrics per model arm. Era 3 only. */
 export async function getArmsReport(): Promise<ArmsReportDTO> {
-  const { data } = await http.get<ApiEnvelope<ArmsReportDTO>>(`/agents/arms`);
-  return data.data;
+  return unwrap<ArmsReportDTO>(http.get('/agents/arms'));
 }
 
 /** One account's rounds, newest first, at most 60 (S2 §7). */
 export async function getAccountRounds(username: string): Promise<AccountRoundsDTO> {
-  const { data } = await http.get<ApiEnvelope<AccountRoundsDTO>>(
-    `/agents/${encodeURIComponent(username)}/rounds`,
-  );
-  return data.data;
+  return unwrap<AccountRoundsDTO>(http.get(apiPath`/agents/${username}/rounds`));
 }
 
 export async function getBenchmarkLeaderboard(): Promise<BenchmarkLeaderboardDTO> {
-  const { data } = await http.get<ApiEnvelope<BenchmarkLeaderboardDTO>>(
-    `/agents/benchmark/leaderboard`,
-  );
-  return data.data;
+  return unwrap<BenchmarkLeaderboardDTO>(http.get('/agents/benchmark/leaderboard'));
 }
 
 export async function getBenchmarkMatrix(): Promise<BenchmarkMatrixDTO> {
-  const { data } = await http.get<ApiEnvelope<BenchmarkMatrixDTO>>(`/agents/benchmark/matrix`);
-  return data.data;
+  return unwrap<BenchmarkMatrixDTO>(http.get('/agents/benchmark/matrix'));
 }
 
 export async function getBenchmarkCompare(
@@ -119,42 +110,36 @@ export async function getBenchmarkCompare(
   task: string,
 ): Promise<BenchmarkCompareDTO> {
   const qs = new URLSearchParams({ persona, task });
-  const { data } = await http.get<ApiEnvelope<BenchmarkCompareDTO>>(
-    `/agents/benchmark/compare?${qs.toString()}`,
-  );
-  return data.data;
+  return unwrap<BenchmarkCompareDTO>(http.get(withQuery('/agents/benchmark/compare', qs)));
 }
 
 export async function getInfluences(
   username: string,
   range: '7d' | '30d' | '90d' = '30d',
 ): Promise<InfluencesDTO> {
-  const { data } = await http.get<ApiEnvelope<InfluencesDTO>>(
-    `/agents/${username}/influences?range=${range}`,
+  return unwrap<InfluencesDTO>(
+    http.get(withQuery(apiPath`/agents/${username}/influences`, new URLSearchParams({ range }))),
   );
-  return data.data;
 }
 
 export async function getAgentStats(
   username: string,
   range: '7d' | '30d' | '90d' = '30d',
 ): Promise<AgentStatsDTO> {
-  const { data } = await http.get<ApiEnvelope<AgentStatsDTO>>(
-    `/agents/${username}/stats?range=${range}`,
+  return unwrap<AgentStatsDTO>(
+    http.get(withQuery(apiPath`/agents/${username}/stats`, new URLSearchParams({ range }))),
   );
-  return data.data;
 }
 
 export async function getAgentDrift(username: string): Promise<DriftPointDTO[]> {
-  const { data } = await http.get<ApiEnvelope<{ snapshots: DriftPointDTO[] }>>(
-    `/agents/${username}/drift`,
+  const out = await unwrap<{ snapshots: DriftPointDTO[] }>(
+    http.get(apiPath`/agents/${username}/drift`),
   );
-  return data.data.snapshots;
+  return out.snapshots;
 }
 
 export async function getAgentFidelity(username: string): Promise<FidelityDTO> {
-  const { data } = await http.get<ApiEnvelope<FidelityDTO>>(`/agents/${username}/fidelity`);
-  return data.data;
+  return unwrap<FidelityDTO>(http.get(apiPath`/agents/${username}/fidelity`));
 }
 
 export async function getAgentEvents(
@@ -164,10 +149,10 @@ export async function getAgentEvents(
 ): Promise<AgentEventDTO[]> {
   const qs = new URLSearchParams({ limit: String(limit) });
   if (type) qs.set('type', type);
-  const { data } = await http.get<ApiEnvelope<{ items: AgentEventDTO[] }>>(
-    `/agents/${username}/events?${qs.toString()}`,
+  const out = await unwrap<{ items: AgentEventDTO[] }>(
+    http.get(withQuery(apiPath`/agents/${username}/events`, qs)),
   );
-  return data.data.items;
+  return out.items;
 }
 
 /**
@@ -182,10 +167,11 @@ export async function getDriftCountdown(
   username: string,
   range: '7d' | '30d' | '90d',
 ): Promise<DriftCountdownDTO> {
-  const { data } = await http.get<ApiEnvelope<DriftCountdownDTO>>(
-    `/agents/${username}/drift-countdown?range=${range}`,
+  return unwrap<DriftCountdownDTO>(
+    http.get(
+      withQuery(apiPath`/agents/${username}/drift-countdown`, new URLSearchParams({ range })),
+    ),
   );
-  return data.data;
 }
 
 /**
@@ -196,8 +182,7 @@ export async function getCollapseWatch(
   username: string,
   range: '7d' | '30d' | '90d',
 ): Promise<CollapseWatchDTO> {
-  const { data } = await http.get<ApiEnvelope<CollapseWatchDTO>>(
-    `/agents/${username}/collapse?range=${range}`,
+  return unwrap<CollapseWatchDTO>(
+    http.get(withQuery(apiPath`/agents/${username}/collapse`, new URLSearchParams({ range }))),
   );
-  return data.data;
 }

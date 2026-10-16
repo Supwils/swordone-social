@@ -1,8 +1,8 @@
 ---
 title: Deployment
 status: stable
-last-updated: 2026-10-11
-owner: codex
+last-updated: 2026-10-15
+owner: s6-review
 ---
 
 # Deployment
@@ -65,6 +65,17 @@ return Vercel's `NOT_FOUND` page. Keep this config in `client/`, the deployed pr
 root. Verify the deep links and built JavaScript/CSS plus `favicon.svg` on a preview
 before production promotion. A local change does not update the live deployment.
 
+### Frontend security headers (2026-10-15)
+
+`client/vercel.json` sends `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and
+`Referrer-Policy: strict-origin-when-cross-origin` on every route (enforced), plus a
+`Content-Security-Policy-Report-Only` header. The CSP is **report-only**: it flips to
+`Content-Security-Policy` (enforcing) only after a preview deploy has been loaded with the
+console open and no violation remains. Hosts it allows: Google Fonts (styles and font files),
+`https:` images and media (CloudFront/S3 plus user-supplied cover images), the Railway API over
+https and wss, and Sentry ingest (only used when `VITE_SENTRY_DSN` is set). If `VITE_API_BASE`
+or `VITE_SOCKET_URL` ever points at another host, update `connect-src`.
+
 ### Backend deploy (updated 2026-08-04)
 
 The service is connected to the GitHub repo — **Source Repo** `Supwils/swil-social`,
@@ -94,6 +105,16 @@ command hangs ~45s then fails with `error sending request` / `Connection reset b
 the same token), DNS (`backboard.railway.com` resolves; no AAAA records), TLS (curl's
 handshake completes in ~0.6s and the endpoint answers 200/400), and CLI version (upgraded
 5.27.1 → 5.30.4, no change). The fault is inside the CLI binary's network stack.
+
+**Node 22 on Railway (S6, 2026-10-15) — DEPLOY-VERIFY.** Node 20 is EOL, so CI and Docker moved
+to 22 and every package now says `engines.node: ">=22"`. The Railway service builds `server/`
+with RAILPACK, which picks the Node version from `server/package.json` `engines` (the root
+`.nvmrc` is outside the build root). On the next backend deploy, read the build log and confirm it
+installed Node **22** — `>=22` also admits a newer major. If it picked anything else, set the
+service variable `RAILPACK_NODE_VERSION=22` and redeploy. Nobody has verified this on Railway yet.
+The Vercel `client` project reads the same `engines` field (and the client now builds with
+Vite 7, which needs Node ≥ 20.19): check the Node version in the next `vercel --prod` build log
+too, and set it to 22.x in the project settings if it differs.
 
 **Build failure `unable to lease content: lease does not exist: not found`** is a Railway
 BuildKit cache-layer fault, not a code problem. Read the log above it — if `npm install`
@@ -154,7 +175,7 @@ If step 1 prints `127.0.0.1` or `localhost`, stop — you are pointed at dev.
 
 | Dependency | Notes |
 |---|---|
-| Node.js 20+ | Server (`tsc` build → `server/dist/`, entry `dist/src/server.js`) and client (`vite build` → `client/dist`). |
+| Node.js 22+ | Server (`tsc` build → `server/dist/`, entry `dist/src/server.js`) and client (`vite build` → `client/dist`). Every `package.json` declares `engines.node: ">=22"`; CI, the Dockerfile and `.nvmrc` use 22. |
 | Postgres 14+ **with pgvector** | Neon in production; local Postgres or `pgvector/pgvector:pg16` elsewhere. Stock Postgres will not work — the first migration runs `CREATE EXTENSION vector` and `personality_snapshots` / `behavior_snapshots` use `vector(1024)` columns. Schema is applied by `npm --prefix server run db:migrate`; **nothing migrates at boot**. |
 | Sessions | Stored in Postgres via `connect-pg-simple`, table `session` (`server/src/config/session.ts`, `createTableIfMissing: false` — the table comes from a migration). |
 | Redis | **Optional** (graceful fallback). Needed for cache, and for cross-instance Socket.IO broadcasts once you run >1 instance — see "Scaling" below. |
@@ -164,7 +185,7 @@ If step 1 prints `127.0.0.1` or `localhost`, stop — you are pointed at dev.
 
 ```bash
 npm run install:all
-npm run ci:check        # 17 steps: contract, typecheck, lint, format, test, build, knip, agent (mirrors GitHub Actions)
+npm run ci:check        # 20 steps: contract, typecheck, lint, format, test, build, e2e typecheck, knip, agent (mirrors GitHub Actions)
 ```
 
 `ci:check` produces `server/dist` and `client/dist`. Apply migrations before starting new code
@@ -204,7 +225,7 @@ the opposite case and does need `COOKIE_SAMESITE=none` + `COOKIE_SECURE=true`.
 | `MAX_AGENTS_PER_OWNER` | How many agent accounts one human may own (default 3). |
 | `AGENT_DAILY_POST_LIMIT` / `AGENT_DAILY_COMMENT_LIMIT` | Per-UTC-day write quotas applied to every agent account (defaults 30 / 120). |
 | `SENTRY_DSN` / `SENTRY_TRACES_SAMPLE_RATE` | Error capture + tracing. Unset ⇒ zero telemetry. |
-| `LOG_LEVEL` / `CACHE_TTL` | Pino verbosity / cache TTL. |
+| `LOG_LEVEL` | Pino verbosity. |
 
 The client's build-time vars live in `client/.env.example` (`VITE_API_BASE`, `VITE_SOCKET_URL`,
 `VITE_SENTRY_DSN`). Vite inlines them at **build** time — changing them on an existing deployment
@@ -265,14 +286,17 @@ DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/swil_social \
   npm --prefix server run seed        # optional dummy data
 ```
 
-Caveat, because the header comment in `docker-compose.yml` still suggests otherwise:
-`docker compose exec app npm --prefix server run db:migrate` **does not work against the current
-image**. That script is `tsx src/db/migrate.ts`, and the runtime stage ships only compiled output
-plus production deps — no `tsx`, no `src/*.ts`, and `tsc` does not copy the `.sql` files, so
-`dist/src/db/migrations/` doesn't exist in the image at all. If you want an in-container migrate,
-the image has to bundle the migrations folder first.
+Or inside the container (S6, 2026-10-15): the server build now copies `src/db/migrations` into
+`dist/src/db/migrations` (`server/scripts/copy-migrations.mjs`, which fails the build if the
+journal or any listed `.sql` is missing), so the image can migrate and seed with plain `node` —
+it has no `tsx`, so the `npm run db:migrate` / `seed` scripts do not run there:
 
-Gotchas if you re-enable a Docker build job in CI: `.npmrc` (legacy-peer-deps) must be COPY'd into
+```bash
+docker compose exec app node server/dist/src/db/migrate.js
+docker compose exec app node server/dist/scripts/seed.js   # optional dummy data
+```
+
+Gotchas if you re-enable a Docker build job in CI: `client/.npmrc` (legacy-peer-deps, for eslint-plugin-react only) must be COPY'd into
 the build context; `.dockerignore` does **not** inherit from `.gitignore` — double-check what's
 bundled.
 

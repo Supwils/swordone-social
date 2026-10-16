@@ -5,9 +5,12 @@
  * for the slug; original-case display is preserved on first use at tag-upsert
  * time. Mentions resolve to usernames (ASCII per model constraints).
  */
+import { MENTION_SOURCE, TAG_SOURCE } from '../contract/limits';
 
-const TAG_RE = /#([\p{L}\p{N}_][\p{L}\p{N}_-]{0,63})/gu;
-const MENTION_RE = /@([a-zA-Z0-9_]{3,24})/g;
+// The patterns are the contract's, shared with the client linkifier — see
+// `contract/limits.ts` for the rules (left boundary, 3–24 mention length).
+const TAG_RE = new RegExp(TAG_SOURCE, 'gu');
+const MENTION_RE = new RegExp(MENTION_SOURCE, 'g');
 
 export function extractTags(text: string): Array<{ slug: string; display: string }> {
   const out = new Map<string, string>();

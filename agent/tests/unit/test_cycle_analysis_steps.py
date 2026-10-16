@@ -36,7 +36,7 @@ from swil_agent.models import ActOutcome, Persona
 from swil_agent.persona.source import GitPersonaSource
 
 from ._node_modules import caller_of
-from ._runners import FakeEmbedder, FakeResources, ScriptedBackend, make_persona
+from ._runners import FakeEmbedder, FakeResources, ScriptedBackend, make_cycle_deps, make_persona
 
 NOW = datetime(2026, 8, 19, 10, 0, 0)
 # Deliberately a different instant from `NOW`: `captured_at` and `now` are read
@@ -142,17 +142,13 @@ def _deps(root: Path, **overrides: Any) -> CycleDeps:
         "embedder": FakeEmbedder(vectors=[[1.0], [1.0], [1.0]]),
         "dream_state": FilesystemDreamState(root / ".agent-state"),
         "settings": _settings(root),
-        "agent_root": root,
-        "health_check": lambda: True,
         "memory_text": INITIAL_MEMORY,
-        "llm_backend": "claude",
         "llm_model": "opus",
         "rng": random.Random(SEED),
         "now": NOW,
         "captured_at": CAPTURED_AT,
     }
-    defaults.update(overrides)
-    return CycleDeps(**defaults)
+    return make_cycle_deps(root, **(defaults | overrides))
 
 
 def _root(tmp_path: Path) -> Path:

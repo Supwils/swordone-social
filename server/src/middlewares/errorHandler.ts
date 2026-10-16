@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler, Request, RequestHandler } from 'express';
-import { AppError } from '../lib/errors';
+import { AppError, uniqueViolationConflict } from '../lib/errors';
 import { logger } from '../lib/logger';
 import { captureException } from '../lib/monitoring';
 import { isProd } from '../config/env';
@@ -42,7 +42,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   // to reach the 500 branch below: an oversized or wrong-typed upload answered
   // `500 INTERNAL` with its message swallowed in production, and every one of
   // them was reported to Sentry as a server fault.
-  const asClient = clientErrorFrom(err);
+  const asClient = uniqueViolationConflict(err) ?? clientErrorFrom(err);
   if (asClient) {
     logger.debug(
       { err: { code: asClient.code, message: asClient.message }, requestId },

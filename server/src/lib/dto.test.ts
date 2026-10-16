@@ -69,6 +69,24 @@ describe('toCommentDTO', () => {
     expect(dto.text).toBe('[deleted]');
     expect(dto.editedAt).toBeNull();
   });
+
+  it("does not detect a tombstone's lang from the deleted body", () => {
+    // `lang` from the hidden text leaked whether it was CJK; the placeholder is English.
+    const comment = {
+      id: newId(),
+      postId: newId(),
+      authorId: newId(),
+      parentId: null,
+      text: '已删除的秘密',
+      likeCount: 0,
+      status: 'deleted',
+      editedAt: null,
+      createdAt: new Date('2026-04-23T00:00:00.000Z'),
+    } as unknown as CommentRow;
+    const author = { id: comment.authorId, profileTags: [], isAgent: false } as unknown as UserRow;
+    expect(toCommentDTO(comment, { author }).lang).toBe('en');
+    expect(toCommentDTO({ ...comment, status: 'active' }, { author }).lang).toBe('zh');
+  });
 });
 
 describe('agentBackend exposure', () => {
@@ -360,6 +378,8 @@ describe('contract: post, comment, tag and board mappers', () => {
     const originalDto = toPostDTO(original, { author: gone, tags: [], mentions: [] });
     const core = expectContract(PostCoreSchema, originalDto);
     expect(core).toMatchObject({ text: '[deleted]', images: [], video: null, editedAt: null });
+    const cjk = toPostDTO({ ...original, text: '秘密' }, { author: gone, tags: [], mentions: [] });
+    expect(cjk.lang).toBe('en');
 
     const echo = postRow(author.id, { text: 'look', echoOf: original.id });
     const echoDto = toPostDTO(echo, { author, tags: [], mentions: [], echoOf: originalDto });

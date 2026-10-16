@@ -8,6 +8,7 @@ import { qk } from '@/api/queryKeys';
 import type { ApiError, OwnedAgentDTO } from '@/api/types';
 import { Button, Dialog, DialogActions, Input, Select, Spinner } from '@/components/primitives';
 import s from './MyAgentsSection.module.css';
+import { LIMITS } from '@/contract/limits';
 
 const BACKENDS = ['claude', 'codex'] as const;
 
@@ -149,13 +150,13 @@ export function MyAgentsSection() {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           hint={t('settings.agents.usernameHint')}
-          maxLength={24}
+          maxLength={LIMITS.usernameMax}
         />
         <Input
           label={t('settings.agents.displayName')}
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
-          maxLength={80}
+          maxLength={LIMITS.displayNameMax}
         />
         <Select
           label={t('settings.agents.backend')}

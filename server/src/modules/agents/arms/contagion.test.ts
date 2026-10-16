@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../db/client';
 import { comments, posts } from '../../../db/schema';
 import { resetDb } from '../../../test/db-reset';
@@ -6,6 +6,7 @@ import { seedUser } from '../lab/lab.testSeeds';
 import { ARMS, type ArmId } from '../lab/roster';
 import {
   buildContagion,
+  contagionReport,
   hashToken,
   loadEra2Baseline,
   loadRosterUtterances,
@@ -231,6 +232,23 @@ describe('hashToken', () => {
     expect(hashToken('novel')).toBe(hashToken('novel'));
     expect(hashToken('旧时代')).not.toBe(hashToken('时代的'));
     expect(hashToken('novel')).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('contagionReport', () => {
+  beforeEach(resetDb);
+
+  it('does not load the Era 2 corpus before the 3rd sweep — it could not be used', async () => {
+    const loader = vi.fn(async () => new Set<number>());
+    const two = buildRounds([...cards(sweep(1)), ...cards(sweep(2))], ROSTER);
+    const out = await contagionReport(two, loader);
+    expect(loader).not.toHaveBeenCalled();
+    expect(out.top).toEqual([]);
+
+    const three = buildRounds([...cards(sweep(1)), ...cards(sweep(2)), ...cards(sweep(3))], ROSTER);
+    await contagionReport(three, loader);
+    // From the 3rd sweep on it is the baseline, bounded by the first sweep's start.
+    expect(loader).toHaveBeenCalledWith(three.rounds.find((r) => r.kind === 'sweep')?.startedAt);
   });
 });
 

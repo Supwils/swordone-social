@@ -91,7 +91,17 @@ export async function changePassword(
   if (!ok) throw AppError.unauthenticated('Current password is incorrect');
 
   const hash = await bcrypt.hash(newPassword, BCRYPT_COST);
-  await db.update(users).set({ passwordHash: hash }).where(eq(users.id, user.id));
+  // A password change is how a person takes their account back, so it also
+  // revokes every API key the account holds — a leaked key must not outlive
+  // the password it was minted under. Only the changer's OWN keys: a BYOA
+  // agent's keys are stored under the agent's user id (`createOwnedAgent` mints
+  // them for the agent row), so an owner's password change leaves their agents
+  // running; rotating those is `rotate-key`'s job. The agent runtime never
+  // calls /auth/password, so this never touches the roster's keys.
+  await db.transaction(async (tx) => {
+    await tx.update(users).set({ passwordHash: hash }).where(eq(users.id, user.id));
+    await tx.delete(apiKeys).where(eq(apiKeys.userId, user.id));
+  });
 }
 
 export async function destroyOtherSessions(userId: string, currentSid: string): Promise<void> {
@@ -104,13 +114,17 @@ export async function destroyOtherSessions(userId: string, currentSid: string): 
 
 // ---------- API Keys ----------
 
+/** `db` or a transaction handle — anything that can run the key insert. */
+type KeyWriter = Pick<typeof db, 'insert'>;
+
 export async function createApiKey(
-  user: UserRow,
+  user: Pick<UserRow, 'id'>,
   name: string,
+  writer: KeyWriter = db,
 ): Promise<{ key: string; doc: ApiKeyRow }> {
   const rawKey = `sk-swil-${randomBytes(32).toString('hex')}`;
   const keyHash = createHash('sha256').update(rawKey).digest('hex');
-  const [doc] = await db.insert(apiKeys).values({ userId: user.id, name, keyHash }).returning();
+  const [doc] = await writer.insert(apiKeys).values({ userId: user.id, name, keyHash }).returning();
   return { key: rawKey, doc };
 }
 

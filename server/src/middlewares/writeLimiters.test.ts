@@ -28,6 +28,7 @@ vi.mock('./rateLimit', () => {
 });
 
 vi.mock('./auth', () => ({
+  allowArchived: (_req: unknown, _res: unknown, next: () => void) => next(),
   requireUser: (_req: unknown, _res: unknown, next: () => void) => next(),
   optionalUser: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));

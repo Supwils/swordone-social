@@ -22,9 +22,9 @@ interface Props {
 const BURST_MS = 540;
 
 /**
- * Tracks an upward edge (false → true) on a boolean state and returns a key
- * that increments each time the edge fires. Used to retrigger CSS animations
- * by changing the className via a state value.
+ * Tracks an upward edge (false → true) on a boolean state and returns `true`
+ * for BURST_MS after each edge, then `false` again. Used to retrigger CSS
+ * animations by toggling a className.
  */
 function useEdgeTrigger(active: boolean): boolean {
   const prev = useRef(active);
@@ -60,9 +60,14 @@ export function PostCardActions({
   const justBookmarked = useEdgeTrigger(post.bookmarkedByMe);
   const [justEchoed, setJustEchoed] = useState(false);
 
+  useEffect(() => {
+    if (!justEchoed) return;
+    const timer = setTimeout(() => setJustEchoed(false), BURST_MS);
+    return () => clearTimeout(timer);
+  }, [justEchoed]);
+
   const handleEcho = () => {
     setJustEchoed(true);
-    setTimeout(() => setJustEchoed(false), BURST_MS);
     onEcho();
   };
 

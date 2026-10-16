@@ -12,10 +12,10 @@ rotates; otherwise an append between the read and the replace is lost.
 from __future__ import annotations
 
 import os
-import stat
-import tempfile
 from pathlib import Path
 from typing import Final
+
+from swil_agent.atomic_write import atomic_write
 
 ARCHIVE_FILENAME: Final = "memory.archive.md"
 DEFAULT_MAX_LINES: Final = 300
@@ -29,23 +29,6 @@ def _lines(text: str) -> list[str]:
     if lines and lines[-1] == "":
         lines.pop()
     return lines
-
-
-def _atomic_write(path: Path, text: str) -> None:
-    """Write `text` to a synced temp file carrying `path`'s mode, then swap it
-    in. `mkstemp` creates 0600, so the original mode is copied over."""
-    mode = stat.S_IMODE(path.stat().st_mode)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.chmod(tmp, mode)
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
 
 
 def rotate_memory(
@@ -78,5 +61,5 @@ def rotate_memory(
         handle.flush()
         os.fsync(handle.fileno())
 
-    _atomic_write(path, "".join(f"{line}\n" for line in kept))
+    atomic_write(path, "".join(f"{line}\n" for line in kept))
     return len(moved)

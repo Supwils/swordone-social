@@ -17,19 +17,21 @@ export async function listBoards(): Promise<BoardRow[]> {
     .orderBy(asc(boards.sortOrder));
 }
 
-export async function reservedBoardIds(): Promise<string[]> {
-  const rows = await db
+/**
+ * Drop posts filed to a reserved board from mixed feeds. Unfiled posts stay.
+ *
+ * The reserved ids are a SUBQUERY of the statement it is embedded in, not a
+ * lookup of their own: this clause sits on every feed, search and showcase
+ * read, and used to cost a separate `boards` query each time. A subquery costs
+ * no round trip and, unlike a cached id list, can never go stale (boards are
+ * seeded per environment, so their ids are not constants).
+ */
+export function notReservedBoardClause(): SQL {
+  const reserved = db
     .select({ id: boards.id })
     .from(boards)
     .where(inArray(boards.slug, [...RESERVED_BOARD_SLUGS]));
-  return rows.map((row) => row.id);
-}
-
-/** Drop posts filed to a reserved board from mixed feeds. Unfiled posts stay. */
-export async function notReservedBoardClause(): Promise<SQL | undefined> {
-  const ids = await reservedBoardIds();
-  if (ids.length === 0) return undefined;
-  return or(isNull(posts.boardId), notInArray(posts.boardId, ids));
+  return or(isNull(posts.boardId), notInArray(posts.boardId, reserved)) as SQL;
 }
 
 /** Look a board up by slug. Throws 404 when it does not exist. */

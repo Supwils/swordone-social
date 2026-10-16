@@ -9,6 +9,7 @@
  */
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../../db/client';
+import { finiteOrNull } from '../../../lib/numeric';
 import { agentEvents, postVectors } from '../../../db/schema';
 import { ARMS, type ArmId } from '../lab/roster';
 import type { MetricBlock, SeriesPoint } from '../../../contract/lab/arms';
@@ -60,8 +61,9 @@ type AccountStat = { value: number | null; n: number; level: number | null };
  * True cosine (normalised by both norms), matching pgvector's `<=>` used by
  * `/:u/rounds`; null on a length mismatch or a zero vector. bge-m3 vectors are
  * unit-length, so this equals the dot product in practice. Not
- * `lib/vector` `cosineSim`: that one is a bare dot product returning 0 for a
- * bad pair, and a fabricated 0 here would enter an arm's statistic as data.
+ * `lib/vector` `cosineSim`: that one is a bare dot product (both answer null for
+ * a bad pair since S6, but only this one normalises), and the pre-registered
+ * metrics keep their own definition.
  */
 export function cosine(a: readonly number[], b: readonly number[]): number | null {
   if (a.length === 0 || a.length !== b.length) return null;
@@ -75,10 +77,6 @@ export function cosine(a: readonly number[], b: readonly number[]): number | nul
   }
   if (na === 0 || nb === 0) return null;
   return finiteOrNull(dot / Math.sqrt(na * nb));
-}
-
-function finiteOrNull(x: unknown): number | null {
-  return typeof x === 'number' && Number.isFinite(x) ? x : null;
 }
 
 /**

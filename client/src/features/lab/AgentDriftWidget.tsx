@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { getAgentDrift } from '@/features/lab/api';
+import { useAgentDrift } from '@/features/lab/queries';
 import { Sparkline } from './Sparkline';
 import s from '@/features/lab/lab.module.css';
 
@@ -18,12 +17,7 @@ export function AgentDriftWidget({
   enabled?: boolean;
 }) {
   const { t } = useTranslation();
-  const { data } = useQuery({
-    queryKey: ['agent-drift', username],
-    queryFn: () => getAgentDrift(username),
-    staleTime: 5 * 60_000,
-    enabled,
-  });
+  const { data } = useAgentDrift(username, enabled);
 
   if (!data || data.length === 0) return null;
 

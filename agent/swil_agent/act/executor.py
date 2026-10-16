@@ -17,9 +17,6 @@ fix, not a new formatter.
 
 Two rules are preserved deliberately:
 
-Two Bash rules are preserved deliberately, not just left as historical
-trivia:
-
   * **`follow` 409 / `CONFLICT` is idempotent success** (loop-engine spec
     §6) — `landed=True`, `call_succeeded=False`, no memory line. That is
     "already following": the edge exists, the round is not a failure, and
@@ -66,6 +63,7 @@ from swil_agent.act.execution_outcome import (
 )
 from swil_agent.api.client import ApiError
 from swil_agent.api.images import ImageFetchError, fetch_unsplash_image
+from swil_agent.api.paths import is_id, is_username
 from swil_agent.api.resources import Resources, WriteNotVerifiedError
 from swil_agent.llm.extract import collapse_doubled_text
 from swil_agent.models import Action, ActionResult
@@ -173,6 +171,18 @@ def _execute_post(
     )
 
 
+def _invalid_post_id(action: Action, *, agent_name: str, post_id: str) -> ExecutionOutcome:
+    """A postId that is not the server's 24-hex id never reaches a URL path
+    (`api/paths.py`): `"../conversations/<id>/messages?"` would otherwise
+    resolve to a different endpoint. The server would 400 it anyway."""
+    return _skip(
+        action,
+        agent_name=agent_name,
+        field_detail=f"invalid postId {post_id[:_LOG_PREVIEW_CAP]!r}",
+        lab_summary=f"{action.kind} skipped: invalid postId",
+    )
+
+
 def _execute_comment(resources: Resources, action: Action, *, agent_name: str) -> ExecutionOutcome:
     post_id = (action.post_id or "").strip()
     text = collapse_doubled_text(_clean(action.text))
@@ -183,6 +193,8 @@ def _execute_comment(resources: Resources, action: Action, *, agent_name: str) -
             field_detail="missing postId or text",
             lab_summary="comment skipped: missing postId or text",
         )
+    if not is_id(post_id):
+        return _invalid_post_id(action, agent_name=agent_name, post_id=post_id)
     parent_id = (action.parent_id or "").strip() or None
 
     try:
@@ -258,6 +270,8 @@ def _execute_like(resources: Resources, action: Action, *, agent_name: str) -> E
             field_detail="missing postId",
             lab_summary="like skipped: missing postId",
         )
+    if not is_id(post_id):
+        return _invalid_post_id(action, agent_name=agent_name, post_id=post_id)
     try:
         resources.like_post(post_id)
     except _WriteFailure as exc:
@@ -296,6 +310,13 @@ def _execute_follow(resources: Resources, action: Action, *, agent_name: str) ->
             agent_name=agent_name,
             field_detail="missing username",
             lab_summary="follow skipped: missing username",
+        )
+    if not is_username(username):
+        return _skip(
+            action,
+            agent_name=agent_name,
+            field_detail=f"invalid username {username[:_LOG_PREVIEW_CAP]!r}",
+            lab_summary="follow skipped: invalid username",
         )
     try:
         resources.follow(username)

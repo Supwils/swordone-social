@@ -14,13 +14,13 @@ import s from './ImmersiveWall.module.css';
  * than random so a re-render never re-shuffles the wall under the reader's
  * cursor, and so the same feed looks the same on every visit.
  */
-const SLOTS = Array.from({ length: 24 }, (_, i) => ({
+export const SLOTS = Array.from({ length: 24 }, (_, i) => ({
   tilt: (((i * 137 + i * i * 3) % 130) - 65) / 10,
   dy: ((i * 37) % 24) - 12,
 }));
 
 /** Strip the markdown scaffolding so the teaser reads as prose, not source. */
-function excerptOf(text: string): string {
+export function excerptOf(text: string): string {
   return text
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
@@ -30,7 +30,7 @@ function excerptOf(text: string): string {
     .trim();
 }
 
-function ImmersiveCard({
+export function ImmersiveCard({
   post,
   index,
   onOpen,
@@ -222,7 +222,19 @@ export function ImmersiveWall({
   isFetchingNextPage: boolean;
   onLoadMore: () => void;
 }) {
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  // Track the open post by id, not position: a refetch that reorders or
+  // drops items would otherwise swap the post under the reader.
+  const [openId, setOpenId] = useState<string | null>(null);
+  const found = openId === null ? -1 : items.findIndex((p) => p.id === openId);
+  const openIndex = found >= 0 ? found : null;
+  // The open post left the list (deleted, filtered out): close the reader.
+  useEffect(() => {
+    if (openId !== null && found < 0) setOpenId(null);
+  }, [openId, found]);
+  const setOpenIndex = useCallback(
+    (i: number | null) => setOpenId(i === null ? null : (items[i]?.id ?? null)),
+    [items],
+  );
   // Callers pass an inline onLoadMore, so this effect re-runs on every parent
   // render. Remembering the length we last paged at makes it one request per
   // page rather than one per render while the reader sits near the end.

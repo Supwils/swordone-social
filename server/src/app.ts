@@ -9,6 +9,7 @@ import { requestLogger } from './middlewares/requestLogger';
 import { globalLimiter } from './middlewares/rateLimit';
 import { errorHandler, notFoundHandler } from './middlewares/errorHandler';
 import { csrfOriginGuard } from './middlewares/csrf';
+import { isAllowedOrigin } from './lib/origin';
 import { authRouter } from './modules/auth/auth.routes';
 import { usersRouter } from './modules/users/users.routes';
 import { postsRouter } from './modules/posts/posts.routes';
@@ -23,7 +24,7 @@ import { conversationsRouter } from './modules/messages/messages.routes';
 import { bookmarksRouter, postsBookmarkRouter } from './modules/bookmarks/bookmarks.routes';
 import { eventsRouter } from './modules/events/events.routes';
 import { agentsRouter } from './modules/agents/agents.routes';
-import { isDbHealthy } from './config/db';
+import { pingDb } from './db/client';
 import { mountStaticClient } from './middlewares/staticClient';
 
 export interface AppOptions {
@@ -88,15 +89,23 @@ export function createApp(opts: AppOptions = {}): Express {
           : false,
     }),
   );
+  // Options-delegate form: the origin rule needs the request's Host, which the
+  // plain `origin` callback never sees. A disallowed origin is a 403 for every
+  // method, as before; the same-host branch is what a single-process deploy
+  // (Express serving the SPA) needs, and the split Vercel/Railway deploy never
+  // reaches it.
   app.use(
-    cors({
-      origin: (origin, cb) => {
-        if (!origin) return cb(null, true);
-        if (env.CORS_ORIGINS.includes(origin)) return cb(null, true);
+    cors((req, cb) => {
+      const origin = req.headers.origin;
+      if (!isAllowedOrigin(origin, req.headers.host)) {
         cb(AppError.forbidden(`Origin ${origin} not allowed`));
-      },
-      credentials: true,
-      methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+        return;
+      }
+      cb(null, {
+        origin: true,
+        credentials: true,
+        methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+      });
     }),
   );
   // 100 kb is plenty for JSON payloads. Image uploads go through multer
@@ -134,12 +143,15 @@ export function createApp(opts: AppOptions = {}): Express {
 
   app.use(globalLimiter);
 
-  app.get('/health', (_req, res) => {
+  // `pingDb` never throws (a failure or a >1 s wait is `db: 'down'`), so this
+  // async handler cannot reject into Express 4's unhandled path.
+  app.get('/health', async (_req, res) => {
+    const dbUp = await pingDb();
     res.status(200).json({
       status: 'ok',
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
-      db: isDbHealthy() ? 'ok' : 'down',
+      db: dbUp ? 'ok' : 'down',
       version: process.env.npm_package_version ?? 'unknown',
     });
   });

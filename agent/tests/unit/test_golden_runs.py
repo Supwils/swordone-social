@@ -326,10 +326,15 @@ class JournalingRunner:
         stdin: str | None = None,
         env: dict[str, str] | None = None,
         timeout: float = 300.0,
+        cwd: str | None = None,
     ) -> str:
-        self._journal.append(
-            _entry("runner", "run", (argv,), {"stdin": stdin, "env": env, "timeout": timeout})
-        )
+        kwargs: dict[str, Any] = {"stdin": stdin, "env": env, "timeout": timeout}
+        if cwd is not None:
+            # Journaled only when passed: `news-fetch.sh`, the one thing a
+            # round runs through this seam, inherits the cwd, and the goldens
+            # predate the parameter.
+            kwargs["cwd"] = cwd
+        self._journal.append(_entry("runner", "run", (argv,), kwargs))
         return ""
 
 

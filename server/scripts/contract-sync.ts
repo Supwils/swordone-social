@@ -11,7 +11,7 @@
  * - `client/src/contract/**` — every non-test `.ts` of the contract, same
  *   subpaths, the header line followed by the source byte for byte (the source
  *   is already Prettier-formatted; the client resolves extensionless imports).
- * - `mcp/src/contract/common.ts` — `common.ts` only (mcp needs nothing else),
+ * - `mcp/src/contract/{common,limits}.ts` — the only files mcp needs,
  *   with relative specifiers given a `.js` suffix for Node16 ESM.
  * - `agent/tests/contract/<name>.schema.json` — a JSON Schema (draft 7) per
  *   agent ingest body, for the agent's pytest. JSON has no comments, so the
@@ -42,7 +42,7 @@ export const HEADER_TEXT = 'GENERATED from server/src/contract by contract:sync 
 export const HEADER = `// ${HEADER_TEXT}\n`;
 
 /** The only contract file mcp receives (spec §7.14). */
-export const MCP_FILES = ['common.ts'] as const;
+export const MCP_FILES = ['common.ts', 'limits.ts'] as const;
 
 export interface IngestBody {
   /** Export name in `contract/ingest.ts`; also the JSON file's base name. */

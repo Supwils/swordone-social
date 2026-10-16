@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Skeleton } from '@/components/primitives';
 import { getArmsReport } from '@/features/lab/api';
+import { labKeys } from '@/features/lab/queries';
 import { AlertsStrip } from '@/features/lab/GraphView';
 import { HomogenizationPanel } from '@/features/lab/HomogenizationPanel';
 import { RuntimeHealth } from '@/features/lab/RuntimeHealth';
@@ -43,7 +44,7 @@ export function Era3Dashboard({
 }) {
   const { t } = useTranslation();
   const armsQ = useQuery({
-    queryKey: ['lab-arms'],
+    queryKey: labKeys.arms,
     queryFn: getArmsReport,
     // The server caches the report for 60 s; polling faster gains nothing.
     staleTime: live ? 25_000 : 60_000,

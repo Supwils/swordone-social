@@ -4,7 +4,8 @@ import request from 'supertest';
 import { createApp } from '../../app';
 import { db } from '../../db/client';
 import { resetDb } from '../../test/db-reset';
-import { comments, posts, users } from '../../db/schema';
+import { apiKeys, comments, follows, posts, users } from '../../db/schema';
+import { createHash, randomBytes } from 'crypto';
 import { env } from '../../config/env';
 import * as envModule from '../../config/env';
 
@@ -243,5 +244,127 @@ describe('auto-translate preference and the lang field', () => {
       (p: { originalText?: string }) => p.originalText === '中文帖子',
     );
     expect(translated?.text).toBe('Chinese post');
+  });
+});
+
+describe('every post-returning read translates the way /feed/global does', () => {
+  it('search, explore-summary (anonymous ?lang=), bookmarks and the following feed', async () => {
+    enableTranslate(true);
+    stubTranslate({ 中文帖子: 'Chinese post' });
+    const author = await seedUser({ isAgent: true });
+    const [post] = await db
+      .insert(posts)
+      .values({ authorId: author.id, text: '中文帖子' })
+      .returning();
+
+    // Anonymous: `?lang=` decides (search used to strip it in validation).
+    const search = await request(createApp())
+      .get(`/api/v1/posts/search?q=${encodeURIComponent('中文')}&lang=en`)
+      .expect(200);
+    expect(search.body.data.items[0]).toMatchObject({
+      text: 'Chinese post',
+      originalText: '中文帖子',
+    });
+
+    const explore = await request(createApp())
+      .get('/api/v1/feed/explore-summary?lang=en')
+      .expect(200);
+    expect(explore.body.data.featuredPost).toMatchObject({ id: post.id, text: 'Chinese post' });
+
+    // Signed in: the stored preference wins, and auto-translate is honoured.
+    const agent = request.agent(createApp());
+    await agent
+      .post('/api/v1/auth/register')
+      .send({ username: 'reader', email: 'reader@example.com', password: 'password123' })
+      .expect(201);
+    await agent
+      .patch('/api/v1/users/me')
+      .send({ preferences: { language: 'en', autoTranslate: true } })
+      .expect(200);
+    await agent.post(`/api/v1/users/${author.username}/follow`).expect(204);
+    await agent.post(`/api/v1/posts/${post.id}/bookmark`).expect(201);
+
+    const bookmarks = await agent.get('/api/v1/bookmarks').expect(200);
+    expect(bookmarks.body.data.items[0]).toMatchObject({ text: 'Chinese post' });
+    const following = await agent.get('/api/v1/feed').expect(200);
+    expect(following.body.data.items[0]).toMatchObject({ text: 'Chinese post' });
+
+    await agent
+      .patch('/api/v1/users/me')
+      .send({ preferences: { autoTranslate: false } })
+      .expect(200);
+    const off = await agent.get('/api/v1/feed').expect(200);
+    // The following feed used to translate whatever the preference said.
+    expect(off.body.data.items[0]).toMatchObject({ text: '中文帖子' });
+    expect(off.body.data.items[0].originalText).toBeUndefined();
+    const offBookmarks = await agent.get('/api/v1/bookmarks').expect(200);
+    expect(offBookmarks.body.data.items[0].originalText).toBeUndefined();
+  });
+});
+
+describe('first-party agents always read originals (experiment input)', () => {
+  async function bearerFor(over: Partial<typeof users.$inferInsert>): Promise<{
+    id: string;
+    auth: string;
+  }> {
+    const u = await seedUser(over);
+    const raw = `sk-swil-${randomBytes(8).toString('hex')}`;
+    await db.insert(apiKeys).values({
+      userId: u.id,
+      name: 'test',
+      keyHash: createHash('sha256').update(raw).digest('hex'),
+    });
+    return { id: u.id, auth: `Bearer ${raw}` };
+  }
+
+  it('no read translates for an isAgent account with no owner; fetch is never called', async () => {
+    enableTranslate(true);
+    const fetchMock = stubTranslate({ 中文帖子: 'Chinese post', 中文评论: 'Chinese comment' });
+    const author = await seedUser({ isAgent: true });
+    const [post] = await db
+      .insert(posts)
+      .values({ authorId: author.id, text: '中文帖子' })
+      .returning();
+    await db.insert(comments).values({ postId: post.id, authorId: author.id, text: '中文评论' });
+    const agent = await bearerFor({ isAgent: true });
+    await db.insert(follows).values({ followerId: agent.id, followingId: author.id });
+
+    const app = createApp();
+    const reads = [
+      '/api/v1/feed/global',
+      '/api/v1/feed/global?sort=latest&lang=en',
+      '/api/v1/feed',
+      `/api/v1/posts/search?q=${encodeURIComponent('中文')}`,
+      `/api/v1/posts/${post.id}`,
+      '/api/v1/feed/explore-summary',
+    ];
+    for (const path of reads) {
+      const res = await request(app).get(path).set('Authorization', agent.auth).expect(200);
+      expect(JSON.stringify(res.body)).not.toContain('Chinese post');
+      expect(JSON.stringify(res.body)).toContain('中文帖子');
+    }
+    const thread = await request(app)
+      .get(`/api/v1/posts/${post.id}/comments`)
+      .set('Authorization', agent.auth)
+      .expect(200);
+    expect(thread.body.data.items[0]).toMatchObject({ text: '中文评论' });
+    expect(thread.body.data.items[0].originalText).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // A BYOA (owned) agent and a human keep their translation.
+    const owner = await seedUser();
+    const byoa = await bearerFor({ isAgent: true, ownerId: owner.id });
+    const human = await bearerFor({});
+    for (const who of [byoa, human]) {
+      const res = await request(app)
+        .get('/api/v1/feed/global')
+        .set('Authorization', who.auth)
+        .expect(200);
+      expect(res.body.data.items[0]).toMatchObject({
+        text: 'Chinese post',
+        originalText: '中文帖子',
+      });
+    }
+    expect(fetchMock).toHaveBeenCalled();
   });
 });

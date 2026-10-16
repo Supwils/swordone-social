@@ -68,3 +68,38 @@ def test_on_path_asks_shutil_which(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(doctor.shutil, "which", lambda name: "/x" if name == "uv" else None)
     assert doctor.on_path("uv")
     assert not doctor.on_path("claude")
+
+
+def test_grok_version_parses_the_cli_banner(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert argv == ["grok", "--version"]
+        return subprocess.CompletedProcess(argv, 0, stdout="grok 1.0.52 (0920c8169e27)\n")
+
+    monkeypatch.setattr(doctor.subprocess, "run", run)
+    assert doctor.grok_version() == "1.0.52"
+
+
+@pytest.mark.parametrize("failure", [OSError("no grok"), subprocess.TimeoutExpired("grok", 10)])
+def test_grok_version_is_none_when_the_cli_cannot_answer(
+    monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise failure
+
+    monkeypatch.setattr(doctor.subprocess, "run", run)
+    assert doctor.grok_version() is None
+
+
+def test_grok_version_is_none_for_an_unrecognised_banner(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(argv, 0, stdout="something else\n")
+
+    monkeypatch.setattr(doctor.subprocess, "run", run)
+    assert doctor.grok_version() is None
+
+
+def test_grok_audit_passes_only_the_audited_version() -> None:
+    assert doctor.grok_audit(doctor.GROK_AUDITED_VERSION)[0]
+    ok, msg = doctor.grok_audit(None)
+    assert not ok and "unreadable" in msg and "GROK_DISALLOWED_TOOLS" in msg
+    assert not doctor.grok_audit("1.0.53")[0]

@@ -5,18 +5,25 @@
  * (`normalize_embeddings=True`). Cosine similarity is therefore just the dot
  * product — we never re-normalise here.
  */
+import { meanOf } from './numeric';
 
-/** Cosine similarity of two (assumed L2-normalised) vectors. 0 on length mismatch / empty. */
-export function cosineSim(a: number[], b: number[]): number {
-  if (a.length === 0 || a.length !== b.length) return 0;
+/**
+ * Cosine similarity of two (assumed L2-normalised) vectors. NULL on a length
+ * mismatch or an empty vector: there is no similarity to report, and a
+ * fabricated 0 used to enter fidelity, proximity and cohesion as data (the arms
+ * report's `cosine` already answered null; the two now agree).
+ */
+export function cosineSim(a: number[], b: number[]): number | null {
+  if (a.length === 0 || a.length !== b.length) return null;
   let dot = 0;
   for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
   return dot;
 }
 
-/** Cosine distance in [0, 2]. Defensive clamp absorbs float round-off. */
-export function cosineDist(a: number[], b: number[]): number {
-  return Math.max(0, Math.min(2, 1 - cosineSim(a, b)));
+/** Cosine distance in [0, 2], null when `cosineSim` is. The clamp absorbs float round-off. */
+export function cosineDist(a: number[], b: number[]): number | null {
+  const sim = cosineSim(a, b);
+  return sim === null ? null : Math.max(0, Math.min(2, 1 - sim));
 }
 
 /** Element-wise mean of equal-length vectors. Returns null for an empty input. */
@@ -48,7 +55,9 @@ export function meanPairwiseCosine(vectors: number[][]): number {
   let pairs = 0;
   for (let i = 0; i < vecs.length; i++) {
     for (let j = i + 1; j < vecs.length; j++) {
-      sum += cosineSim(vecs[i], vecs[j]);
+      const sim = cosineSim(vecs[i], vecs[j]);
+      if (sim === null) continue; // a mismatched pair is not comparable, not "0 similar"
+      sum += sim;
       pairs++;
     }
   }
@@ -66,9 +75,11 @@ export function pairwiseVariance(vectors: number[][]): number {
   const sims: number[] = [];
   for (let i = 0; i < vecs.length; i++) {
     for (let j = i + 1; j < vecs.length; j++) {
-      sims.push(cosineSim(vecs[i], vecs[j]));
+      const sim = cosineSim(vecs[i], vecs[j]);
+      if (sim !== null) sims.push(sim);
     }
   }
-  const mean = sims.reduce((s, x) => s + x, 0) / sims.length;
+  const mean = meanOf(sims);
+  if (mean === null) return 1;
   return sims.reduce((s, x) => s + (x - mean) ** 2, 0) / sims.length;
 }

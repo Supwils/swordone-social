@@ -4,8 +4,11 @@ Every test builds its own `tmp_path` roster: `write_recent` overwrites a live
 `personality.md`, and none of these tests may point at a real account.
 """
 
+import os
+import stat
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -135,22 +138,37 @@ def test_write_failure_leaves_the_original_personality_intact(
     agent_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A crash mid-write must never leave `personality.md` truncated. The
-    patched `write_text` does a real partial write and raises; under the
-    atomic implementation that lands on a temp file, never on the live one."""
+    patched `write` does a real partial write and raises; under the atomic
+    implementation that lands on a temp file, never on the live one."""
     source = GitPersonaSource(agent_root)
     personality_path = _personality(agent_root)
     original = personality_path.read_text(encoding="utf-8")
 
-    real_write_text = Path.write_text
+    real_fdopen = os.fdopen
 
-    def flaky_write_text(self: Path, data: str, encoding: str | None = None) -> int:
-        if "CORRUPT-CANDIDATE" in data and "归档于" not in data:
-            with self.open("w", encoding=encoding or "utf-8") as handle:
-                handle.write(data[: len(data) // 2])
-            raise OSError("simulated crash mid-write")
-        return real_write_text(self, data, encoding=encoding)
+    class _Crashing:
+        def __init__(self, handle: Any) -> None:
+            self._handle = handle
 
-    monkeypatch.setattr(Path, "write_text", flaky_write_text)
+        def __enter__(self) -> "_Crashing":
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            self._handle.close()
+
+        def write(self, data: str) -> int:
+            if "CORRUPT-CANDIDATE" in data and "归档于" not in data:
+                self._handle.write(data[: len(data) // 2])
+                raise OSError("simulated crash mid-write")
+            return int(self._handle.write(data))
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self._handle, name)
+
+    def crashing_fdopen(fd: int, *args: Any, **kwargs: Any) -> Any:
+        return _Crashing(real_fdopen(fd, *args, **kwargs))
+
+    monkeypatch.setattr(os, "fdopen", crashing_fdopen)
 
     with pytest.raises(OSError):
         source.write_recent("tester", ["CORRUPT-CANDIDATE"], datetime(2026, 8, 17, 3, 0, 0))
@@ -162,3 +180,14 @@ def test_write_failure_leaves_the_original_personality_intact(
         if p.name not in {"personality.md", "personality.archive.md"}
     ]
     assert leftovers == [], f"temp file left behind: {leftovers}"
+
+
+def test_write_recent_keeps_the_file_mode(agent_root: Path) -> None:
+    """S6 AG-F17: the old writer left `mkstemp`'s 0600 on every
+    personality.md it touched."""
+    personality_path = _personality(agent_root)
+    os.chmod(personality_path, 0o644)
+    GitPersonaSource(agent_root).write_recent("tester", ["x"], datetime(2026, 8, 17, 3, 0, 0))
+    assert stat.S_IMODE(personality_path.stat().st_mode) == 0o644
+    archive = personality_path.parent / "personality.archive.md"
+    assert stat.S_IMODE(archive.stat().st_mode) == 0o644

@@ -272,10 +272,26 @@ async function computeEra2Baseline(before: Date | null): Promise<ReadonlySet<num
   return out;
 }
 
-export async function contagionReport(state: RoundsState): Promise<Contagion> {
+const NO_HASHES: ReadonlySet<number> = new Set();
+
+/**
+ * `loadBaseline` is injectable for the test that pins the skip below.
+ *
+ * Until the 3rd sweep starts every utterance is baseline (`buildContagion`'s
+ * cutoff is +Infinity) and the Era 2 set is never consulted — so it is not
+ * loaded: that was the whole sealed corpus re-read on every 60 s report miss,
+ * for nothing. The output is identical; only the wasted load is gone.
+ */
+export async function contagionReport(
+  state: RoundsState,
+  loadBaseline: typeof loadEra2Baseline = loadEra2Baseline,
+): Promise<Contagion> {
+  const sweeps = state.rounds.filter((r) => r.kind === 'sweep');
   const [utterances, era2] = await Promise.all([
     loadRosterUtterances(state.roster.map((u) => u.id)),
-    loadEra2Baseline(state.rounds.find((r) => r.kind === 'sweep')?.startedAt ?? null),
+    sweeps.length > BASELINE_SWEEPS
+      ? loadBaseline(sweeps[0].startedAt)
+      : Promise.resolve(NO_HASHES),
   ]);
   return buildContagion(state, utterances, era2);
 }

@@ -28,8 +28,8 @@
 #       after plugging in or reconnecting to say "reconsider now" rather than
 #       waiting up to 30 min for the next tick.
 #
-# Env: ROUND_MIN_INTERVAL_HOURS=48  PARALLEL=5  ACCOUNT_TIMEOUT=900
-#      NET_WAIT_SECS=90  ALLOW_BATTERY=0  AUTO_COMMIT=1
+# Env: ROUND_MIN_INTERVAL_HOURS=48  PARALLEL=5  ACCOUNT_TIMEOUT=1800
+#      ACCOUNT_KILL_GRACE=10  NET_WAIT_SECS=90  ALLOW_BATTERY=0  AUTO_COMMIT=1
 #
 # NOT `set -e`. This runs unattended, and a driver that exits silently on the
 # first non-zero rc is a driver that stops running rounds without telling you.
@@ -45,7 +45,21 @@ LOCK_DIR="$STATE_DIR/round.lock"
 
 MIN_INTERVAL_HOURS="${ROUND_MIN_INTERVAL_HOURS:-48}"
 PARALLEL="${PARALLEL:-5}"
-ACCOUNT_TIMEOUT="${ACCOUNT_TIMEOUT:-900}"
+# Per-account wall clock, derived from the per-call caps rather than guessed:
+# a healthy cycle spends at most two LLM calls (plan, dream) at the backend's
+# cap -- 600s on grok (`llm/backends/grok.py`), 300s elsewhere
+# (`llm/runner.py` DEFAULT_TIMEOUT) -- plus the news-fetch refresh (180s,
+# `act/context.py` NEWS_FETCH_TIMEOUT) = 1380s, before HTTP reads (30s cap
+# each) and embedder calls (60s cap each). The round pre-warms the embedder,
+# so a cycle's own guard `up` (480s cap, cold boot) does not stack on top.
+# 1800 is that worst case with ~7 min of margin; 900 could kill a healthy
+# grok cycle mid-dream.
+ACCOUNT_TIMEOUT="${ACCOUNT_TIMEOUT:-1800}"
+# TERM -> this long -> KILL. Covers the worker's own SIGTERM unwinding: the
+# CLI turns TERM into SystemExit(143), and `SubprocessRunner` TERMs its LLM
+# CLI's session, waits 2s, KILLs it, then the leases release. Kept under
+# launchd's 20s ExitTimeOut, because the signal trap below waits it out too.
+ACCOUNT_KILL_GRACE="${ACCOUNT_KILL_GRACE:-10}"
 ALLOW_BATTERY="${ALLOW_BATTERY:-0}"
 AUTO_COMMIT="${AUTO_COMMIT:-1}"
 
@@ -143,8 +157,78 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   rm -rf "$LOCK_DIR" && mkdir "$LOCK_DIR" || { log "FAIL — cannot take the round lock"; exit 75; }
 fi
 echo "$$" > "$LOCK_DIR/pid"
+# One empty file per running worker, named by its pid -- which is its
+# process-group id once it has called setsid. The worker's own wrapper writes
+# it, BEFORE setsid (section 7), so a signal that lands between the fork and
+# the setsid still finds the worker; `signal_worker` falls back to the pid
+# while the group does not exist yet.
+WORKER_DIR="$LOCK_DIR/workers"
+mkdir -p "$WORKER_DIR"
+pids=()
+owns_embedder=0   # section 6 sets it; the signal path reads it
+
 cleanup() { rm -rf "$LOCK_DIR"; }
-trap cleanup EXIT INT TERM
+group_alive() { kill -0 -- "-$1" 2>/dev/null; }
+# A registered worker that has not reached its setsid yet has no group.
+worker_alive() { group_alive "$1" || kill -0 "$1" 2>/dev/null; }
+signal_worker() {                   # signal_worker <SIG> <pid>
+  kill "-$1" -- "-$2" 2>/dev/null || kill "-$1" "$2" 2>/dev/null
+}
+# Lock files whose holder is dead (section 4 says why). Prints the count.
+sweep_dead_locks() {
+  local f pid n=0
+  for f in "$STATE_DIR"/lock_* "$STATE_DIR"/dream_lock_*; do
+    [[ -e "$f" ]] || continue
+    pid=$(head -1 "$f" 2>/dev/null | tr -dc '0-9')
+    if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
+      rm -f "$f" && n=$(( n + 1 ))
+    fi
+  done
+  echo "$n"
+}
+# Stop every running worker: TERM each, wait out the grace, KILL what is
+# left. The workers run in their own sessions (section 7), so nothing else --
+# not launchd, not the terminal -- will ever signal them. The directory is
+# re-read on every pass, so a worker that registered after the TERM pass is
+# still KILLed at the end.
+stop_workers() {
+  local f p waited=0 live
+  # The per-account pollers first, so none of them logs a TIMEOUT, reaps, or
+  # starts anything while the workers below are being stopped.
+  for p in ${pids[@]+"${pids[@]}"}; do kill -TERM "$p" 2>/dev/null; done
+  for f in "$WORKER_DIR"/*; do
+    [[ -e "$f" ]] && signal_worker TERM "$(basename "$f")"
+  done
+  while :; do
+    live=0
+    for f in "$WORKER_DIR"/*; do
+      [[ -e "$f" ]] && worker_alive "$(basename "$f")" && live=1
+    done
+    [[ "$live" == "0" || "$waited" -ge "$ACCOUNT_KILL_GRACE" ]] && break
+    sleep 1; waited=$(( waited + 1 ))
+  done
+  for f in "$WORKER_DIR"/*; do
+    [[ -e "$f" ]] && signal_worker KILL "$(basename "$f")"
+  done
+}
+# A signal ENDS the round. A trap without `exit` runs and then resumes the
+# script: the lock was gone and the next batch started anyway (measured).
+# The teardown a normal round does in section 8 happens here too: an
+# embedder this round started is stopped, and the stopped workers' locks are
+# swept.
+on_signal() {                       # on_signal <exit-code> <signal-name>
+  trap - TERM INT
+  log "round interrupted by SIG$2 — stopping running workers, no further batch"
+  stop_workers
+  if [[ "$owns_embedder" == "1" ]]; then
+    bash "$SCRIPT_DIR/embedder-guard.sh" down >/dev/null 2>&1 && log "embedder stopped"
+  fi
+  sweep_dead_locks >/dev/null
+  exit "$1"
+}
+trap cleanup EXIT
+trap 'on_signal 143 TERM' TERM
+trap 'on_signal 130 INT' INT
 
 # ── 3. preconditions ─────────────────────────────────────────────────────────
 fail_precondition() { log "skip — $1"; exit 0; }   # exit 0: not an error, just not now
@@ -156,9 +240,10 @@ fail_precondition() { log "skip — $1"; exit 0; }   # exit 0: not an error, jus
 # run would go to production anyway. This repo has been bitten by that
 # precedence before. Snapshot the caller's values, source .env, then put the
 # caller's back: explicit beats configured, and a flag you set is a flag that
-# takes effect.
+# takes effect. It is the order `swil_agent/config.py` uses as well (process
+# env over agent/.env), so the workers see the URL this script's checks used.
 _caller_env=""
-for v in SWIL_URL EMBEDDER_URL ROUND_MIN_INTERVAL_HOURS PARALLEL ACCOUNT_TIMEOUT ALLOW_BATTERY AUTO_COMMIT; do
+for v in SWIL_URL EMBEDDER_URL ROUND_MIN_INTERVAL_HOURS PARALLEL ACCOUNT_TIMEOUT ACCOUNT_KILL_GRACE ALLOW_BATTERY AUTO_COMMIT; do
   [[ -n "${!v:-}" ]] && _caller_env="${_caller_env}${v}=$(printf '%q' "${!v}") "
 done
 set -a; . "$ROOT_DIR/.env"; set +a
@@ -167,7 +252,8 @@ set -a; . "$ROOT_DIR/.env"; set +a
 # Re-derive the tuning values: .env may have set them, the caller outranks it.
 MIN_INTERVAL_HOURS="${ROUND_MIN_INTERVAL_HOURS:-$MIN_INTERVAL_HOURS}"
 PARALLEL="${PARALLEL:-5}"
-ACCOUNT_TIMEOUT="${ACCOUNT_TIMEOUT:-900}"
+ACCOUNT_TIMEOUT="${ACCOUNT_TIMEOUT:-1800}"
+ACCOUNT_KILL_GRACE="${ACCOUNT_KILL_GRACE:-10}"
 ALLOW_BATTERY="${ALLOW_BATTERY:-0}"
 AUTO_COMMIT="${AUTO_COMMIT:-1}"
 
@@ -203,28 +289,25 @@ code=$(wait_for "API" "$SWIL_URL/health" "200") \
   || fail_precondition "API not healthy at $SWIL_URL/health after ${NET_WAIT_SECS}s (last ${code:-000})"
 
 # The LLM endpoint decides whether a round can do anything at all. Without it
-# every account fails one after another and the round burns 23 slots producing
-# nothing but FAIL lines. 401 counts as reachable -- we are testing the network,
+# every account fails one after another and the round burns every slot
+# producing nothing but FAIL lines. 401 counts as reachable -- we are testing the network,
 # not the credentials.
 code=$(wait_for "Anthropic API" "https://api.anthropic.com/v1/models" "any") \
-  || fail_precondition "api.anthropic.com unreachable after ${NET_WAIT_SECS}s (a round with no LLM is 23 failures)"
+  || fail_precondition "api.anthropic.com unreachable after ${NET_WAIT_SECS}s (a round with no LLM is one failure per account)"
 
 command -v claude >/dev/null 2>&1 || fail_precondition "claude CLI not on PATH"
 command -v uv     >/dev/null 2>&1 || fail_precondition "uv not on PATH"
+# Section 7 starts every worker in its own session through perl (macOS ships
+# no `setsid` binary); without it a timeout cannot reach the worker's tree.
+command -v perl   >/dev/null 2>&1 || fail_precondition "perl not on PATH"
 
 # ── 4. sweep locks whose owner is gone ───────────────────────────────────────
-# An accepted dream exits 141 after "snapshot uploaded" and orphans
-# dream_lock_<name>; a killed round orphans lock_<name>. Unattended, one orphan
-# silently retires that account from every future round, so the sweep is not
-# housekeeping -- it is what keeps the roster whole.
-swept=0
-for f in "$STATE_DIR"/lock_* "$STATE_DIR"/dream_lock_*; do
-  [[ -e "$f" ]] || continue
-  pid=$(head -1 "$f" 2>/dev/null | tr -dc '0-9')
-  if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
-    rm -f "$f" && swept=$(( swept + 1 ))
-  fi
-done
+# A worker that had to be SIGKILLed (a timeout past its grace, a killed
+# round) never runs its lease release and orphans lock_<name> /
+# dream_lock_<name>. Unattended, one orphan silently retires that account from
+# every future round, so the sweep is not housekeeping -- it is what keeps the
+# roster whole.
+swept=$(sweep_dead_locks)
 [[ "$swept" -gt 0 ]] && log "swept $swept dead lock file(s)"
 
 # ── 5. roster, derived from the directories ──────────────────────────────────
@@ -255,7 +338,7 @@ if [[ "$MODE" == "dry" ]]; then
 fi
 
 # Stamp at START, not at the end. The interval governs CADENCE; if a round dies
-# halfway we must not immediately launch 23 more accounts at a broken environment.
+# halfway we must not immediately relaunch the roster at a broken environment.
 echo "$now_epoch" > "$STAMP"
 
 log "round start — ${#ACCOUNTS[@]} accounts, ${PARALLEL}-way, timeout ${ACCOUNT_TIMEOUT}s/account"
@@ -273,9 +356,11 @@ fi
 # ── 6. embedder ──────────────────────────────────────────────────────────────
 # Pre-warm before the fan-out. Each cycle brackets its own ref-counted guard,
 # but with PARALLEL processes starting at once they serialise on the guard's
-# spinlock waiting for the first one to finish loading a 2.3GB model. Warming it
-# here makes the guard see an already-running daemon and treat it as external --
-# which also means it will NOT stop it, so we stop it ourselves below.
+# spinlock waiting for the first one to finish loading a 2.3GB model. The
+# round's own `up` here holds one reference for the whole sweep, so every
+# cycle's `up`/`down` only moves the count above it and the round's `down`
+# in section 8 is the last one -- the one that stops a daemon this round
+# started. A daemon already running (launchd, by hand) is external: left alone.
 # We hold the round lock, so no other round is running; any non-zero ref count
 # is therefore left over from a round that died before its `down`. Left alone it
 # never returns to 0 again, so the guard stops stopping the daemon and a 2.3GB
@@ -290,7 +375,6 @@ if [[ -f "$GUARD_COUNT_FILE" ]]; then
   fi
 fi
 
-owns_embedder=0
 if ! curl -s -m 3 -o /dev/null "${EMBEDDER_URL:-http://127.0.0.1:7777}/health" 2>/dev/null; then
   if bash "$SCRIPT_DIR/embedder-guard.sh" up >/dev/null 2>&1; then
     owns_embedder=1
@@ -301,24 +385,57 @@ if ! curl -s -m 3 -o /dev/null "${EMBEDDER_URL:-http://127.0.0.1:7777}/health" 2
 fi
 
 # ── 7. run ───────────────────────────────────────────────────────────────────
-# `set -m` puts each background job in its own process group so a timeout can
-# kill the whole subtree by PGID. Kill by PID, NEVER by pattern: `pkill -f codex`
-# also kills the editor and any MCP server the user is running.
-set -m
+# Every worker starts in its OWN session, so its pid is its process-group id
+# and a timeout can signal the whole tree by PGID. macOS ships no `setsid`
+# binary; perl's POSIX::setsid then exec keeps the pid, so `$!` IS the group.
+# (`set -m` did not do this: the job's group was `run_one`'s subshell, so
+# `kill -- -<worker pid>` hit run_one itself, the KILL was never sent and the
+# 124 never returned -- measured under /bin/bash 3.2.) Kill by PGID, NEVER by
+# pattern: `pkill -f codex` also kills the editor and any MCP server running.
+#
+# What a TERM reaches: caffeinate, cycle-one.sh, uv and the Python worker. The
+# worker's LLM CLI child runs in a session of its own (`llm/runner.py`), so
+# the group signal does NOT reach it; the worker's SIGTERM handler
+# (SystemExit 143, `cli/app.py`) is what kills that CLI and releases the
+# leases -- hence TERM, a grace, and only then KILL. The SIGKILL residual: a
+# worker still alive after ACCOUNT_KILL_GRACE dies without that cleanup, so
+# its CLI child is orphaned until it exits on its own and its lock files wait
+# for the step-4 sweep.
+#
+# The wrapper registers the worker itself (`$WORKER_DIR/<pid>`) before its
+# setsid, so the signal path can never miss one that was forked but not yet
+# registered; it refuses to start at all once the round lock is gone.
+SETSID_EXEC='use POSIX (); my $d = shift @ARGV; open(my $f, ">", "$d/$$") or die "register $d/$$: $!\n"; close $f; POSIX::setsid() != -1 or die "setsid: $!\n"; exec { $ARGV[0] } @ARGV or die "exec $ARGV[0]: $!\n"'
 run_one() {
-  local name="$1" rc=0 waited=0
-  caffeinate -i bash "$SCRIPT_DIR/cycle-one.sh" "$name" >>"$ROOT_DIR/logs/auto-run.log" 2>&1 &
-  local pid=$!
-  while kill -0 "$pid" 2>/dev/null; do
+  local name="$1" rc=0 waited=0 grace=0
+  perl -e "$SETSID_EXEC" "$WORKER_DIR" caffeinate -i bash "$SCRIPT_DIR/cycle-one.sh" "$name" \
+    >>"$ROOT_DIR/logs/auto-run.log" 2>&1 &
+  local pgid=$!
+  while kill -0 "$pgid" 2>/dev/null; do
     if [[ "$waited" -ge "$ACCOUNT_TIMEOUT" ]]; then
-      log "TIMEOUT $name after ${waited}s — killing pgid $pid"
-      kill -TERM "-$pid" 2>/dev/null; sleep 5; kill -KILL "-$pid" 2>/dev/null
-      wait "$pid" 2>/dev/null
+      if ! kill -TERM -- "-$pgid" 2>/dev/null; then
+        # It exited between the poll and the TERM: a finished worker, not a
+        # timeout -- report its own exit status.
+        wait "$pgid"; rc=$?
+        rm -f "$WORKER_DIR/$pgid"
+        return "$rc"
+      fi
+      log "TIMEOUT $name after ${waited}s — TERM pgid $pgid"
+      while group_alive "$pgid" && [[ "$grace" -lt "$ACCOUNT_KILL_GRACE" ]]; do
+        sleep 1; grace=$(( grace + 1 ))
+      done
+      if group_alive "$pgid"; then
+        log "TIMEOUT $name — pgid $pgid still alive after ${grace}s, KILL"
+        kill -KILL -- "-$pgid" 2>/dev/null
+      fi
+      wait "$pgid" 2>/dev/null
+      rm -f "$WORKER_DIR/$pgid"
       return 124
     fi
-    sleep 5; waited=$(( waited + 5 ))
+    sleep 1; waited=$(( waited + 1 ))
   done
-  wait "$pid"; rc=$?
+  wait "$pgid"; rc=$?
+  rm -f "$WORKER_DIR/$pgid"
   return "$rc"
 }
 
@@ -339,21 +456,17 @@ while [[ "$i" -lt "${#ACCOUNTS[@]}" ]]; do
       *)   bad=$(( bad + 1 )); log "rc=$rc ${names[$k]}" ;;
     esac
   done
+  pids=()
 done
-set +m
 
 # ── 8. teardown ──────────────────────────────────────────────────────────────
 if [[ "$owns_embedder" == "1" ]]; then
   bash "$SCRIPT_DIR/embedder-guard.sh" down >/dev/null 2>&1 && log "embedder stopped"
 fi
 
-# Sweep again: an accepted dream orphans its lock on the way out, and the next
+# Sweep again: a worker killed this round orphans its locks, and the next
 # round is two days away -- long enough to forget why an account went quiet.
-for f in "$STATE_DIR"/lock_* "$STATE_DIR"/dream_lock_*; do
-  [[ -e "$f" ]] || continue
-  pid=$(head -1 "$f" 2>/dev/null | tr -dc '0-9')
-  { [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; } && rm -f "$f"
-done
+sweep_dead_locks >/dev/null
 
 log "round done — ok=$ok failed=$bad timeout=$timedout"
 
@@ -370,9 +483,13 @@ if [[ "$AUTO_COMMIT" == "1" ]]; then
   if ! git ls-files --error-unmatch agent/archive/era-2/boundary.json >/dev/null 2>&1; then
     log "auto-commit skipped: Era 2 archive not committed yet"
   elif [[ -n "$(git status --porcelain -- agent/agents)" ]]; then
+    # The pathspec keeps this commit to the round's own output: without it,
+    # whatever the owner had staged elsewhere -- a half-done change, a
+    # deletion -- went into an unattended, --no-verify commit along with it.
     git add agent/agents
     git -c commit.gpgsign=false commit -q --no-verify -m \
       "chore(agent): unattended round $(date '+%Y-%m-%d %H:%M') — ok=$ok failed=$bad timeout=$timedout" \
+      -- agent/agents \
       && log "committed round output (not pushed)"
   fi
 fi

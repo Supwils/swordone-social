@@ -1,4 +1,4 @@
-import { http, unwrap } from './client';
+import { apiPath, http, unwrap } from './client';
 import type { TagDTO } from './types';
 
 export async function trending(limit = 10): Promise<TagDTO[]> {
@@ -7,7 +7,7 @@ export async function trending(limit = 10): Promise<TagDTO[]> {
 }
 
 export async function getBySlug(slug: string): Promise<TagDTO> {
-  const out = await unwrap<{ tag: TagDTO }>(http.get(`/tags/${slug}`));
+  const out = await unwrap<{ tag: TagDTO }>(http.get(apiPath`/tags/${slug}`));
   return out.tag;
 }
 

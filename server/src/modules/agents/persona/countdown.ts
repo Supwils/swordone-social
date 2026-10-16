@@ -60,7 +60,10 @@ import type { LabRange } from '../../../contract/lab/era';
 import { and, asc, eq, gte } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import { agentEvents } from '../../../db/schema';
-import { findAgentByUsername } from '../lab/shared';
+import { olsFit, olsResiduals } from '../../../lib/ols';
+import { finiteOrNull } from '../../../lib/numeric';
+import { findLabAccount } from '../lab/shared';
+import { calendarWindow } from '../lab/window';
 import type {
   DriftCountdownDTO,
   DriftCountdownKey,
@@ -187,7 +190,6 @@ const ROUND_INTERVAL_HOURS = 48;
 const MAX_EXTRAPOLATION = 3;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const RANGE_DAYS: Record<LabRange, number> = { '7d': 7, '30d': 30, '90d': 90 };
 
 /**
  * Which series the gate actually DECIDES with, per `DRIFT_MODE`. In `aspect`
@@ -215,8 +217,7 @@ function round6(x: number): number {
 }
 
 function numericMetric(metrics: Record<string, unknown>, key: string): number | null {
-  const value = metrics[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  return finiteOrNull(metrics[key]);
 }
 
 function readDriftMode(metrics: Record<string, unknown>): DriftMode | null {
@@ -288,23 +289,9 @@ function fitSeries(points: SeriesPoint[], threshold: number | null, asOfMs: numb
   const t0 = points[0].t;
   const xs = points.map((p) => (p.t - t0) / DAY_MS);
   const ys = points.map((p) => p.y);
-  const n = points.length;
-  const xBar = xs.reduce((a, b) => a + b, 0) / n;
-  const yBar = ys.reduce((a, b) => a + b, 0) / n;
-  let sxx = 0;
-  let sxy = 0;
-  for (let i = 0; i < n; i += 1) {
-    sxx += (xs[i] - xBar) ** 2;
-    sxy += (xs[i] - xBar) * (ys[i] - yBar);
-  }
-  const slope = round6(sxy / sxx);
-  const intercept = yBar - slope * xBar;
-  let ssRes = 0;
-  let ssTot = 0;
-  for (let i = 0; i < n; i += 1) {
-    ssRes += (ys[i] - (intercept + slope * xs[i])) ** 2;
-    ssTot += (ys[i] - yBar) ** 2;
-  }
+  const fit = olsFit(xs, ys);
+  const slope = round6(fit.slope);
+  const { intercept, ssRes, ssTot } = olsResiduals(xs, ys, fit, slope);
   // A perfectly flat series has no variance to explain. Reporting `1` says
   // "the line describes these points exactly", which it does; the slope of 0
   // beside it is what tells the reader nothing is moving.
@@ -405,16 +392,21 @@ function fitSeries(points: SeriesPoint[], threshold: number | null, asOfMs: numb
  * Per-account drift countdown over the uncensored measurement series.
  *
  * `asOf` is injectable so the projection has one reference instant for both
- * the window and the round arithmetic; production passes nothing and gets now.
+ * the window and the round arithmetic; production passes nothing and gets the
+ * account's seal (`archived_at`) or, for a live account, now. The window is the
+ * range's calendar days ending on `asOf`'s day (`lab/window.ts`).
  */
 export async function getDriftCountdown(
   username: string,
   range: LabRange = '30d',
-  asOf: Date = new Date(),
+  asOfArg?: Date,
 ): Promise<DriftCountdownDTO> {
-  const agent = await findAgentByUsername(username);
+  const agent = await findLabAccount(username);
+  // A sealed account's series ended at its seal, so that is "now" for it — a
+  // window ending today would slide off its data (S6 ruling 7).
+  const asOf = asOfArg ?? agent.archivedAt ?? new Date();
   const asOfMs = asOf.getTime();
-  const since = new Date(asOfMs - RANGE_DAYS[range] * DAY_MS);
+  const { since } = calendarWindow(range, asOf);
 
   const rows = await db
     .select({ createdAt: agentEvents.createdAt, metrics: agentEvents.metrics })

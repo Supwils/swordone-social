@@ -5,7 +5,7 @@ import { agentsRouter } from './agents.routes';
 import { createApp } from '../../app';
 import { db } from '../../db/client';
 import { resetDb } from '../../test/db-reset';
-import { agentEvents, apiKeys, users } from '../../db/schema';
+import { agentEvents, apiKeys, likes, posts, users } from '../../db/schema';
 import { clearRuntimeHealthCache } from './runtime/runtime';
 import { clearAlertsCache } from './population/pulse';
 
@@ -244,6 +244,27 @@ describe('POST /agents/:username/events — occurredAt over HTTP', () => {
       .send(body({ occurredAt: 'yesterday' }));
 
     expect(res.status).toBe(400);
+  });
+
+  it('refuses occurredAt on any type but anomaly — a cycle_run card cannot be backdated', async () => {
+    const key = await agentWithKey('zenith');
+
+    const res = await request(createApp())
+      .post('/api/v1/agents/zenith/events')
+      .set('Authorization', `Bearer ${key}`)
+      .send(
+        body({
+          type: 'cycle',
+          phase: 'act',
+          outcome: 'success',
+          metrics: { kind: 'cycle_run' },
+          occurredAt: OCCURRED_AT,
+        }),
+      );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.fields).toHaveProperty('occurredAt');
+    expect(await db.select().from(agentEvents)).toHaveLength(0);
   });
 
   it('refuses a nested metrics value — the defect that ran six weeks unseen', async () => {
@@ -693,5 +714,72 @@ describe('lab write ingest — first-party agents only', () => {
       .set('Authorization', `Bearer ${key}`)
       .send({});
     expect(res.status).toBe(403);
+  });
+});
+
+/**
+ * SA-F1 over HTTP: the per-account reads are public, so they answer only for an
+ * account that is openly in the experiment — an agent, or a sealed (archived)
+ * Era 2 participant. They used to serve any active human's cadence, likers and
+ * private-post lengths to anyone who knew the username.
+ */
+describe('per-account lab reads answer only for lab accounts', () => {
+  const READS = [
+    'stats',
+    'collapse',
+    'influences',
+    'rounds',
+    'drift',
+    'drift-countdown',
+    'fidelity',
+    'events',
+  ];
+
+  async function seedAccount(username: string, over: Partial<typeof users.$inferInsert> = {}) {
+    const [user] = await db
+      .insert(users)
+      .values({
+        username,
+        usernameDisplay: username,
+        email: `${username}@example.test`,
+        displayName: username,
+        ...over,
+      })
+      .returning();
+    return user;
+  }
+
+  beforeEach(resetDb);
+
+  it('404s an ordinary human — with a private post and a like to leak — on every read', async () => {
+    const human = await seedAccount('ordinaryhuman', { isAgent: false });
+    const peer = await seedAccount('somepeer', { isAgent: true });
+    const [secret] = await db
+      .insert(posts)
+      .values({ authorId: human.id, text: 'private thoughts', visibility: 'private' })
+      .returning();
+    await db.insert(likes).values({ userId: peer.id, targetType: 'post', targetId: secret.id });
+    const app = createApp();
+
+    const statuses = await Promise.all(
+      READS.map(async (r) => [
+        r,
+        (await request(app).get(`/api/v1/agents/ordinaryhuman/${r}`)).status,
+      ]),
+    );
+    expect(statuses).toEqual(READS.map((r) => [r, 404]));
+  });
+
+  it('serves an agent and a sealed Era 2 simulated human', async () => {
+    await seedAccount('labagent', { isAgent: true });
+    await seedAccount('sealedhuman', { isAgent: false, archivedAt: new Date() });
+    const app = createApp();
+
+    for (const name of ['labagent', 'sealedhuman']) {
+      const statuses = await Promise.all(
+        READS.map(async (r) => [r, (await request(app).get(`/api/v1/agents/${name}/${r}`)).status]),
+      );
+      expect(statuses).toEqual(READS.map((r) => [r, 200]));
+    }
   });
 });

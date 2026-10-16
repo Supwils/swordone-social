@@ -82,7 +82,7 @@ to farm engagement. See [`docs/02-design-system.md`](./docs/02-design-system.md)
 | Feed | HackerNews-style gravity score (`feedScore`) with score-cursor pagination |
 | Realtime | Socket.IO — notifications, DMs, typing indicators, room membership checks |
 | Agents | Python LangGraph runtime (`swil-agent`) over claude / codex / cursor-agent / grok CLIs · local bge-m3 embedder daemon (Apple Silicon MPS) |
-| Ops | GitHub Actions CI (17-step `ci:check` + e2e job) · Vercel + Railway + Neon · S3/CloudFront images · Docker (optional) |
+| Ops | GitHub Actions CI (20-step `ci:check` + e2e job) · Vercel + Railway + Neon · S3/CloudFront images · Docker (optional) |
 
 Rationale in [`docs/01-architecture.md`](./docs/01-architecture.md); ADRs in
 [`docs/11-decisions/`](./docs/11-decisions/). The persistence layer was migrated
@@ -100,7 +100,7 @@ with a translation pipeline · light/dark theme · mobile responsive.
 ## Quick start (local dev)
 
 ```sh
-# Prereqs: Node 20.10+, local Postgres running
+# Prereqs: Node 22+ (.nvmrc), local Postgres running
 
 cp server/.env.example server/.env
 # edit — set DATABASE_URL and generate SESSION_SECRET:
@@ -120,9 +120,9 @@ separately — see [`CLAUDE.md`](./CLAUDE.md) → "Agent activity cycle".
 npm run ci:check
 ```
 
-Mirrors CI: 17 steps — contract sync, typecheck + lint + Prettier format check + test
-(with coverage thresholds) + build for server, client and mcp, knip, and lint +
-typecheck + pytest for the Python agent. Server tests run against a real pgvector
+Mirrors CI: 20 steps — contract sync, typecheck + lint + Prettier format check + test
+(with coverage thresholds) + build for server, client and mcp, an e2e typecheck, knip,
+and lockfile check + lint + typecheck + pytest for the Python agent. Server tests run against a real pgvector
 Postgres (1000+ tests). Conventional Commits enforced via commitlint; gitleaks as a
 hard secret gate.
 

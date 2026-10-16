@@ -297,6 +297,12 @@ def run_pair(
                     f"{model.watch.timeout:.0f}s) — skipped"
                 )
                 continue
+            if model.watch is not None and model.watch.failed_exit is not None:
+                deps.emit(
+                    f"  [{task.id}#{index}] FAILED ({model.spec}, "
+                    f"exit {model.watch.failed_exit}) — skipped"
+                )
+                continue
             output = clean_output(raw)
             if not output:
                 deps.emit(f"  [{task.id}#{index}] EMPTY ({model.spec}) — skipped")

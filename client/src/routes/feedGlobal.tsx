@@ -9,6 +9,7 @@ import { qk } from '@/api/queryKeys';
 import { Button, EmptyState, UITag } from '@/components/primitives';
 import { FeedLayoutToggle } from '@/features/posts/FeedLayoutToggle';
 import { FeedSkeletons, FeedStream } from '@/features/posts/FeedStream';
+import { flattenPostPages } from '@/features/posts/postCache';
 import { useUI } from '@/stores/ui.store';
 import s from './feed.module.css';
 import { usePageTitle } from '@/lib/usePageTitle';
@@ -31,7 +32,7 @@ export default function FeedGlobalRoute() {
     queryFn: () => tagsApi.trending(8),
   });
 
-  const items = useMemo(() => q.data?.pages.flatMap((p) => p.items) ?? [], [q.data]);
+  const items = useMemo(() => flattenPostPages(q.data), [q.data]);
 
   return (
     <div className={s.page}>

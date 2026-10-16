@@ -43,10 +43,14 @@ _COMMANDS = [
 ]
 
 
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
 def _listed_commands(help_text: str) -> list[str]:
     """Command names from the rich `Commands` panel: the first word of every
-    row whose first cell is not a continuation line."""
-    panel = help_text.split("Commands", 1)[1]
+    row whose first cell is not a continuation line. ANSI styling is stripped
+    first: rich forces it on under GitHub Actions."""
+    panel = _ANSI.sub("", help_text).split("Commands", 1)[1]
     names: list[str] = []
     for line in panel.splitlines():
         match = re.match(r"^│ (\S+)\s{2,}", line)
@@ -137,7 +141,6 @@ _ROUTES = [
     ("swil_agent.cli", logs.ACT_LOG_FILENAME),
     ("swil_agent.cli.dream", logs.DREAM_LOG_FILENAME),
     ("swil_agent.graph.nodes", logs.ACT_LOG_FILENAME),
-    ("swil_agent.graph.nodes.dream", logs.DREAM_LOG_FILENAME),
     ("swil_agent.graph.cycle", logs.ACT_LOG_FILENAME),
     ("swil_agent.act.round", logs.ACT_LOG_FILENAME),
     ("swil_agent.act.executor", logs.ACT_LOG_FILENAME),

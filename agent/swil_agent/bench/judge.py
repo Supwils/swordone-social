@@ -1,21 +1,29 @@
 """The bench's LLM judge: a 0-100 "how on-character is this" score.
 
-**The argv is `benchmark-run.sh:125`'s, exactly** (S3 §12.19):
+**The argv is `benchmark-run.sh:125`'s plus the isolation flags** (S3
+§12.19; isolation 2026-10-15):
 
-    claude --model <judge-model> -p --tools "" --output-format text
+    claude --model <judge-model> -p --tools "" --strict-mcp-config
+        --setting-sources "" --disable-slash-commands --no-session-persistence
+        --effort xhigh --output-format text
 
-with the prompt on stdin and NO `--system-prompt`. That is why this is a
-dedicated call over the `Runner` and not `ClaudeCLIBackend`, which always
-sends `--system-prompt` -- and an explicit system prompt, even an empty one,
-replaces Claude Code's default, so every score after the port would stop being
-one series with the scores before it.
+with the prompt on stdin, cwd a fresh empty temp directory, and NO
+`--system-prompt`. That is why this is a dedicated call over the `Runner` and
+not `ClaudeCLIBackend`, which always sends `--system-prompt` -- and an explicit
+system prompt, even an empty one, replaces Claude Code's default, so every
+score after the port would stop being one series with the scores before it.
+(Scores before 2026-10-15 were graded with the operator's hooks, plugins, MCP
+servers and CLAUDE.md in context; see `docs/13-observation-lab.md`.)
 
-**Two invariants, each pinned by a test:**
+**Three invariants, each pinned by a test:**
 
   * `--tools ""` -- the judge scores text; it has no business writing files.
     Without the flag `claude -p` is the full agent with Write/Edit/Bash and,
     from this repo's cwd, no permission prompt (the 2026-08-19 incident that
     `llm/backends/claude.py` documents).
+  * `CLAUDE_ISOLATION_FLAGS` + a temp cwd -- the judge sees the prompt and
+    nothing of the operator's configuration (same comment). `--effort` pins
+    the effort the settings file used to supply (`claude_effort`).
   * **The judge always reaches real Anthropic.** It must not be routed
     through the backend under test -- DeepSeek would grade DeepSeek's own
     output -- and it must not inherit a DeepSeek-configured shell either. So
@@ -29,7 +37,9 @@ import logging
 import re
 from typing import Final
 
+from swil_agent.llm.backends.claude import CLAUDE_ISOLATION_FLAGS, claude_effort
 from swil_agent.llm.errors import BackendBinaryMissingError
+from swil_agent.llm.isolation import isolated_cwd
 from swil_agent.llm.runner import DEFAULT_TIMEOUT, StatusRunner
 
 logger = logging.getLogger(__name__)
@@ -63,7 +73,19 @@ def judge_prompt(reference: str, output: str) -> str:
 
 
 def judge_argv(model: str) -> list[str]:
-    return ["claude", "--model", model, "-p", "--tools", "", "--output-format", "text"]
+    return [
+        "claude",
+        "--model",
+        model,
+        "-p",
+        "--tools",
+        "",
+        *CLAUDE_ISOLATION_FLAGS,
+        "--effort",
+        claude_effort(model),
+        "--output-format",
+        "text",
+    ]
 
 
 def judge_env() -> dict[str, str]:
@@ -101,12 +123,14 @@ class Judge:
         binary, a non-zero exit, a timeout), the answer has no integer, or
         the integer is over 100."""
         try:
-            result = self._runner.run_result(
-                judge_argv(self.model),
-                stdin=judge_prompt(reference, output),
-                env=judge_env(),
-                timeout=DEFAULT_TIMEOUT,
-            )
+            with isolated_cwd() as cwd:
+                result = self._runner.run_result(
+                    judge_argv(self.model),
+                    stdin=judge_prompt(reference, output),
+                    env=judge_env(),
+                    timeout=DEFAULT_TIMEOUT,
+                    cwd=cwd,
+                )
         except BackendBinaryMissingError as exc:
             logger.warning("WARN judge: %s -- judgeScore is null", exc)
             return None

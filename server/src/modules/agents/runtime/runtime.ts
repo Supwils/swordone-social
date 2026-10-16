@@ -9,7 +9,9 @@ import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import { agentEvents, users } from '../../../db/schema';
 import { TTLCache } from '../../../lib/ttlCache';
-import { dayBuckets, isoDay } from '../lab/shared';
+import { finiteOr } from '../../../lib/numeric';
+import { isoDay } from '../lab/shared';
+import { labWindow, windowDayKeys } from '../lab/window';
 import type { RuntimeHealthDTO, RuntimeHealthPointDTO } from '../../../contract/lab/runtime';
 import { eraCondition, type LabEra } from '../lab/era';
 
@@ -31,18 +33,12 @@ function isTrue(value: unknown): boolean {
   return value === true;
 }
 
-function asFiniteNumber(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
-
 async function computeRuntimeHealth(range: LabRange, era: LabEra): Promise<RuntimeHealthDTO> {
-  const { since } = dayBuckets(range);
+  const window = await labWindow(range, era);
+  const { since } = window;
 
   const byDay = new Map<string, RuntimeHealthPointDTO>();
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  for (let d = new Date(since); d <= today; d.setUTCDate(d.getUTCDate() + 1)) {
-    const key = isoDay(d);
+  for (const key of windowDayKeys(window)) {
     byDay.set(key, {
       date: key,
       rounds: 0,
@@ -86,7 +82,7 @@ async function computeRuntimeHealth(range: LabRange, era: LabEra): Promise<Runti
     // "not missing", so older rows still count and newer ones are not penalised.
     const failOpen = metrics.gateStatus === 'fail_open';
     const missing = isTrue(metrics.missingBehaviorSnapshot) || isTrue(metrics.missingRuleCheck);
-    const landed = asFiniteNumber(metrics.landed);
+    const landed = finiteOr(metrics.landed, 0);
     // Era 3 act path: a post landed but its vector did not (embedder down).
     const missingVector = isTrue(metrics.missingPostVector);
     if (failOpen) failOpenGates += 1;

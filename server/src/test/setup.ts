@@ -4,15 +4,17 @@ import { bindSupertestToLoopback } from './loopback';
  * Vitest setup — provides safe defaults for env vars that env.ts validates
  * at import time, so unit tests can run without a .env file (e.g. in CI).
  *
- * Real values from a local .env still win — these are fallbacks only.
+ * Values exported in the shell win — these are fallbacks only (server/.env is
+ * not loaded here). global-setup refuses any DATABASE_URL that is not a
+ * disposable local test database.
  *
  * IMPORTANT: this file is wired via `setupFiles` in vitest.config.ts. It runs
  * BEFORE each test file imports its modules, so env.ts sees these defaults
  * when its top-level `safeParse(process.env)` runs.
  */
 
-// Use ?? so any value already set in the environment (e.g. from a developer's
-// .env or a real CI secret) takes precedence.
+// Use ?? so any value already set in the environment (e.g. exported by the
+// shell or set by CI) takes precedence.
 process.env.NODE_ENV ??= 'test';
 // Derived from the OS user (the default role for a `brew install postgresql`
 // setup) rather than hardcoded — this used to name one maintainer, so every

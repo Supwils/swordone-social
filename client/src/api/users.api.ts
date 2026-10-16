@@ -1,8 +1,8 @@
-import { http, unwrap } from './client';
+import { apiPath, http, unwrap } from './client';
 import type { UserDTO, UserLiteDTO, UserPreferences } from './types';
 
 export async function getByUsername(username: string): Promise<UserDTO> {
-  const out = await unwrap<{ user: UserDTO }>(http.get(`/users/${username}`));
+  const out = await unwrap<{ user: UserDTO }>(http.get(apiPath`/users/${username}`));
   return out.user;
 }
 

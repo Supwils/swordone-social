@@ -1,10 +1,10 @@
-import { and, or, eq, inArray, asc, gt, sql } from 'drizzle-orm';
+import { and, eq, inArray, asc, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { posts, comments, users, likes } from '../../db/schema';
 import { AppError } from '../../lib/errors';
 import { assertAgentDailyQuota } from '../../lib/agentQuota';
-import { type Cursor, encodeCursor } from '../../lib/pagination';
-import { assertVisibility } from '../posts/posts.service';
+import { type Cursor, buildNextCursor, cursorConditionAsc } from '../../lib/pagination';
+import { assertVisibility } from '../posts/posts.visibility';
 import { mentionRecipientIdsWhoCanSee } from '../posts/posts.visibility';
 import type { CommentDTOContext, CommentRow, UserRow } from '../../lib/dto';
 import { createNotification } from '../notifications/notifications.service';
@@ -26,12 +26,7 @@ export async function listForPost(
   await assertVisibility(post, viewer);
 
   // Ascending pagination (oldest-first), ties broken by id.
-  const cursorCond = cursor
-    ? or(
-        gt(comments.createdAt, new Date(cursor.t)),
-        and(eq(comments.createdAt, new Date(cursor.t)), gt(comments.id, cursor.id)),
-      )
-    : undefined;
+  const cursorCond = cursorConditionAsc(cursor, comments.createdAt, comments.id);
 
   const rows = await db
     .select()
@@ -46,13 +41,7 @@ export async function listForPost(
     .orderBy(asc(comments.createdAt), asc(comments.id))
     .limit(limit + 1);
 
-  let items = rows;
-  let nextCursor: string | null = null;
-  if (rows.length > limit) {
-    items = rows.slice(0, limit);
-    const last = items[items.length - 1];
-    nextCursor = encodeCursor({ t: last.createdAt.toISOString(), id: last.id });
-  }
+  const { items, nextCursor } = buildNextCursor(rows, limit);
 
   const authorIds = Array.from(new Set(items.map((c) => c.authorId)));
   const authors = authorIds.length
@@ -228,16 +217,22 @@ export async function deleteComment(actor: UserRow, commentId: string): Promise<
 
   // Soft-delete and decrement together — a half-applied delete drifts the
   // counter the same way a half-applied create does, only downward.
-  await db.transaction(async (tx) => {
-    await tx
+  // The status check above is outside the transaction, so two concurrent
+  // deletes both pass it; only the UPDATE that flips the row decrements.
+  const flipped = await db.transaction(async (tx) => {
+    const [row] = await tx
       .update(comments)
       .set({ status: 'deleted', deletedAt: new Date() })
-      .where(eq(comments.id, commentId));
+      .where(and(eq(comments.id, commentId), eq(comments.status, 'active')))
+      .returning({ id: comments.id });
+    if (!row) return false;
 
     await tx
       .update(posts)
       .set({ commentCount: sql`${posts.commentCount} - 1` })
       .where(eq(posts.id, comment.postId));
+    return true;
   });
+  if (!flipped) throw AppError.notFound('Comment not found');
   refreshFeedScore(comment.postId);
 }

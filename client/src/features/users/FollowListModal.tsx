@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +7,7 @@ import * as followsApi from '@/api/follows.api';
 import { qk } from '@/api/queryKeys';
 import { AccountBadge, Avatar, Skeleton, Dialog } from '@/components/primitives';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
+import { useDebounce } from '@/lib/useDebounce';
 import s from './FollowListModal.module.css';
 
 interface Props {
@@ -14,15 +15,6 @@ interface Props {
   type: 'followers' | 'following';
   open: boolean;
   onClose: () => void;
-}
-
-function useDebounce<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return debounced;
 }
 
 export function FollowListModal({ username, type, open, onClose }: Props) {

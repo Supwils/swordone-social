@@ -25,6 +25,7 @@ from swil_agent.persona.format import (
     render_persona,
 )
 from swil_agent.persona.loader import load_persona, resolve_agent_dir
+from swil_agent.persona.validators import validate_persona_text
 
 FRONTMATTER = """---
 username: xiaoman
@@ -281,6 +282,30 @@ def test_load_rejects_an_empty_model_backend(tmp_path: Path) -> None:
     text = VALID.replace("model: claude:claude-haiku-5-5", "model: ':x'")
     with pytest.raises(PersonaFormatError, match="model"):
         load_persona(_write(tmp_path, "xiaoman", text))
+
+
+@pytest.mark.parametrize("backend", ["haiku", "gork", "xai", "claude-code"])
+def test_load_rejects_an_unknown_model_backend(tmp_path: Path, backend: str) -> None:
+    """S6 AG-F13: an unknown backend used to run the account on claude."""
+    text = VALID.replace("model: claude:claude-haiku-5-5", f"model: {backend}:some-model")
+    with pytest.raises(PersonaFormatError, match=f"backend '{backend}' is not one of"):
+        load_persona(_write(tmp_path, "xiaoman", text))
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "codex:gpt-5.6-luna",
+        "grok:grok-4.6",
+        "cursor:gemini-3.7-flash-high",
+        "claude:claude-opus-5-5",
+        "claude:claude-haiku-5-5",
+    ],
+)
+def test_every_era_3_arm_spelling_is_a_known_backend(tmp_path: Path, model: str) -> None:
+    text = VALID.replace("model: claude:claude-haiku-5-5", f"model: {model}")
+    assert validate_persona_text(text) == []
+    assert load_persona(_write(tmp_path, "xiaoman", text)).model == model.split(":", 1)[1]
 
 
 def test_load_accepts_a_card_of_exactly_600_code_points(tmp_path: Path) -> None:

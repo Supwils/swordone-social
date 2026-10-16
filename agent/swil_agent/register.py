@@ -37,6 +37,7 @@ import httpx
 from swil_agent.act.round import sync_backend_step
 from swil_agent.api.auth import ApiKeyAuth, PasswordAuth
 from swil_agent.api.client import ApiClient, ApiError
+from swil_agent.api.paths import username_segment
 from swil_agent.api.resources import Resources, WriteNotVerifiedError
 from swil_agent.config import Settings
 from swil_agent.dream.round import build_snapshot_payload
@@ -95,7 +96,7 @@ def _write_key(path: Path, key: str) -> None:
 
 def _user_exists(client: ApiClient, username: str) -> bool:
     try:
-        client.get(f"/users/{username}")
+        client.get(f"/users/{username_segment(username)}")
     except ApiError as exc:
         if exc.status == 404:
             return False

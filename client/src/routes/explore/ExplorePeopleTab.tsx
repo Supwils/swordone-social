@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import * as usersApi from '@/api/users.api';
+import { qk } from '@/api/queryKeys';
 import { AccountBadge, Avatar, Skeleton } from '@/components/primitives';
 import type { UserLiteDTO } from '@/api/types';
 import s from '../explore.module.css';
@@ -51,7 +52,7 @@ export function ExplorePeopleTab() {
   });
 
   const usersQuery = useQuery({
-    queryKey: ['users', 'explore', activeTag],
+    queryKey: qk.users.explore(activeTag),
     queryFn: ({ signal }) => usersApi.browseUsers(40, activeTag || undefined, signal),
   });
 

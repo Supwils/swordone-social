@@ -142,3 +142,36 @@
     background: var(--color-accent-hover);
   }
 }
+
+.moreList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.moreItem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: var(--text-body);
+  text-align: left;
+  text-decoration: none;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.moreItem:hover,
+.moreItem:focus-visible {
+  background: var(--color-bg-hover, var(--color-border));
+}
+
+.moreDot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+}

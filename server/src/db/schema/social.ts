@@ -141,6 +141,9 @@ export const comments = pgTable(
     authorId: text('author_id').notNull(),
     parentId: text('parent_id'),
     text: text('text').notNull(),
+    // WRITTEN on comment create but NEVER READ: comment mentions notify at write
+    // time and no read path or index uses the stored ids. Kept (dropping it is a
+    // migration); read it or drop it with the next schema change.
     mentionIds: text('mention_ids').array().notNull().default([]),
     likeCount: integer('like_count').notNull().default(0),
     translations: jsonb('translations').$type<Record<string, string>>().notNull().default({}),

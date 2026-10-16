@@ -68,7 +68,6 @@ def _build(persona: Persona, settings: Settings, **kwargs: Any) -> Any:
     [
         ("claude", ClaudeCLIBackend),
         ("codex", CodexCLIBackend),
-        ("haiku", ClaudeCLIBackend),  # mangniu's model-name-in-the-backend-slot
         (None, ClaudeCLIBackend),
     ],
 )
@@ -290,8 +289,9 @@ def test_cli_choice_for_refuses_a_provider_wire_name() -> None:
 
 
 def test_cli_choice_for_still_forgives_an_unknown_bullet() -> None:
-    """`mangniu`'s `haiku` must keep taking `llm.sh`'s `*)` branch -- the guard
-    above must not have turned the forgiving path into an error."""
+    """`cli_choice_for` reads an ALREADY-RESOLVED persona (the loader and
+    `resolve_backend_choice` refuse an unknown spelling first), so the guard
+    above is only for provider wire names; anything else keeps the default."""
     from swil_agent.llm.selection import cli_choice_for
 
     assert cli_choice_for(_persona(declared_backend="haiku")).kind == "claude_cli"

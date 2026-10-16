@@ -1,21 +1,32 @@
 """Typed settings for the agent runtime.
 
-Precedence deliberately matches the Bash runtime: `agent/.env` is sourced with
-`set -a` after the caller's environment, so the FILE WINS over process env.
-This is the opposite of pydantic-settings' default, hence the explicit
-`settings_customise_sources` override below.
+One precedence, everywhere: an explicit constructor argument, then the PROCESS
+environment, then `agent/.env`, then the field default (pydantic-settings' own
+order). The caller's export wins, so `SWIL_URL=http://localhost:8899
+swil-agent cycle ...` really goes to localhost. `opportunistic-round.sh`
+sources `.env` into the environment and then restores only SWIL_URL,
+EMBEDDER_URL, ROUND_MIN_INTERVAL_HOURS, PARALLEL, ACCOUNT_TIMEOUT,
+ACCOUNT_KILL_GRACE, ALLOW_BATTERY and AUTO_COMMIT from the caller, so for other
+keys `.env` wins inside a round; the workers see the URL its own checks used.
+`SWIL_ROUND_ID` is process-only: see `load_settings`.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
 
 from pydantic import Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _AGENT_ROOT = Path(__file__).resolve().parent.parent
+
+logger = logging.getLogger(__name__)
+
+_FLAG_ON = frozenset({"1", "true", "yes", "on"})
+_FLAG_OFF = frozenset({"", "0", "false", "no", "off"})
 
 
 class Settings(BaseSettings):
@@ -58,6 +69,11 @@ class Settings(BaseSettings):
     # value from the `.env` file (see there). Validated where it is used
     # (`round_id.py`): an invalid value falls back to a manual id, never fails.
     swil_round_id: str | None = None
+
+    # `SWIL_REQUIRE_NON_PROD=1`: `cycle`/`act` refuse the production host unless
+    # `--i-mean-production` (`policy.refuse_production_writes`). Empty, `0`,
+    # `false`, `no` and `off` (any case) are off; any other value is ON.
+    swil_require_non_prod: bool = False
 
     # ── LLM backend selection ────────────────────────────────────────────
     #
@@ -118,35 +134,37 @@ class Settings(BaseSettings):
             return None
         return v
 
+    @field_validator("swil_require_non_prod", mode="before")
+    @classmethod
+    def _truthy_flag(cls, v: object) -> object:
+        """A safety flag never fails settings validation, and an unrecognised
+        spelling fails SAFE: `SWIL_REQUIRE_NON_PROD=maybe` is ON, with one
+        WARNING, because someone who set it meant something by it."""
+        if not isinstance(v, str):
+            return v
+        word = v.strip().lower()
+        if word in _FLAG_OFF:
+            return False
+        if word not in _FLAG_ON:
+            logger.warning(
+                "SWIL_REQUIRE_NON_PROD=%r is not one of %s / %s -- treating it as ON",
+                v,
+                "/".join(sorted(_FLAG_ON)),
+                "/".join(sorted(w for w in _FLAG_OFF if w)),
+            )
+        return True
+
     @field_validator("swil_url", "embedder_url")
     @classmethod
     def _strip_trailing_slash(cls, v: str) -> str:
         return v.rstrip("/")
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        # dotenv BEFORE env: the file wins, matching `set -a && . agent/.env`.
-        # Sources earlier in the tuple take precedence over later ones, so
-        # placing dotenv_settings ahead of env_settings makes a key present in
-        # the .env file win over the same key in the process environment,
-        # while a key absent from the file still falls through to env_settings
-        # (process env) and finally to the field defaults.
-        return (init_settings, dotenv_settings, env_settings, file_secret_settings)
 
 
 def load_settings(env_file: Path | None = None) -> Settings:
     path = env_file if env_file is not None else _AGENT_ROOT / ".env"
     settings = Settings(_env_file=path)
     # `SWIL_ROUND_ID` is per-process: the round script mints one per sweep. In
-    # `.env` it would be permanently stale and, the file winning over process
-    # env, would outrank the sweep's own export -- so it is read from the
-    # process env alone.
+    # `.env` it would be permanently stale and would label every manual cycle
+    # with an old sweep's id -- so it is read from the process env alone.
     raw = os.environ.get("SWIL_ROUND_ID", "").strip()
     return settings.model_copy(update={"swil_round_id": raw or None})

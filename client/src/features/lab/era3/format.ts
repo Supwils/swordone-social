@@ -1,26 +1,9 @@
 /** Pure helpers for the Era 3 dashboard: number formatting, chart rows, verdict wording. */
 import type { ArmId, MetricBlock, Verdict } from '@/features/lab/types';
+import { finite, fmtNum, fmtPct } from '../format';
 import { ARM_IDS } from './armColors';
 
-const DASH = '—';
-
-const finite = (v: number | null | undefined): v is number =>
-  typeof v === 'number' && Number.isFinite(v);
-
-/** Similarities, slopes and SDs: 3 decimals. */
-export function fmtNum(v: number | null | undefined, digits = 3): string {
-  return finite(v) ? v.toFixed(digits) : DASH;
-}
-
-/** Shares and rates: a percentage with one decimal. */
-export function fmtPct(v: number | null | undefined): string {
-  return finite(v) ? `${(v * 100).toFixed(1)}%` : DASH;
-}
-
-/** Observed ÷ expected. */
-export function fmtRatio(v: number | null | undefined): string {
-  return finite(v) ? `${v.toFixed(2)}×` : DASH;
-}
+export { fmtNum, fmtPct, fmtRatio } from '../format';
 
 /** (b) is a share of candidates; (a) and (c) are similarities and their slopes. */
 export function metricFormat(key: MetricBlock['key']): (v: number | null | undefined) => string {

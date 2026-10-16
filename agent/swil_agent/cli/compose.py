@@ -60,8 +60,7 @@ from swil_agent.config import load_settings as load_settings
 from swil_agent.dream.candidate import DreamState, FilesystemDreamState
 from swil_agent.embedder.client import EmbedderClient, EmbedderUnavailable
 from swil_agent.embedder.guard import EmbedderGuard
-from swil_agent.graph.deps import CycleDeps, agent_dir_name
-from swil_agent.graph.run import FinishDeps
+from swil_agent.graph.deps import CycleDeps, FinishDeps, agent_dir_name
 from swil_agent.llm.errors import BackendConfigurationError
 from swil_agent.llm.protocol import Backend
 from swil_agent.llm.remedy import backend_setup_remedy
@@ -455,17 +454,14 @@ def act_deps_for(
     would re-authenticate an account on the `SWIL_PASS` fallback), one
     `Runner` and ONE `now`, so the world-context block and the round's own
     `today` cannot disagree. An `EmbedderClient` goes with it for the
-    duplicate guard's sample -- with NO `probe_embedder` call and no
-    `EmbedderGuard` bracket. The sample feeds the enforcing duplicate guard
-    (>= 0.92 drops the post) and fails open when the daemon is down; a
-    standalone `act` brackets no guard (the round always runs `cycle`, which
-    does), so a down daemon costs one WARN and one `outcome="skip"` row.
+    enforcing duplicate guard's sample (fail-open) -- with NO
+    `probe_embedder` call and no `EmbedderGuard` bracket: the round always
+    runs `cycle`, which brackets one.
 
-    The second half, `finish`, reads `memory.md` and renders the world
-    context and the follow-topics feed. `run_graph` calls it AFTER the act
-    lease is held (`finish_deps`), so an account another run holds costs no
-    feed or search reads and no `news-fetch.sh` (S3 §12.2(f)), and the memory
-    snapshot cannot race that run's appends.
+    The second half, `finish` (`_world_context_finish`), reads `memory.md`
+    and renders the world context and the follow-topics feed AFTER the act
+    lease is held (`run_graph`'s `finish_deps`): an account another run
+    holds costs no reads and no `news-fetch.sh` (S3 §12.2(f)).
     """
     persona, backend = select_backend(
         persona, settings, backend_override=backend_override, model_override=model_override
@@ -492,6 +488,25 @@ def act_deps_for(
         now=round_now,
         probe_board=probe_board,
     )
+    return PhaseDeps(
+        persona,
+        deps,
+        _world_context_finish(persona, persona_source, settings, resources, runner, round_now),
+    )
+
+
+def _world_context_finish(
+    persona: Persona,
+    persona_source: PersonaSource,
+    settings: Settings,
+    resources: Resources,
+    runner: Runner,
+    round_now: datetime,
+) -> FinishDeps:
+    """The reads `act` and `cycle` defer until their lease is held --
+    `memory.md`, the world context (runs `news-fetch.sh`), the follow-topics
+    feed -- in ONE order for both, over the deps' own `Resources`, `Runner`
+    and frozen `now`: the prompt bytes depend on all three."""
 
     def finish(base: CycleDeps) -> CycleDeps:
         return replace(
@@ -503,7 +518,7 @@ def act_deps_for(
             ),
         )
 
-    return PhaseDeps(persona, deps, finish)
+    return finish
 
 
 def cycle_deps_for(
@@ -542,14 +557,17 @@ def cycle_deps_for(
     `EmbedderGuard.up()` cannot fail loudly (R10). **Except under `dry_run`**:
     a shadow round never dreams or uploads a snapshot, so probing would only
     emit one ERROR per account into `dream.log` for work that does not run.
+
+    The memory / world-context / feed reads are `_world_context_finish`, run
+    by `run_cycle` after BOTH leases are held (as `act_deps_for`'s are).
     """
     embedder = embedder_for(settings)
     if not dry_run:
         probe_embedder(embedder, settings)
     # Hoisted out of the `CycleDeps(...)` call because the world-context
-    # renderers below need the SAME three: one `Resources` (a second one would
-    # re-run `PasswordAuth.login` for an account without an api_key.txt), one
-    # `Runner`, and the one `now` this cycle is frozen at.
+    # renderers in `finish` need the SAME three: one `Resources` (a second one
+    # would re-run `PasswordAuth.login` for an account without an
+    # api_key.txt), one `Runner`, and the one `now` this cycle is frozen at.
     resources = resources_for(persona, settings)
     runner = runner_for(settings)
     round_now = now()
@@ -562,15 +580,11 @@ def cycle_deps_for(
         settings=settings,
         agent_root=settings.agent_root,
         health_check=lambda: health_check(settings),
-        memory_text=persona_source.read_memory(agent_dir_name(persona)),
+        memory_text="",
         # `persona` is `select_backend`'s resolved copy, the one `backend`
         # was built from -- so these are what ran, not what the file says.
         llm_backend=persona.backend,
         llm_model=persona.model,
-        context_now=context_now_for(resources, persona, settings, now=round_now, runner=runner),
-        feed_context=feed_context_for(
-            resources, persona, now=round_now, era_start=settings.era_start
-        ),
         budget=budget,
         access_key=settings.unsplash_access_key,
         dry_run=dry_run,
@@ -579,4 +593,8 @@ def cycle_deps_for(
         now=round_now,
         captured_at=now(UTC),
     )
-    return PhaseDeps(persona, deps)
+    return PhaseDeps(
+        persona,
+        deps,
+        _world_context_finish(persona, persona_source, settings, resources, runner, round_now),
+    )

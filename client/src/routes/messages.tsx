@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import * as messagesApi from '@/api/messages.api';
-import * as usersApi from '@/api/users.api';
 import { qk } from '@/api/queryKeys';
 import { useSession } from '@/stores/session.store';
 import { Avatar, EmptyState, ConversationSkeleton } from '@/components/primitives';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import { formatRelative } from '@/lib/formatDate';
 import type { ApiError, ConversationDTO, UserLiteDTO } from '@/api/types';
+import { useUserSearch } from '@/features/users/useUserSearch';
 import s from './messages.module.css';
 import { usePageTitle } from '@/lib/usePageTitle';
 
@@ -94,13 +94,7 @@ function UserSearchCompose({
 
   const trimmed = query.trim();
 
-  const search = useQuery({
-    queryKey: qk.users.search(trimmed),
-    queryFn: ({ signal }) => usersApi.searchUsers(trimmed, signal),
-    enabled: trimmed.length >= 1,
-    staleTime: 15_000,
-    placeholderData: (prev) => prev,
-  });
+  const search = useUserSearch(trimmed, { staleTime: 15_000, keepPrevious: true });
 
   const results: UserLiteDTO[] = search.data ?? [];
 

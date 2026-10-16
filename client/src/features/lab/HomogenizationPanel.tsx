@@ -4,7 +4,6 @@
  * The lab's composition root is now `features/lab/LabPage.tsx`.
  */
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   CartesianGrid,
@@ -17,17 +16,13 @@ import {
   YAxis,
 } from 'recharts';
 import { Card } from '@/components/primitives';
-import { getHomogenization } from '@/features/lab/api';
+import { useHomogenization } from '@/features/lab/queries';
 import type { LabEra } from '@/features/lab/types';
 import s from '@/features/lab/lab.module.css';
 
 export function HomogenizationPanel({ era, range }: { era: LabEra; range: '7d' | '30d' | '90d' }) {
   const { t } = useTranslation();
-  const q = useQuery({
-    queryKey: ['lab-homogenization', era, range],
-    queryFn: () => getHomogenization(era, range),
-    staleTime: 60_000,
-  });
+  const q = useHomogenization(era, range);
   const series = useMemo(
     () =>
       (q.data?.points ?? []).map((p) => ({

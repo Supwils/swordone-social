@@ -1,30 +1,52 @@
 """Per-account lock files under `agent/.agent-state/`.
 
 A lock file is the cheap guard that works without the SQLite run-lease row:
-creation is atomic (`O_EXCL`) and a file older than 1800s is stale and
-reclaimed. The design spec §7.3 adds the lease row, which expires a dead
-run's claim where a dead run's lock file would not.
+creation is atomic (`O_EXCL`), and a held file is reclaimed when it is
+**stale**: its line-1 pid is a process that no longer exists, or its mtime is
+older than 1800s (the backstop for a pid the system handed to someone else).
+The dead-pid rule is what lets a crashed run's account run again on the next
+round instead of 30 minutes later; `RunLease`'s row reclaim (`locks/lease.py`)
+is only reachable once the file half has been won, so the file has to apply
+the same rule itself.
+
+**Reclaim has one winner.** An unlink-then-create reclaim lets a second
+process that judged the SAME stale file unlink the first one's brand-new lock
+and create its own: two holders. Here a reclaimer first takes an exclusive,
+non-blocking `flock` on a hidden guard file next to the lock
+(`.<name>.reclaim`, kept, never unlinked; the kernel drops the flock when its
+holder dies, so a crashed reclaimer strands nothing). Under it, the lock file
+must still be byte-for-byte (content and mtime) the file judged stale;
+it is then renamed to a unique hidden tombstone (`.<name>.reclaim-<uuid>`),
+checked once more, and deleted. Only then does the reclaimer race for the path
+with `O_EXCL`, where exactly one create wins. A file that changed in between
+(a new holder, or the old holder's heartbeat) is put back with `os.link`,
+which never overwrites. The hidden names sit outside the round script's
+`lock_*` / `dream_lock_*` sweep.
 
 **The on-disk format is one or two lines.** Line 1 is the holder's pid and
-nothing else, plus a newline, because
-`cat`-ing a stale lock during an incident is how an operator finds the
-process (the CLI's own LeaseBusy remedy tells them to do exactly that). Line 2
-is OPTIONAL and carries an `identity` token supplied by the caller -- a value
-unique to *this acquisition*, so a holder can later tell its own file apart
-from a replacement created at the same path after its lock was reclaimed as
-stale. `read_lock_identity` is the reader.
+nothing else, plus a newline, because `opportunistic-round.sh` sweeps a file
+whose `head -1` pid is dead, and `cat`-ing a lock during an incident is how an
+operator finds the process. Line 2 is OPTIONAL and carries an `identity` token
+supplied by the caller -- a value unique to *this acquisition*, so a holder can
+later tell its own file apart from a replacement created at the same path
+after its lock was reclaimed. `read_lock_identity` is the reader.
 
-Staleness is decided from the file's **mtime** alone and release is
-`rm -f`, so the optional second line is informational: what holders share is
-the path, the mtime, and the file's existence.
+A line 1 that is not a pid (empty, or not digits) is never read as dead: an
+empty file is what a winner's lock looks like in the instant between its
+`O_EXCL` create and its write, and stealing it there would be a double hold.
+Such a file falls back to the mtime rule.
 """
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import os
 import time
+import uuid
 from pathlib import Path
 from types import TracebackType
+from typing import NamedTuple
 
 STALE_AFTER_SECONDS = 1800
 
@@ -32,10 +54,48 @@ STALE_AFTER_SECONDS = 1800
 class LockBusy(RuntimeError):  # noqa: N818 -- mandated name, see task-2-brief.md interfaces
     """Another run holds this lock and it is not stale yet."""
 
-    def __init__(self, path: Path, age_seconds: int) -> None:
-        super().__init__(f"{path.name} held ({age_seconds}s)")
+    def __init__(self, path: Path, age_seconds: int, detail: str | None = None) -> None:
+        suffix = "" if detail is None else f"; reclaim failed: {detail}"
+        super().__init__(f"{path.name} held ({age_seconds}s){suffix}")
         self.path = path
         self.age_seconds = age_seconds
+        self.detail = detail
+
+
+class _Seen(NamedTuple):
+    """What a lock file looked like: enough to tell it from any later file."""
+
+    mtime: float
+    content: bytes
+
+
+def _inspect(path: Path) -> _Seen | None:
+    """`path`'s mtime and bytes, or `None` if it is gone. Other `OSError`s
+    propagate."""
+    try:
+        mtime = path.stat().st_mtime
+        content = path.read_bytes()
+    except FileNotFoundError:
+        return None
+    return _Seen(mtime, content)
+
+
+def _holder_is_dead(content: bytes) -> bool:
+    """Is line 1 a pid that names no process on this host?
+
+    Only `ProcessLookupError` is death: `PermissionError` is a live process of
+    another user. A line 1 that is not a positive pid is never dead (see the
+    module docstring) -- and `os.kill(0, 0)` would probe a whole group."""
+    first = content.split(b"\n", 1)[0].strip()
+    if not first.isdigit() or int(first) <= 0:
+        return False
+    try:
+        os.kill(int(first), 0)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        return False
+    return False
 
 
 def act_lock_path(agent_root: Path, name: str) -> Path:
@@ -139,15 +199,82 @@ class FileLock:
             self._held = True
             return
         try:
-            age = int(time.time() - self._path.stat().st_mtime)
+            seen = _inspect(self._path)
         except OSError:
-            age = 0
-        if age < self._stale_after:
-            raise LockBusy(self._path, age)
-        self._path.unlink(missing_ok=True)
+            # Bash's fallback for a failed `stat` was age 0: always fresh, so
+            # an unreadable lock is never silently treated as free.
+            raise LockBusy(self._path, 0) from None
+        if seen is not None:
+            age = int(time.time() - seen.mtime)
+            if age < self._stale_after and not _holder_is_dead(seen.content):
+                raise LockBusy(self._path, age)
+            try:
+                reclaimed = self._reclaim(seen)
+            except OSError as exc:
+                # The guard, a look, the move or the restore failed for a
+                # reason other than a racing peer. Not ours to take: busy,
+                # with the cause, never a raw OSError out of a lease.
+                raise LockBusy(self._path, age, detail=str(exc)) from exc
+            if not reclaimed:
+                raise LockBusy(self._path, age)
+        else:
+            age = 0  # released between our create and our look: just race for it
         if not self._try_create():
             raise LockBusy(self._path, age)
         self._held = True
+
+    def _reclaim(self, seen: _Seen) -> bool:
+        """Move the stale file `seen` out of the way. True when the path is
+        now free of it; False when this call must not take the lock (another
+        reclaim is in progress, or the file is no longer the one judged)."""
+        guard_path = self._path.with_name(f".{self._path.name}.reclaim")
+        guard = os.open(guard_path, os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            try:
+                fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return False  # another reclaimer is in the critical section
+            current = _inspect(self._path)
+            if current is None:
+                return True  # released or swept meanwhile: `O_EXCL` decides
+            if current != seen:
+                return False  # a new holder, or the old one's heartbeat
+            return self._move_aside(seen)
+        finally:
+            os.close(guard)  # releases the flock
+
+    def _move_aside(self, seen: _Seen) -> bool:
+        """Rename the judged file to a tombstone and verify it is `seen`.
+
+        **Known window, accepted.** Between the in-guard look and the rename
+        (microseconds) the old holder could release and a new holder create:
+        the rename then takes the NEW holder's file. The verify catches that
+        and `link` puts it back -- unless a third process created a lock at
+        the empty path in that same gap, in which case the restore is refused
+        (`link` never overwrites), the third process holds the lock, and the
+        new holder learns at its next heartbeat that the file is not its own.
+        Any `OSError` but a vanished file propagates (the caller reports
+        busy); a file it could not verify is put back first, never deleted.
+        """
+        tombstone = self._path.with_name(f".{self._path.name}.reclaim-{uuid.uuid4().hex}")
+        try:
+            os.rename(self._path, tombstone)
+        except FileNotFoundError:
+            return True
+        try:
+            if _inspect(tombstone) == seen:
+                return True
+            # Changed between the look and the move: restore without ever
+            # overwriting a lock created at the path since.
+            with contextlib.suppress(FileExistsError):
+                os.link(tombstone, self._path)
+            return False
+        except OSError:
+            with contextlib.suppress(OSError):
+                os.link(tombstone, self._path)
+            raise
+        finally:
+            tombstone.unlink(missing_ok=True)
 
     def release(self) -> None:
         if self._held:

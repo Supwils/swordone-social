@@ -32,7 +32,7 @@ from swil_agent.llm.runner import Runner
 #
 # This is a backstop against a genuinely WEDGED process, not a policy knob
 # to tune down for a snappier round: `SubprocessRunner` enforces its timeout
-# by SIGKILLing the child (see `llm/runner.py`), and `cmd_up`/`cmd_down` hold
+# by killing the child's process group (see `llm/runner.py`), and `cmd_up`/`cmd_down` hold
 # an mkdir spinlock (`_lock`/`_unlock`) for their entire body. A SIGKILL
 # mid-critical-section never runs `rmdir "$LOCKDIR"`, so it wedges every
 # other `up`/`down` call in a parallel round for up to that same 300s steal
@@ -45,6 +45,11 @@ from swil_agent.llm.runner import Runner
 # than the script it's wrapping. Do not lower it without re-deriving the
 # worst-case arithmetic above against the live script's values.
 DEFAULT_TIMEOUT = 480.0
+
+# Since 2026-10-15 `SubprocessRunner` starts every child in its own session,
+# so `embedder-guard.sh up` (and the daemon it `nohup`s) is no longer in the
+# worker's process group: a per-account round kill (`kill -TERM -<pgid>`)
+# no longer takes down the embedder the other accounts share.
 
 
 class EmbedderGuard:

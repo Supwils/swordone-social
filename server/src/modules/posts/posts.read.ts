@@ -1,28 +1,24 @@
-import { and, or, eq, inArray, isNull, gte, lt, desc, ilike } from 'drizzle-orm';
+import { and, or, eq, inArray, isNull, gte, desc, ilike } from 'drizzle-orm';
 import { db } from '../../db/client';
-import { users, posts, tags, likes, follows } from '../../db/schema';
+import { posts } from '../../db/schema';
 import { AppError } from '../../lib/errors';
-import { decodeCursor, buildNextCursor } from '../../lib/pagination';
-import { translatePosts } from '../../lib/translate';
-import {
-  toPostDTO,
-  type PostDTOContext,
-  type PostDTO,
-  type PostRow,
-  type UserRow,
-  type TagRow,
-} from '../../lib/dto';
+import { decodeCursor, buildNextCursor, cursorConditionDesc } from '../../lib/pagination';
+import { escapeLike } from '../../lib/sql';
+import { translatePostsForRead } from '../../lib/translate';
+import type { ReadTranslation } from '../../lib/lang';
+import type { PostDTOContext, PostDTO, PostRow, UserRow } from '../../lib/dto';
 import { notReservedBoardClause } from '../boards/boards.service';
 import type { SearchPostsQuery } from './posts.schemas';
-import { hydratePosts } from './posts.hydrate';
-import { assertVisibility } from './posts.write';
-import { canViewPost, followingSet } from './posts.visibility';
+import { hydratePosts, toPostDTOs } from './posts.hydrate';
+import { assertVisibility, followedAuthorsSubquery } from './posts.visibility';
 
-/** Escape LIKE/ILIKE wildcards so user input can't inject `%` / `_` patterns. */
-function escapeLike(s: string): string {
-  return s.replace(/[\\%_]/g, '\\$&');
-}
-
+/**
+ * One post as a viewer may see it, hydrated by the same `hydratePosts` every
+ * feed uses — so `likedByMe`, `bookmarkedByMe` and the embedded `echoOf` agree
+ * with the feed's copy of the same post. (A hand-rolled hydrate here drifted:
+ * it never set `bookmarkedByMe`, and embedded an echo original whatever its
+ * status.)
+ */
 export async function getPostForViewer(
   postId: string,
   viewer: UserRow | null,
@@ -31,66 +27,14 @@ export async function getPostForViewer(
   if (!post || post.status !== 'active') throw AppError.notFound('Post not found');
   await assertVisibility(post, viewer);
 
-  const [authorRows, tagRows, mentionRows, likedByMe] = await Promise.all([
-    db.select().from(users).where(eq(users.id, post.authorId)).limit(1),
-    post.tagIds.length
-      ? db.select().from(tags).where(inArray(tags.id, post.tagIds))
-      : Promise.resolve([] as TagRow[]),
-    post.mentionIds.length
-      ? db.select().from(users).where(inArray(users.id, post.mentionIds))
-      : Promise.resolve([] as UserRow[]),
-    viewer
-      ? db
-          .select({ id: likes.id })
-          .from(likes)
-          .where(
-            and(
-              eq(likes.userId, viewer.id),
-              eq(likes.targetType, 'post'),
-              eq(likes.targetId, post.id),
-            ),
-          )
-          .limit(1)
-          .then((r) => r.length > 0)
-      : Promise.resolve(false),
-  ]);
-  const author = authorRows[0];
-  if (!author) throw AppError.notFound('Author missing');
-
-  let echoOfDto: PostDTO | undefined;
-  if (post.echoOf) {
-    const [origPost] = await db.select().from(posts).where(eq(posts.id, post.echoOf)).limit(1);
-    if (origPost) {
-      const followAuthors = origPost.visibility === 'followers' ? [origPost.authorId] : [];
-      const following = await followingSet(viewer, followAuthors);
-      if (canViewPost(origPost, viewer, following)) {
-        const [origAuthor] = await db
-          .select()
-          .from(users)
-          .where(eq(users.id, origPost.authorId))
-          .limit(1);
-        if (origAuthor) {
-          echoOfDto = toPostDTO(origPost, {
-            author: origAuthor,
-            tags: [],
-            mentions: [],
-            likedByMe: false,
-          });
-        }
-      }
-    }
-  }
-
-  return {
-    post,
-    ctx: { author, tags: tagRows, mentions: mentionRows, likedByMe, echoOf: echoOfDto },
-  };
+  const ctx = (await hydratePosts([post], viewer)).get(post.id);
+  if (!ctx) throw AppError.notFound('Author missing');
+  return { post, ctx };
 }
 
 export async function getShowcasePosts(
   viewer: UserRow | null,
-  lang: string,
-  content = true,
+  translate: ReadTranslation | null,
 ): Promise<PostDTO[]> {
   const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 3_600_000);
 
@@ -103,7 +47,7 @@ export async function getShowcasePosts(
         eq(posts.visibility, 'public'),
         isNull(posts.echoOf),
         gte(posts.createdAt, sixtyDaysAgo),
-        await notReservedBoardClause(),
+        notReservedBoardClause(),
       ),
     )
     .orderBy(desc(posts.feedScore), desc(posts.id))
@@ -149,56 +93,39 @@ export async function getShowcasePosts(
 
   const pagePosts = shuffled.slice(0, 24);
   const ctxMap = await hydratePosts(pagePosts, viewer);
-  await translatePosts(pagePosts, ctxMap, lang, { content });
+  await translatePostsForRead(pagePosts, ctxMap, translate);
 
-  return pagePosts
-    .map((p) => {
-      const ctx = ctxMap.get(p.id);
-      return ctx ? toPostDTO(p, ctx) : null;
-    })
-    .filter((x): x is PostDTO => x !== null);
+  return toPostDTOs(pagePosts, ctxMap);
 }
 
 export async function searchPosts(
   query: SearchPostsQuery,
   viewer: UserRow | null,
+  translate?: ReadTranslation | null,
 ): Promise<{ items: PostDTO[]; nextCursor: string | null }> {
   const cursor = decodeCursor(query.cursor);
   const limit = query.limit ?? 20;
   const q = query.q?.trim();
 
-  let visibilityClause;
-  if (viewer) {
-    const followingRows = await db
-      .select({ followingId: follows.followingId })
-      .from(follows)
-      .where(eq(follows.followerId, viewer.id));
-    const followingIds = followingRows.map((f) => f.followingId);
-    visibilityClause = or(
-      eq(posts.visibility, 'public'),
-      eq(posts.authorId, viewer.id),
-      followingIds.length
-        ? and(eq(posts.visibility, 'followers'), inArray(posts.authorId, followingIds))
-        : undefined,
-    );
-  } else {
-    visibilityClause = eq(posts.visibility, 'public');
-  }
-
-  const cursorClause = cursor
+  // Followers-only posts by followed authors: the follow list stays in SQL.
+  const visibilityClause = viewer
     ? or(
-        lt(posts.createdAt, new Date(cursor.t)),
-        and(eq(posts.createdAt, new Date(cursor.t)), lt(posts.id, cursor.id)),
+        eq(posts.visibility, 'public'),
+        eq(posts.authorId, viewer.id),
+        and(
+          eq(posts.visibility, 'followers'),
+          inArray(posts.authorId, followedAuthorsSubquery(viewer.id)),
+        ),
       )
-    : undefined;
+    : eq(posts.visibility, 'public');
 
   const where = and(
     eq(posts.status, 'active'),
     q ? ilike(posts.text, `%${escapeLike(q)}%`) : undefined,
     visibilityClause,
-    cursorClause,
+    cursorConditionDesc(cursor, posts.createdAt, posts.id),
     query.since ? gte(posts.createdAt, query.since) : undefined,
-    await notReservedBoardClause(),
+    notReservedBoardClause(),
   );
 
   const rawPosts = await db
@@ -210,13 +137,9 @@ export async function searchPosts(
 
   const { items: pagePosts, nextCursor } = buildNextCursor(rawPosts, limit);
   const ctxMap = await hydratePosts(pagePosts, viewer);
+  await translatePostsForRead(pagePosts, ctxMap, translate);
 
-  const items = pagePosts
-    .map((p) => {
-      const ctx = ctxMap.get(p.id);
-      return ctx ? toPostDTO(p, ctx) : null;
-    })
-    .filter((x): x is PostDTO => x !== null);
+  const items = toPostDTOs(pagePosts, ctxMap);
 
   return { items, nextCursor };
 }

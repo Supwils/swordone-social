@@ -1,4 +1,4 @@
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useSession } from '@/stores/session.store';
 import { Spinner } from '@/components/primitives';
@@ -27,13 +27,20 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   );
 }
 
-function RequireAuth({ children }: { children: ReactNode }) {
+/**
+ * Sends anonymous visitors to /login. With no children it is a pathless layout
+ * route (`<Route element={<RequireAuth />}>`) that renders the matched child via
+ * `<Outlet />`, so it can nest INSIDE the one AppShell layout: the shell then
+ * stays mounted when a visitor crosses between open and personal pages.
+ * Assumes an ancestor already waited on the bootstrap probe (`OpenRoute`).
+ */
+export function RequireAuth({ children }: { children?: ReactNode }) {
   const user = useSession((st) => st.user);
   const location = useLocation();
   if (!user) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
-  return <>{children}</>;
+  return <>{children ?? <Outlet />}</>;
 }
 
 /**

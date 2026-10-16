@@ -178,4 +178,40 @@ describe('refreshFeedScore batching', () => {
       2,
     );
   }, 15_000);
+
+  it('the periodic pass re-scores recent active posts in SQL and reports the row count', async () => {
+    const { db } = await import('../db/client');
+    const { posts, users } = await import('../db/schema');
+    const { resetDb } = await import('../test/db-reset');
+    const { eq } = await import('drizzle-orm');
+    const { refreshAllFeedScores, calcFeedScore } = await import('./feedScorer');
+
+    await resetDb();
+    const [author] = await db
+      .insert(users)
+      .values({
+        username: 'scorer2',
+        usernameDisplay: 'scorer2',
+        email: 'scorer2@example.com',
+        displayName: 'Scorer',
+      })
+      .returning();
+    const [fresh] = await db
+      .insert(posts)
+      .values({ authorId: author.id, text: 'a', likeCount: 2, feedScore: 0 })
+      .returning();
+    await db.insert(posts).values([
+      { authorId: author.id, text: 'gone', status: 'deleted', feedScore: 0 },
+      {
+        authorId: author.id,
+        text: 'old',
+        feedScore: 0,
+        createdAt: new Date(Date.now() - 40 * 24 * 3_600_000),
+      },
+    ]);
+
+    expect(await refreshAllFeedScores(30)).toBe(1);
+    const [row] = await db.select().from(posts).where(eq(posts.id, fresh.id));
+    expect(row.feedScore).toBeCloseTo(calcFeedScore(row), 2);
+  });
 });

@@ -1,4 +1,16 @@
-import { and, eq, ne, inArray, isNull, desc, gt, gte, arrayOverlaps, type SQL } from 'drizzle-orm';
+import {
+  and,
+  or,
+  eq,
+  ne,
+  inArray,
+  isNull,
+  desc,
+  gt,
+  gte,
+  arrayOverlaps,
+  type SQL,
+} from 'drizzle-orm';
 import { db } from '../../db/client';
 import { posts, follows, tags, users } from '../../db/schema';
 import { AppError } from '../../lib/errors';
@@ -13,6 +25,7 @@ import {
 
 export type FeedSort = 'recommended' | 'latest';
 import { hydratePosts } from '../posts/posts.service';
+import { followedAuthorsSubquery } from '../posts/posts.visibility';
 import { getBoardBySlug, notReservedBoardClause } from '../boards/boards.service';
 import {
   toPostDTO,
@@ -32,6 +45,8 @@ import type {
   TagDTO,
 } from '../../contract/posts';
 import { TTLCache } from '../../lib/ttlCache';
+import { translatePostsForRead, translateTags } from '../../lib/translate';
+import type { ReadTranslation } from '../../lib/lang';
 
 interface FeedPage {
   items: PostRow[];
@@ -99,16 +114,12 @@ export async function following(
   sort: FeedSort = 'recommended',
   since?: Date,
 ): Promise<FeedPage> {
-  const followingEdges = await db
-    .select({ followingId: follows.followingId })
-    .from(follows)
-    .where(eq(follows.followerId, viewer.id));
-  const authorIds: string[] = [viewer.id, ...followingEdges.map((e) => e.followingId)];
+  // The viewer plus everyone they follow — the follow list stays a subquery.
   const base = and(
-    inArray(posts.authorId, authorIds),
+    or(eq(posts.authorId, viewer.id), inArray(posts.authorId, followedAuthorsSubquery(viewer.id))),
     eq(posts.status, 'active'),
     inArray(posts.visibility, ['public', 'followers']),
-    await notReservedBoardClause(),
+    notReservedBoardClause(),
   );
   return sort === 'latest'
     ? paginateByTime(base, viewer, cursor as Cursor, limit, since)
@@ -128,7 +139,7 @@ export async function global(
   const base = and(
     eq(posts.status, 'active'),
     eq(posts.visibility, 'public'),
-    await notReservedBoardClause(),
+    notReservedBoardClause(),
   );
   return sort === 'latest'
     ? paginateByTime(base, viewer, cursor as Cursor, limit, since)
@@ -160,7 +171,7 @@ export async function byTag(
     eq(posts.status, 'active'),
     eq(posts.visibility, 'public'),
     arrayOverlaps(posts.tagIds, allTagIds),
-    await notReservedBoardClause(),
+    notReservedBoardClause(),
   );
   return sort === 'latest'
     ? paginateByTime(base, viewer, cursor as Cursor, limit, since)
@@ -247,7 +258,7 @@ async function loadExploreSlice(): Promise<ExploreCacheSlice> {
     .orderBy(desc(users.createdAt))
     .limit(50);
   const agentIds = agentUsers.map((u) => u.id);
-  const reserved = await notReservedBoardClause();
+  const reserved = notReservedBoardClause();
 
   const [featuredPostRows, trendingTagDocs, featuredTagDocs, latestPostRows] = await Promise.all([
     db
@@ -303,22 +314,33 @@ async function loadExploreSlice(): Promise<ExploreCacheSlice> {
   return { agentUsers, trendingTagDocs, featuredTagDocs, featuredPostDoc, latestByAuthor };
 }
 
-export async function getExploreSummary(viewer: UserRow | null): Promise<ExploreSummaryDTO> {
+export async function getExploreSummary(
+  viewer: UserRow | null,
+  translate?: ReadTranslation | null,
+): Promise<ExploreSummaryDTO> {
   const slice = await exploreSliceCache.getOrLoad('global', loadExploreSlice);
   const { agentUsers, trendingTagDocs, featuredTagDocs, featuredPostDoc, latestByAuthor } = slice;
+  // Translated per request, like every feed — the cached slice is language-free.
+  const lang = translate?.lang;
+  // The featured post row lives in the cached slice; `translatePosts` writes a
+  // fresh translation back onto it, so later requests hit `translations`.
+  const translateHydrated = (list: PostRow[], ctxMap: Map<string, PostDTOContext>) =>
+    translatePostsForRead(list, ctxMap, translate);
 
   let featuredPost: PostDTO | null = null;
   if (featuredPostDoc) {
     const ctxMap = await hydratePosts([featuredPostDoc], viewer);
+    await translateHydrated([featuredPostDoc], ctxMap);
     const ctx = ctxMap.get(featuredPostDoc.id);
     if (ctx) featuredPost = toPostDTO(featuredPostDoc, ctx);
   }
+  if (translate) await translateTags([...trendingTagDocs, ...featuredTagDocs], translate.lang);
 
   const agents: AgentSummaryItem[] = agentUsers.map((u) =>
     toAgentSummaryItem(u, latestByAuthor.get(u.id)),
   );
 
-  const trendingTags: TagDTO[] = trendingTagDocs.map((t) => toTagDTO(t));
+  const trendingTags: TagDTO[] = trendingTagDocs.map((t) => toTagDTO(t, lang));
 
   // Build featuredTopics with pinned posts
   const allPinnedIds = featuredTagDocs.flatMap((t) => t.pinnedPostIds ?? []);
@@ -332,11 +354,12 @@ export async function getExploreSummary(viewer: UserRow | null): Promise<Explore
           inArray(posts.id, allPinnedIds),
           eq(posts.status, 'active'),
           eq(posts.visibility, 'public'),
-          await notReservedBoardClause(),
+          notReservedBoardClause(),
         ),
       );
     if (pinnedDocs.length > 0) {
       const ctxMap = await hydratePosts(pinnedDocs, viewer);
+      await translateHydrated(pinnedDocs, ctxMap);
       for (const doc of pinnedDocs) {
         const ctx = ctxMap.get(doc.id);
         if (ctx) pinnedPostMap.set(doc.id, toPostDTO(doc, ctx));
@@ -345,7 +368,7 @@ export async function getExploreSummary(viewer: UserRow | null): Promise<Explore
   }
 
   const featuredTopics: FeaturedTopicDTO[] = featuredTagDocs.map((t) => ({
-    ...toTagDTO(t),
+    ...toTagDTO(t, lang),
     pinnedPosts: (t.pinnedPostIds ?? [])
       .map((id) => pinnedPostMap.get(id))
       .filter((p): p is PostDTO => p !== undefined),
@@ -390,7 +413,7 @@ export async function byAuthor(
     eq(posts.authorId, author.id),
     eq(posts.status, 'active'),
     inArray(posts.visibility, allowedVisibilities),
-    await notReservedBoardClause(),
+    notReservedBoardClause(),
   );
   return paginateByTime(base, viewer, cursor, limit, since);
 }

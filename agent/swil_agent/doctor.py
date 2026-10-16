@@ -13,6 +13,7 @@ fake up at call time.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -23,6 +24,7 @@ import httpx
 
 from swil_agent.analysis.population_metric import ACCOUNTS_DIR
 from swil_agent.config import Settings
+from swil_agent.llm.backends.grok import GROK_AUDITED_VERSION
 from swil_agent.llm.protocol import Backend
 from swil_agent.llm.runner import CompletionRequest
 from swil_agent.models import Persona
@@ -178,3 +180,33 @@ def smoke_arms(
             emit(f"smoke {label}: FAIL (empty reply)")
             ok = False
     return ok
+
+
+_GROK_VERSION: Final = re.compile(r"\bgrok\s+(\d+(?:\.\d+)+)")
+
+
+def grok_version() -> str | None:
+    """`grok --version`'s version number (`grok 1.0.52 (0920c81…)` -> `1.0.52`),
+    or `None` when it cannot be read."""
+    try:
+        completed = subprocess.run(
+            ["grok", "--version"], capture_output=True, text=True, timeout=10, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    match = _GROK_VERSION.search(completed.stdout or "")
+    return match.group(1) if match else None
+
+
+def grok_audit(version: str | None) -> tuple[bool, str]:
+    """The grok arm is tool-less only for the audited version: on grok,
+    `--tools ""` no longer empties the toolset, and `GROK_DISALLOWED_TOOLS`
+    names the built-ins of exactly that version (`llm/backends/grok.py`)."""
+    if version == GROK_AUDITED_VERSION:
+        return True, f"{version} (audited)"
+    found = version or "unreadable"
+    return False, (
+        f"{found} is not the audited {GROK_AUDITED_VERSION} -- re-audit GROK_DISALLOWED_TOOLS "
+        "from the `--output-format streaming-messages-json` init event, then bump "
+        "GROK_AUDITED_VERSION"
+    )

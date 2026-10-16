@@ -36,14 +36,9 @@ population-cohesion sample lands per cycle. It sits after `logout` because
 `logout` is the ACCOUNT's terminal record and this is a reading of the whole
 population -- see `make_population_metric_node`.
 
-`behavior_snapshot` is the act phase's tail (once per act round); it is
-fail-soft and skipped entirely under `--dry-run`.
-
-Loop 3 (**default OFF**, `CycleConfig.max_rounds`) sends `behavior_snapshot`
-back to `login` for another act round. It is built rather than omitted so
-enabling it is a config change instead of a topology change -- but a graph
-that loops by DEFAULT multiplies every account's spend, so the default is 1.
-Only `CYCLE` has the loop.
+`behavior_snapshot` is the act phase's tail (once per cycle); it is
+fail-soft and skipped entirely under `--dry-run`. One act round per cycle:
+there is no loop back to `login`.
 
 **Where the business logic is not.** Every decision this module makes about
 *whether* something may happen is delegated: "does this outcome still grant a
@@ -70,13 +65,13 @@ and nothing from the context). That is also what lets `build_cycle()` take no
 deps at all, so the graph's shape can be compiled and inspected without a
 roster.
 
-**One `CycleDeps` per act round, not one per cycle.** `CycleDeps` is frozen and
-its `memory_text` / `context_now` / `feed_context` are snapshots taken before
-the round. Loop 3 therefore resolves deps through `CycleContext.deps_for_round`
-on every node entry, keyed on `round_index`: round 2 gets REBUILT deps, or it
-would plan against round 1's `memory.md` and the rhythm gate would let the
-account post again over its own ceiling. `run_graph` refuses `max_rounds > 1`
-against a single frozen `CycleDeps` rather than letting that happen quietly.
+**One `CycleDeps` per run.** `CycleDeps` is frozen and its `memory_text` /
+`context_now` / `feed_context` are snapshots taken after the leases are held
+and before the first node (`run_graph`'s `finish_deps`). That is sound only
+because a run has ONE act round: a second round planned against the same
+snapshot would not see the first round's posts, and the rhythm gate would let
+the account post over its ceiling. A multi-round cycle needs deps rebuilt per
+round, not a flag.
 """
 
 from __future__ import annotations
@@ -93,7 +88,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
-from swil_agent.graph.deps import CycleDeps, NodeFn, NodeStateError, agent_dir_name
+from swil_agent.graph.deps import CycleDeps, FinishDeps, NodeFn, NodeStateError, agent_dir_name
 from swil_agent.graph.nodes_act import (
     make_execute_node,
     make_guardrail_node,
@@ -120,7 +115,7 @@ from swil_agent.models import ActResult, Persona
 
 # Node names, spelled once. They are also the `CycleState` thread's public
 # vocabulary: a checkpoint records which node it stopped at, and `--resume`
-# (task 9) reads that name back.
+# reads that name back (`graph/run.py` refuses to re-enter `execute`/`write`).
 LOGIN: Final = "login"
 PLAN: Final = "plan"
 GUARDRAIL: Final = "guardrail"
@@ -131,9 +126,6 @@ WRITE: Final = "write"
 SNAPSHOT: Final = "snapshot"
 LOGOUT: Final = "logout"
 POPULATION_METRIC: Final = "population_metric"
-
-# Loop 3 OFF: one act round per cycle.
-DEFAULT_MAX_ROUNDS: Final = 1
 
 
 class Phases(enum.Enum):
@@ -146,38 +138,17 @@ class Phases(enum.Enum):
 
 
 @dataclass(frozen=True)
-class CycleConfig:
-    """The act-loop bound. Validated at construction: an unbounded act loop is
-    an unbounded number of posts."""
-
-    max_rounds: int = DEFAULT_MAX_ROUNDS
-
-    def __post_init__(self) -> None:
-        if self.max_rounds < 1:
-            raise ValueError("max_rounds must be at least one act round")
-
-
-DepsProvider = Callable[[int], CycleDeps]
-
-
-@dataclass(frozen=True)
 class CycleContext:
     """LangGraph's per-invocation runtime context: everything a node needs
     that `CycleState` cannot carry across a checkpoint.
 
-    `deps_for_round` is called with the number of act rounds ALREADY
-    COMPLETED, so round 1 sees `0`. The dream phase resolves after the last
-    act round and therefore asks for index `max_rounds`; a provider must
-    tolerate that (the built-in constant provider ignores the index, and a
-    real factory should clamp).
-
-    `lease_db` / `lease_clock` are the run's own lease database and clock.
-    Only `ACT`'s logout reads them: it takes the dream lease for memory
-    rotation inside the node (S3 §12.7), because the `ACT` run holds the act
-    lease alone.
+    `deps` is the run's one `CycleDeps`. `lease_db` / `lease_clock` are the
+    run's own lease database and clock. Only `ACT`'s logout reads them: it
+    takes the dream lease for memory rotation inside the node (S3 §12.7),
+    because the `ACT` run holds the act lease alone.
     """
 
-    deps_for_round: DepsProvider
+    deps: CycleDeps
     lease_db: sqlite3.Connection | None = None
     lease_clock: Callable[[], float] = time.time
 
@@ -272,27 +243,8 @@ def _act_after_guardrail(state: CycleState) -> str:
     return EXECUTE if state.get("actions") else LOGOUT
 
 
-def _after_execute(config: CycleConfig) -> _Router:
-    """Loop 3, resolved AFTER the behavior snapshot rather than straight off
-    `execute`.
-
-    `round_index` counts act rounds COMPLETED (the execute node increments
-    it), so it doubles as the index of the deps the next round needs. The
-    router hangs off `behavior_snapshot` because the sample is taken at
-    the end of EACH act round -- putting it
-    after this branch instead would sample only the last round of a loop-3
-    configuration."""
-
-    def route(state: CycleState) -> str:
-        if state.get("round_index", 0) < config.max_rounds:
-            return LOGIN
-        return _dream_phase_or_logout(state)
-
-    return route
-
-
 def _after_dream(state: CycleState) -> str:
-    """A cooldown SKIP, a failed reply and a blown deadline produce no list:
+    """A cooldown SKIP and a failed or empty reply produce no list:
     there is nothing to write or snapshot, so they go straight to logout."""
     return WRITE if state.get("recent") is not None else LOGOUT
 
@@ -303,34 +255,24 @@ def _dream_after_dream(state: CycleState) -> str:
     return WRITE if state.get("recent") is not None else END
 
 
-def _deps_of(runtime: Runtime[CycleContext], state: CycleState) -> CycleDeps:
-    return runtime.context.deps_for_round(state.get("round_index", 0))
-
-
 def _bind(factory: Callable[[CycleDeps], NodeFn]) -> _CycleNode:
-    """Adapt a `make_*_node` factory to a node that resolves its deps at CALL
-    time from the runtime context.
-
-    Binding at assembly time instead would freeze one `CycleDeps` into the
-    compiled graph, which is correct for a single-round cycle and silently
-    wrong for loop 3 -- round 2 would plan against round 1's `memory_text`.
-    """
+    """Adapt a `make_*_node` factory to a node that takes its deps at CALL
+    time from the runtime context. The deps are per invocation, never part
+    of the compiled graph, so `build_graph()` needs no roster."""
 
     def node(state: CycleState, *, runtime: Runtime[CycleContext]) -> CycleState:
-        return factory(_deps_of(runtime, state))(state)
+        return factory(runtime.context.deps)(state)
 
     return node
 
 
 def _execute_node(state: CycleState, *, runtime: Runtime[CycleContext]) -> CycleState:
-    """`execute`, plus loop 3's counter.
+    """`execute`, plus the `round_index` count of act rounds completed.
 
-    The increment lives here rather than in a router because a LangGraph
-    conditional edge returns a destination and cannot write state, and rather
-    than in `graph/nodes_act.py` because "how many rounds has this cycle run" is
-    the graph's question, not the node's.
+    With one act round per cycle the count is 0 or 1; it is still written so
+    the checkpointed state keeps the schema it has always had.
     """
-    update = make_execute_node(_deps_of(runtime, state))(state)
+    update = make_execute_node(runtime.context.deps)(state)
     update["round_index"] = state.get("round_index", 0) + 1
     return update
 
@@ -344,8 +286,8 @@ def _act_logout_node(state: CycleState, *, runtime: Runtime[CycleContext]) -> Cy
     run already holds -- `kind` is part of the lease key, so the two rows
     never collide.
     """
-    deps = _deps_of(runtime, state)
     context = runtime.context
+    deps = context.deps
 
     def rotation_lease() -> AbstractContextManager[object]:
         if context.lease_db is None:
@@ -367,7 +309,7 @@ def _new_graph() -> CycleGraph:
     return StateGraph(CycleState, context_schema=CycleContext)
 
 
-def _build_cycle_graph(cfg: CycleConfig) -> CycleGraph:
+def _build_cycle_graph() -> CycleGraph:
     graph = _new_graph()
 
     graph.add_node(LOGIN, _bind(make_login_node), retry_policy=LOGIN_RETRY)
@@ -386,7 +328,7 @@ def _build_cycle_graph(cfg: CycleConfig) -> CycleGraph:
     graph.add_conditional_edges(PLAN, _continue_or_logout(GUARDRAIL), [GUARDRAIL, LOGOUT])
     graph.add_conditional_edges(GUARDRAIL, _after_guardrail, [EXECUTE, DREAM, LOGOUT])
     graph.add_edge(EXECUTE, BEHAVIOR_SNAPSHOT)
-    graph.add_conditional_edges(BEHAVIOR_SNAPSHOT, _after_execute(cfg), [LOGIN, DREAM, LOGOUT])
+    graph.add_conditional_edges(BEHAVIOR_SNAPSHOT, _dream_phase_or_logout, [DREAM, LOGOUT])
     graph.add_conditional_edges(DREAM, _after_dream, [WRITE, LOGOUT])
     graph.add_edge(WRITE, SNAPSHOT)
     graph.add_edge(SNAPSHOT, LOGOUT)
@@ -417,8 +359,8 @@ def _build_act_graph() -> CycleGraph:
 
 
 def _build_dream_graph() -> CycleGraph:
-    """S3 §12.5: the cycle's dream half. A cooldown SKIP, a failed reply or a
-    blown deadline ends the run at `dream`."""
+    """S3 §12.5: the cycle's dream half. A cooldown SKIP or a failed reply
+    ends the run at `dream`."""
     graph = _new_graph()
 
     graph.add_node(DREAM, _bind(make_dream_node), retry_policy=DREAM_RETRY)
@@ -432,7 +374,7 @@ def _build_dream_graph() -> CycleGraph:
     return graph
 
 
-def build_graph(phases: Phases, config: CycleConfig | None = None) -> CycleGraph:
+def build_graph(phases: Phases) -> CycleGraph:
     """Assemble one phase's graph. Takes no deps: they arrive per invocation
     through `CycleContext`, so the shape can be compiled and inspected
     without a roster (and `build_graph(...).compile()` is the test that a
@@ -440,43 +382,42 @@ def build_graph(phases: Phases, config: CycleConfig | None = None) -> CycleGraph
 
     The returned graph is UNcompiled, per the interface §5.4 specifies --
     `run_graph` compiles it with whatever checkpointer the caller supplies.
-    `config` bounds loop 3, which only `CYCLE` has.
     """
     if phases is Phases.ACT:
         return _build_act_graph()
     if phases is Phases.DREAM:
         return _build_dream_graph()
-    return _build_cycle_graph(config or CycleConfig())
+    return _build_cycle_graph()
 
 
-def build_cycle(config: CycleConfig | None = None) -> CycleGraph:
-    """`build_graph(Phases.CYCLE, config)` -- the name the cycle's tests and
-    the dispatch test inspect."""
-    return build_graph(Phases.CYCLE, config)
+def build_cycle() -> CycleGraph:
+    """`build_graph(Phases.CYCLE)` -- the name the cycle's tests and the
+    dispatch test inspect."""
+    return build_graph(Phases.CYCLE)
 
 
 def run_cycle(
     *,
     persona: Persona,
-    deps: CycleDeps | DepsProvider,
+    deps: CycleDeps,
     lease_db: sqlite3.Connection,
     checkpointer: BaseCheckpointSaver[Any] | None = None,
-    config: CycleConfig | None = None,
     tenant: str = BUILTIN_TENANT,
     round_id: str | None = None,
     run_id: str | None = None,
     resume: bool = False,
     lease_clock: Callable[[], float] = time.time,
+    finish_deps: FinishDeps | None = None,
 ) -> CycleState:
     """Run one full cycle for one account and return its final `CycleState`:
     `run_graph(deps, phases=Phases.CYCLE, ...)`, whose docstring carries the
     lease, round-id and resume contract.
 
-    Holds BOTH of Bash's per-account locks (`lock_<name>` and
-    `dream_lock_<name>`) for the whole run, beats them between nodes, and
-    releases both however the cycle ends. A busy lease raises `LeaseBusy`
-    before any node runs, with no LLM call spent; the caller SKIPs, as Bash
-    does.
+    Holds BOTH per-account leases (`lock_<name>` and `dream_lock_<name>`)
+    for the whole run, beats them between nodes, and releases both however
+    the cycle ends. A busy lease raises `LeaseBusy` before any node runs and
+    before `finish_deps` reads anything, with no LLM call spent; the caller
+    SKIPs.
     """
     # Imported here rather than at the top: `graph/run.py` builds its graphs
     # from this module, so a module-level import would be circular.
@@ -488,10 +429,10 @@ def run_cycle(
         persona=persona,
         lease_db=lease_db,
         checkpointer=checkpointer,
-        config=config,
         tenant=tenant,
         round_id=round_id,
         run_id=run_id,
         resume=resume,
         lease_clock=lease_clock,
+        finish_deps=finish_deps,
     )

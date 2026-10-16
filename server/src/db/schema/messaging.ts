@@ -38,6 +38,9 @@ export const messages = pgTable(
     senderId: text('sender_id').notNull(),
     text: text('text').notNull(),
     readBy: text('read_by').array().notNull().default([]),
+    // Per-user "delete for me". READ by listMessages (rows a viewer deleted are
+    // hidden) but NEVER WRITTEN — there is no delete-for-me endpoint yet, so it
+    // is always []. Kept (dropping it is a migration) until that feature lands.
     deletedFor: text('deleted_for').array().notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

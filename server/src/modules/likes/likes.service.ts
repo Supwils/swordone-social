@@ -5,7 +5,7 @@ import { AppError } from '../../lib/errors';
 import type { UserRow } from '../../lib/dto';
 import { createNotification } from '../notifications/notifications.service';
 import { refreshFeedScore } from '../../lib/feedScorer';
-import { assertVisibility } from '../posts/posts.write';
+import { assertVisibility } from '../posts/posts.visibility';
 
 export type LikeTarget = 'post' | 'comment';
 
@@ -46,20 +46,23 @@ async function assertTargetVisible(
   }
 }
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 async function incTargetCount(
+  tx: Tx,
   targetType: LikeTarget,
   targetId: string,
   delta: number,
 ): Promise<number> {
   if (targetType === 'post') {
-    const [doc] = await db
+    const [doc] = await tx
       .update(posts)
       .set({ likeCount: sql`${posts.likeCount} + ${delta}` })
       .where(eq(posts.id, targetId))
       .returning({ likeCount: posts.likeCount });
     return doc?.likeCount ?? 0;
   }
-  const [doc] = await db
+  const [doc] = await tx
     .update(comments)
     .set({ likeCount: sql`${comments.likeCount} + ${delta}` })
     .where(eq(comments.id, targetId))
@@ -74,20 +77,27 @@ export async function like(
 ): Promise<{ likeCount: number; liked: true }> {
   await assertTargetVisible(user, targetType, targetId);
 
-  // Idempotent insert — unique (userId, targetType, targetId) makes a repeat like a no-op.
-  const inserted = await db
-    .insert(likes)
-    .values({ userId: user.id, targetType, targetId })
-    .onConflictDoNothing()
-    .returning();
-
-  if (inserted.length === 0) {
+  // The like row and the counter move together: a failure between them used to
+  // leave a like the counter never saw (or, on unlike, a counter for a like
+  // that is gone). Idempotent insert — unique (userId, targetType, targetId)
+  // makes a repeat like a no-op. Notification and rescore stay outside, as in
+  // createComment.
+  const likeCount = await db.transaction(async (tx) => {
+    const inserted = await tx
+      .insert(likes)
+      .values({ userId: user.id, targetType, targetId })
+      .onConflictDoNothing()
+      .returning({ id: likes.id });
     // Already liked — don't double-count.
+    if (inserted.length === 0) return null;
+    return incTargetCount(tx, targetType, targetId, 1);
+  });
+
+  if (likeCount === null) {
     const current = await getCountDirect(targetType, targetId);
     return { likeCount: current, liked: true };
   }
 
-  const likeCount = await incTargetCount(targetType, targetId, 1);
   if (targetType === 'post') refreshFeedScore(targetId);
 
   // Notify author — best-effort, never throws
@@ -130,23 +140,26 @@ export async function unlike(
   targetType: LikeTarget,
   targetId: string,
 ): Promise<{ likeCount: number; liked: false }> {
-  const deleted = await db
-    .delete(likes)
-    .where(
-      and(
-        eq(likes.userId, user.id),
-        eq(likes.targetType, targetType),
-        eq(likes.targetId, targetId),
-      ),
-    )
-    .returning();
-
-  if (deleted.length === 0) {
+  const likeCount = await db.transaction(async (tx) => {
+    const deleted = await tx
+      .delete(likes)
+      .where(
+        and(
+          eq(likes.userId, user.id),
+          eq(likes.targetType, targetType),
+          eq(likes.targetId, targetId),
+        ),
+      )
+      .returning({ id: likes.id });
     // Wasn't liked — idempotent no-op.
+    if (deleted.length === 0) return null;
+    return incTargetCount(tx, targetType, targetId, -1);
+  });
+
+  if (likeCount === null) {
     const current = await getCountDirect(targetType, targetId);
     return { likeCount: current, liked: false };
   }
-  const likeCount = await incTargetCount(targetType, targetId, -1);
   if (targetType === 'post') refreshFeedScore(targetId);
   return { likeCount: Math.max(0, likeCount), liked: false };
 }

@@ -15,16 +15,16 @@ import { env, isProd } from '../config/env';
 import { logger } from '../lib/logger';
 
 export function mountStaticClient(app: Express): void {
-  const enabled = isProd || process.env.SERVE_CLIENT === 'true';
+  const enabled = isProd || env.SERVE_CLIENT;
   if (!enabled) return;
 
-  // Resolve `client/dist` relative to the compiled server layout:
-  //   repo/server/dist/middlewares/staticClient.js  →  repo/client/dist
-  // or from source (tsx watch):
-  //   repo/server/src/middlewares/staticClient.ts    →  repo/client/dist
+  // Find `client/dist` from either server layout (tsc keeps `src/` inside outDir):
+  //   source (tsx):  repo/server/src/middlewares/staticClient.ts      → ../../..
+  //   compiled:      repo/server/dist/src/middlewares/staticClient.js → ../../../..
+  // and finally from the working directory (the Docker image runs from /app).
   const candidates = [
     path.resolve(__dirname, '../../..', 'client', 'dist'),
-    path.resolve(__dirname, '../..', 'client', 'dist'),
+    path.resolve(__dirname, '../../../..', 'client', 'dist'),
     path.resolve(process.cwd(), 'client', 'dist'),
   ];
   const clientDir = candidates.find((p) => fs.existsSync(path.join(p, 'index.html')));
@@ -66,7 +66,4 @@ export function mountStaticClient(app: Express): void {
     }
     res.sendFile(indexPath);
   });
-
-  // Silence the unused-import lint warning for env
-  void env;
 }

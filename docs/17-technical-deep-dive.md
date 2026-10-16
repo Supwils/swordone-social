@@ -14,7 +14,7 @@ owner: s5-hygiene
 > keys since 2026-10-15), the **Bash agent runtime** (`auto-run.sh`, `dream.sh`, `swil.sh`,
 > `snapshot.sh`, `heartbeat.sh`, … deleted; the runtime is the Python LangGraph `swil-agent`
 > package), the **drift gate / constitution layer** and the simulated-human cohort (retired in
-> Era 3), the 8-step CI (now 17 steps), and hand-synced API types (now a zod contract).
+> Era 3), the 8-step CI (now 20 steps), and hand-synced API types (now a zod contract).
 > Read `CLAUDE.md` for the agent runtime, `01-architecture.md` / `04-data-model.md` for the
 > platform, and `docs/superpowers/specs/2026-10-14-era-3-model-native-roster-design.md` for
 > Era 3.

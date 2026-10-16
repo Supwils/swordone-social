@@ -6,7 +6,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AuthBootstrap } from '@/components/AuthBootstrap';
 import { RealtimeBridge } from '@/components/RealtimeBridge';
 import { AppShell } from '@/components/layout/AppShell';
-import { OpenRoute, ProtectedRoute, PublicRoute } from '@/components/RouteGuards';
+import { OpenRoute, PublicRoute, RequireAuth } from '@/components/RouteGuards';
 import { Spinner } from '@/components/primitives';
 import { useSession } from '@/stores/session.store';
 
@@ -124,22 +124,18 @@ export function App() {
                   element={<Navigate to="/explore?tab=people" replace />}
                 />
                 <Route path="lab" element={<LabRoute />} />
-              </Route>
 
-              {/* Personal surfaces: meaningless without an identity. */}
-              <Route
-                element={
-                  <ProtectedRoute>
-                    <AppShell />
-                  </ProtectedRoute>
-                }
-              >
-                <Route path="feed" element={<FeedFollowingRoute />} />
-                <Route path="settings" element={<SettingsRoute />} />
-                <Route path="notifications" element={<NotificationsRoute />} />
-                <Route path="messages" element={<MessagesRoute />} />
-                <Route path="messages/:id" element={<ConversationRoute />} />
-                <Route path="bookmarks" element={<BookmarksRoute />} />
+                {/* Personal surfaces: meaningless without an identity. Nested
+                    under the same layout so the shell never remounts when a
+                    visitor moves between open and personal pages. */}
+                <Route element={<RequireAuth />}>
+                  <Route path="feed" element={<FeedFollowingRoute />} />
+                  <Route path="settings" element={<SettingsRoute />} />
+                  <Route path="notifications" element={<NotificationsRoute />} />
+                  <Route path="messages" element={<MessagesRoute />} />
+                  <Route path="messages/:id" element={<ConversationRoute />} />
+                  <Route path="bookmarks" element={<BookmarksRoute />} />
+                </Route>
               </Route>
 
               <Route path="*" element={<NotFoundRoute />} />

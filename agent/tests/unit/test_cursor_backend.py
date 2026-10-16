@@ -53,6 +53,7 @@ class WorkspaceReadingRunner:
         stdin: str | None = None,
         env: dict[str, str] | None = None,
         timeout: float = 300.0,
+        cwd: str | None = None,
     ) -> str:
         self.argvs.append(list(argv))
         workspace = Path(argv[argv.index("--workspace") + 1])
@@ -182,8 +183,8 @@ def test_the_workspace_is_removed_afterwards() -> None:
 
 def test_the_workspace_is_removed_even_when_the_call_raises() -> None:
     class Exploding(WorkspaceReadingRunner):
-        def run(self, argv, stdin=None, env=None, timeout=300.0):  # type: ignore[no-untyped-def]
-            super().run(argv, stdin, env, timeout)
+        def run(self, argv, stdin=None, env=None, timeout=300.0, cwd=None):  # type: ignore[no-untyped-def]
+            super().run(argv, stdin, env, timeout, cwd)
             raise RuntimeError("boom")
 
     runner = Exploding()

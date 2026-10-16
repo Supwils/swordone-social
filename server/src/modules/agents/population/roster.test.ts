@@ -4,7 +4,7 @@ import { resetDb } from '../../../test/db-reset';
 import { comments, likes, personalitySnapshots, posts, users } from '../../../db/schema';
 import type { UserRow } from '../../../lib/dto';
 import * as seeds from '../lab/lab.testSeeds';
-import { getOverview } from './population';
+import { clearOverviewCache, getOverview } from './population';
 import { getAgentStats, listAgents } from './roster';
 
 /**
@@ -59,7 +59,10 @@ async function seedPost(authorId: string, over: Partial<typeof posts.$inferInser
   return p;
 }
 
-beforeEach(resetDb);
+beforeEach(async () => {
+  await resetDb();
+  clearOverviewCache();
+});
 
 describe('roster.listAgents era membership (S2 §6)', () => {
   async function seedPopulation() {
@@ -127,6 +130,8 @@ describe('roster.listAgents era membership (S2 §6)', () => {
       archivedAt: sealedAt.toISOString(),
     });
     // The lab is the analysis surface: a simulated human keeps its agentBackend.
+    // Deliberate exception to publicAgentBackend (S5 ruling, reaffirmed in S6 —
+    // see docs/13-observation-lab.md, 2026-10-15); platform DTOs withhold it.
     expect(byName.get('fenziys')).toMatchObject({
       isAgent: false,
       cohort: 'human',
@@ -213,6 +218,75 @@ describe('roster.getAgentStats', () => {
         kind: 'in',
       },
     ]);
+  });
+
+  it('counts only what a visitor could already see: public posts and what hangs off them', async () => {
+    // SA-F1: this read is public. Followers-only / private posts, comments under
+    // them and likes on them used to be counted — and the inbound ones named
+    // their likers in topInteractors.
+    const agent = await seedUser({ username: 'privbot', isAgent: true });
+    const human = await seedUser({ username: 'hpal', isAgent: false });
+
+    const pub = await seedPost(agent.id);
+    const fol = await seedPost(agent.id, { visibility: 'followers' });
+    const priv = await seedPost(agent.id, { visibility: 'private' });
+    for (const p of [pub, fol, priv]) {
+      await db.insert(likes).values({ userId: human.id, targetType: 'post', targetId: p.id });
+      await db.insert(comments).values({ postId: p.id, authorId: human.id, text: 'hi' });
+    }
+
+    const humanPub = await seedPost(human.id);
+    const humanFol = await seedPost(human.id, { visibility: 'followers' });
+    const [onPub] = await db
+      .insert(comments)
+      .values({ postId: humanPub.id, authorId: human.id, text: 'c' })
+      .returning();
+    const [onFol] = await db
+      .insert(comments)
+      .values({ postId: humanFol.id, authorId: human.id, text: 'c' })
+      .returning();
+    // A deleted public post and a deleted comment are gone for a visitor too.
+    const humanDeleted = await seedPost(human.id, { status: 'deleted' });
+    const [onPubDeleted] = await db
+      .insert(comments)
+      .values({ postId: humanPub.id, authorId: human.id, text: 'gone', status: 'deleted' })
+      .returning();
+    for (const target of [humanPub, humanFol, humanDeleted]) {
+      await db.insert(comments).values({ postId: target.id, authorId: agent.id, text: 'reply' });
+      await db.insert(likes).values({ userId: agent.id, targetType: 'post', targetId: target.id });
+    }
+    await db.insert(likes).values({ userId: agent.id, targetType: 'comment', targetId: onPub.id });
+    await db.insert(likes).values({ userId: agent.id, targetType: 'comment', targetId: onFol.id });
+    await db
+      .insert(likes)
+      .values({ userId: agent.id, targetType: 'comment', targetId: onPubDeleted.id });
+
+    const stats = await getAgentStats('privbot', '7d');
+
+    expect(stats.cadence[6]).toMatchObject({ posts: 1, comments: 1, likesGiven: 2 });
+    expect(stats.engagement).toEqual({
+      selfPostsReceived: {
+        likes: { byAi: 0, byHuman: 1 },
+        comments: { byAi: 0, byHuman: 1 },
+      },
+      given: {
+        likes: { toAi: 0, toHuman: 1 },
+        comments: { toAi: 0, toHuman: 1 },
+      },
+    });
+    expect(stats.topInteractors).toEqual([
+      { username: 'hpal', displayName: human.displayName, isAgent: false, count: 2, kind: 'in' },
+    ]);
+  });
+
+  it('404s an ordinary human, and answers for a sealed Era 2 simulated human', async () => {
+    await seedUser({ username: 'justahuman', isAgent: false });
+    await seedUser({ username: 'sealedsim', isAgent: false, archivedAt: new Date() });
+
+    await expect(getAgentStats('justahuman', '7d')).rejects.toMatchObject({ status: 404 });
+    await expect(getAgentStats('sealedsim', '7d')).resolves.toMatchObject({
+      username: 'sealedsim',
+    });
   });
 
   it('returns an all-zero cadence and empty engagement for a silent account', async () => {

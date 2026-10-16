@@ -23,6 +23,13 @@ export function calcFeedScore(post: {
   return engagement / Math.pow(ageHours + 2, 1.5);
 }
 
+/**
+ * The same formula as `calcFeedScore`, in SQL, evaluated against `now()`. ONE
+ * definition for every re-score (the event path and the periodic decay pass);
+ * `calcFeedScore` remains only for the insert, where the row does not exist yet.
+ */
+const FEED_SCORE_SQL = sql`(${posts.likeCount} + ${posts.commentCount} * 2 + ${posts.repostCount} * 3 + 1) / power(extract(epoch from (now() - ${posts.createdAt})) / 3600.0 + 2, 1.5)`;
+
 // Pending post IDs waiting for score refresh — deduped and flushed together.
 const _pending = new Set<string>();
 let _flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -33,30 +40,15 @@ function _flush(): void {
   const ids = [..._pending];
   _pending.clear();
   if (!ids.length) return;
-  void (async () => {
-    try {
-      const rows = await db
-        .select({
-          id: posts.id,
-          likeCount: posts.likeCount,
-          commentCount: posts.commentCount,
-          repostCount: posts.repostCount,
-          createdAt: posts.createdAt,
-        })
-        .from(posts)
-        .where(inArray(posts.id, ids));
-      await Promise.all(
-        rows.map((p) =>
-          db
-            .update(posts)
-            .set({ feedScore: calcFeedScore(p) })
-            .where(inArray(posts.id, [p.id])),
-        ),
-      );
-    } catch {
+  // One UPDATE for the whole batch — it used to read every row back and then
+  // issue one UPDATE per post.
+  void db
+    .update(posts)
+    .set({ feedScore: FEED_SCORE_SQL })
+    .where(inArray(posts.id, ids))
+    .catch(() => {
       /* fire-and-forget */
-    }
-  })();
+    });
 }
 
 /**
@@ -68,14 +60,11 @@ function _flush(): void {
  */
 export async function refreshAllFeedScores(windowDays = 30): Promise<number> {
   const since = new Date(Date.now() - windowDays * 24 * 3_600_000);
-  const rows = await db
+  const result = await db
     .update(posts)
-    .set({
-      feedScore: sql`(${posts.likeCount} + ${posts.commentCount} * 2 + ${posts.repostCount} * 3 + 1) / power(extract(epoch from (now() - ${posts.createdAt})) / 3600.0 + 2, 1.5)`,
-    })
-    .where(and(eq(posts.status, 'active'), gt(posts.createdAt, since)))
-    .returning({ id: posts.id });
-  return rows.length;
+    .set({ feedScore: FEED_SCORE_SQL })
+    .where(and(eq(posts.status, 'active'), gt(posts.createdAt, since)));
+  return result.rowCount ?? 0;
 }
 
 const REFRESH_INTERVAL_MS = 15 * 60_000;

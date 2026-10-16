@@ -3,7 +3,7 @@
   "workspaces": {
     ".": {
       "entry": ["scripts/*.sh"],
-      "ignore": ["agent/**", ".remember/**", "e2e/**"]
+      "ignore": ["agent/**", ".remember/**"]
     },
     "server": {
       "entry": ["scripts/*.ts", "src/**/*.test.ts", "src/contract/index.ts"],
@@ -14,10 +14,10 @@
       "project": ["src/**/*.{ts,tsx}"]
     },
     "mcp": {
-      "entry": ["scripts/*.mts", "src/**/*.test.ts", "src/contract/common.ts"],
+      "entry": ["scripts/*.mts", "src/**/*.test.ts", "src/contract/common.ts", "src/contract/limits.ts"],
       "project": ["src/**/*.ts"]
     }
   },
-  "ignoreDependencies": ["@testing-library/jest-dom", "@commitlint/cli", "pino-pretty"],
+  "ignoreDependencies": ["@testing-library/jest-dom", "pino-pretty"],
   "ignoreExportsUsedInFile": true
 }

@@ -160,7 +160,7 @@ def test_a_held_bash_lock_blocks_a_python_lease(tmp_path: Path) -> None:
     """The direction that matters most: Bash got there first."""
     lock = act_lock_path(tmp_path, "zenith")
     lock.parent.mkdir(parents=True, exist_ok=True)
-    lock.write_text("99999\n", encoding="utf-8")
+    lock.write_text(f"{os.getpid()}\n", encoding="utf-8")
     db = _memory_db()
     with pytest.raises(LeaseBusy), RunLease(db, tmp_path, "builtin", "zenith", kind="act"):
         pass
@@ -173,7 +173,7 @@ def test_a_lease_lost_to_bash_writes_no_row(tmp_path: Path) -> None:
     for a full TTL."""
     lock = act_lock_path(tmp_path, "zenith")
     lock.parent.mkdir(parents=True, exist_ok=True)
-    lock.write_text("99999\n", encoding="utf-8")
+    lock.write_text(f"{os.getpid()}\n", encoding="utf-8")
     db = _memory_db()
     ensure_schema(db)
     with pytest.raises(LeaseBusy), RunLease(db, tmp_path, "builtin", "zenith", kind="act"):
@@ -618,6 +618,24 @@ def test_a_lease_takes_over_from_a_dead_process_without_an_external_sweep(
     monkeypatch.setattr(os, "kill", _kill_reporting_dead(424242))
     with RunLease(db, tmp_path, "builtin", "zenith", kind="act", run_id="live", now=_now):
         assert _run_ids(db) == ["live"]
+
+
+def test_a_dead_holders_fresh_lock_file_and_row_are_both_reclaimed_at_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """S6 AG-F12: a run that died ten seconds ago leaves BOTH halves. The row
+    reclaim used to be unreachable -- the file is acquired first and only
+    aged out after 1800s -- so the account sat out every round in between."""
+    db = _memory_db()
+    _insert_lease(db, "builtin", "zenith", age_seconds=10, pid=424242, run_id="dead")
+    lock = act_lock_path(tmp_path, "zenith")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text("424242\n", encoding="utf-8")
+    monkeypatch.setattr(os, "kill", _kill_reporting_dead(424242))
+    with RunLease(db, tmp_path, "builtin", "zenith", kind="act", run_id="live", now=_now):
+        assert _run_ids(db) == ["live"]
+        assert lock.read_text(encoding="utf-8").splitlines()[0] == str(os.getpid())
+    assert not lock.exists()
 
 
 def test_a_lease_owned_by_another_users_live_process_is_not_reclaimed(

@@ -17,18 +17,10 @@ import { z } from 'zod';
 import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../db/client';
-import { conversations } from '../db/schema';
+import { conversations, users } from '../db/schema';
 import { attachRedisAdapter } from './adapter';
-import { env } from '../config/env';
+import { isAllowedOrigin } from '../lib/origin';
 import { ID_RE } from '../contract/common';
-
-/** Match HTTP CORS: missing Origin (non-browser) is allowed; unknown Origin is not. */
-export function allowSocketOrigin(origin: string | undefined, host?: string): boolean {
-  if (!origin) return true;
-  if (env.CORS_ORIGINS.includes(origin)) return true;
-  if (host && (origin === `https://${host}` || origin === `http://${host}`)) return true;
-  return false;
-}
 
 /**
  * Zod schemas for inbound socket events. Malformed payloads are dropped
@@ -46,6 +38,7 @@ function parse<T>(schema: z.ZodType<T>, input: unknown): T | null {
 
 type SessionedRequest = Parameters<RequestHandler>[0] & {
   session?: { userId?: string };
+  sessionID?: string;
 };
 
 let io: IOServer | null = null;
@@ -53,15 +46,17 @@ let io: IOServer | null = null;
 export function initRealtime(httpServer: HttpServer, sessionMiddleware: RequestHandler): IOServer {
   const server = new IOServer(httpServer, {
     cors: {
+      // The CORS headers only; `allowRequest` below is the gate, and it has
+      // the Host the same-host branch needs.
       origin: (origin, cb) => {
-        cb(null, allowSocketOrigin(origin));
+        cb(null, isAllowedOrigin(origin, undefined));
       },
       credentials: true,
     },
     allowRequest: (req, cb) => {
       const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
       const host = typeof req.headers.host === 'string' ? req.headers.host : undefined;
-      cb(null, allowSocketOrigin(origin, host));
+      cb(null, isAllowedOrigin(origin, host));
     },
     transports: ['websocket', 'polling'],
   });
@@ -79,6 +74,10 @@ export function initRealtime(httpServer: HttpServer, sessionMiddleware: RequestH
     ) => void,
   );
 
+  // The session only says who signed in; whether that account may still hold
+  // a live channel is the user row's status, which HTTP re-checks per request
+  // (`loadSessionUser`). A suspended or deleted account must not keep
+  // receiving DMs and notifications over a socket either.
   server.use((socket, next) => {
     const req = socket.request as SessionedRequest;
     const userId = req.session?.userId;
@@ -86,8 +85,35 @@ export function initRealtime(httpServer: HttpServer, sessionMiddleware: RequestH
       next(new Error('unauthenticated'));
       return;
     }
-    socket.data.userId = userId;
-    next();
+    // `next` is called exactly once, outside the lookup's try: a throw from
+    // inside `next()` must not land in the catch and call it a second time.
+    (async () => {
+      let status: string | undefined;
+      try {
+        const [user] = await db
+          .select({ status: users.status })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+        status = user?.status;
+      } catch (err) {
+        logger.error({ err }, 'socket handshake user lookup failed');
+        next(new Error('unavailable'));
+        return;
+      }
+      if (status !== 'active') {
+        next(new Error('unauthenticated'));
+        return;
+      }
+      socket.data.userId = userId;
+      // The session this socket rides on: logout ends only that session, so it
+      // drops only that session's sockets (`dropSessionSockets`).
+      socket.data.sid = req.sessionID;
+      next();
+    })().catch((err: unknown) => {
+      // Only a throw from inside `next()` itself reaches here; logged, never re-sent.
+      logger.error({ err }, 'socket handshake middleware threw');
+    });
   });
 
   server.on('connection', (socket) => {
@@ -157,6 +183,33 @@ export function userRoom(userId: string): string {
 
 export function conversationRoom(conversationId: string): string {
   return `conversation:${conversationId}`;
+}
+
+/**
+ * Disconnect the sockets a just-ended session opened. Logout on one device
+ * must not cut realtime on the others: those are other sessions, still valid.
+ * `fetchSockets` goes through the adapter, so this also reaches sockets held by
+ * another instance under the Redis adapter. Best-effort: a failed lookup is
+ * logged, never fails the logout that called it.
+ */
+export async function dropSessionSockets(
+  userId: string | undefined,
+  sid: string | undefined,
+): Promise<void> {
+  if (!io || !userId || !sid) return;
+  try {
+    const sockets = await io.in(userRoom(userId)).fetchSockets();
+    for (const socket of sockets) {
+      if (socket.data.sid === sid) socket.disconnect(true);
+    }
+  } catch (err) {
+    logger.warn({ err }, 'dropSessionSockets failed');
+  }
+}
+
+/** Disconnect every socket of a user — a password change ends all their sessions. */
+export function dropUserSockets(userId: string): void {
+  io?.in(userRoom(userId)).disconnectSockets(true);
 }
 
 export function emitToUser(userId: string, event: string, payload: unknown): void {

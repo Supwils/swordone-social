@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import random
 from collections.abc import Callable
 from datetime import datetime
@@ -113,7 +114,7 @@ def test_allowed_for_is_unrestricted_including_for_codex(tmp_path: Path) -> None
 
 
 def _scenario(name: str, tmp_path: Path) -> ActResult:
-    post_id = "p" * 24
+    post_id = "f" * 24
 
     if name == "all_actions_land":
         # Mutation this pins: remove the `like_raises` absence (i.e. inject
@@ -249,7 +250,7 @@ def test_two_planner_empty_routes_have_different_vetoed_shapes(tmp_path: Path) -
 def test_every_action_failing_logs_fail_and_records_landed_zero(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    post_id = "p" * 24
+    post_id = "f" * 24
     backend = StubBackend(f'{{"plan":[{{"action":"like","postId":"{post_id}"}}]}}')
     resources = FakeResources(like_raises=ApiError(500, "boom", None))
     with caplog.at_level(logging.WARNING, logger="swil_agent.act.round"):
@@ -270,7 +271,7 @@ def test_fail_log_uses_the_directory_name_not_the_username(
     This test sets them apart on purpose: `directory.name` must appear in
     the log line, and the (deliberately different) `username` must not."""
     persona = _persona(tmp_path, username="not-the-directory-name", dir_name="zenith")
-    post_id = "p" * 24
+    post_id = "f" * 24
     backend = StubBackend(f'{{"plan":[{{"action":"like","postId":"{post_id}"}}]}}')
     resources = FakeResources(like_raises=ApiError(500, "boom", None))
     with caplog.at_level(logging.WARNING, logger="swil_agent.act.round"):
@@ -342,7 +343,7 @@ def test_run_act_releases_the_lock_even_when_a_step_raises(tmp_path: Path) -> No
 
 def test_dry_run_never_calls_the_api_or_writes_memory(tmp_path: Path) -> None:
     persona = _persona(tmp_path)
-    post_id = "p" * 24
+    post_id = "f" * 24
     backend = StubBackend(f'{{"plan":[{{"action":"like","postId":"{post_id}"}}]}}')
     resources = FakeResources()
 
@@ -360,7 +361,7 @@ def test_dry_run_never_calls_the_api_or_writes_memory(tmp_path: Path) -> None:
 
 def test_dry_run_still_returns_the_plan_and_vetoes(tmp_path: Path) -> None:
     """The whole point of dry_run: inspect what WOULD have executed."""
-    post_id = "p" * 24
+    post_id = "f" * 24
     backend = StubBackend(f'{{"plan":[{{"action":"like","postId":"{post_id}"}}]}}')
     result = _run(tmp_path, backend=backend, dry_run=True)
     assert result.plan is not None
@@ -409,7 +410,7 @@ def test_memory_lines_match_the_bash_shapes(tmp_path: Path) -> None:
         tmp_path,
         [
             Action(kind="post", text="hello"),
-            Action(kind="like", post_id="p" * 24),
+            Action(kind="like", post_id="f" * 24),
             Action(kind="follow", username="vex"),
             Action(kind="nothing"),
         ],
@@ -417,7 +418,7 @@ def test_memory_lines_match_the_bash_shapes(tmp_path: Path) -> None:
     )
     assert lines == [
         "2026-08-17 | post | id=newpost0000000000000000 | hello",
-        "2026-08-17 | like | postId=" + "p" * 24,
+        "2026-08-17 | like | postId=" + "f" * 24,
         "2026-08-17 | follow | @vex",
     ]
 
@@ -452,7 +453,7 @@ def test_memory_line_image_tag_is_never_doubled_text_collapsed(tmp_path: Path) -
 
 
 def test_memory_line_for_comment_includes_parent_id_on_a_real_reply(tmp_path: Path) -> None:
-    post_id = "p" * 24
+    post_id = "f" * 24
     parent_id = "c" * 24
     lines = _run_and_collect_memory(
         tmp_path,
@@ -470,7 +471,7 @@ def test_memory_line_for_comment_omits_parent_id_after_the_fallback_retry(tmp_pa
     (`"parent unusable — posted top-level"`) -- the memory line must match
     what swil.sh's own retry call would have written (no parentId), not
     what the model originally asked for."""
-    post_id = "p" * 24
+    post_id = "f" * 24
     parent_id = "c" * 24
     resources = FakeResources(fail_first_comment=True)
     persona = _persona(tmp_path)
@@ -483,7 +484,7 @@ def test_memory_line_for_comment_omits_parent_id_after_the_fallback_retry(tmp_pa
 
 
 def test_memory_line_for_echo_includes_the_quote(tmp_path: Path) -> None:
-    post_id = "p" * 24
+    post_id = "f" * 24
     lines = _run_and_collect_memory(
         tmp_path, [Action(kind="echo", post_id=post_id, text="nice take")]
     )
@@ -491,7 +492,7 @@ def test_memory_line_for_echo_includes_the_quote(tmp_path: Path) -> None:
 
 
 def test_memory_line_for_echo_without_a_quote_has_no_trailing_tag(tmp_path: Path) -> None:
-    post_id = "p" * 24
+    post_id = "f" * 24
     lines = _run_and_collect_memory(tmp_path, [Action(kind="echo", post_id=post_id)])
     assert lines == [f"2026-08-17 | echo | id=post-1 echoOf={post_id}"]
 
@@ -531,7 +532,7 @@ def test_nothing_writes_no_memory_line_even_when_it_is_the_whole_plan(tmp_path: 
 
 
 def test_a_failed_action_writes_no_memory_line(tmp_path: Path) -> None:
-    post_id = "p" * 24
+    post_id = "f" * 24
     persona = _persona(tmp_path)
     backend = StubBackend(_plan_json([Action(kind="like", post_id=post_id)]))
     resources = FakeResources(like_raises=ApiError(500, "boom", None))
@@ -742,7 +743,7 @@ def test_a_real_run_still_contends_for_the_lock(tmp_path: Path) -> None:
     the duplicate-post/memory-corruption class the lock exists for."""
     lock = act_lock_path(tmp_path, "zenith")
     lock.parent.mkdir(parents=True, exist_ok=True)
-    lock.write_text("999", encoding="utf-8")
+    lock.write_text(str(os.getpid()), encoding="utf-8")
     with pytest.raises(LeaseBusy):
         _run(tmp_path, dry_run=False)
 
@@ -822,7 +823,7 @@ def test_a_reply_marks_only_the_parent_comments_notification(tmp_path: Path) -> 
     else. Mutation this catches: falling through to the postId clause for a
     reply, which would also clear `n-post` below -- exactly the
     "someone commented on X" context Bash's comment says must survive."""
-    post_id = "p" * 24
+    post_id = "f" * 24
     parent_id = "c" * 24
     resources = FakeResources()
     resources.notification_items = [
@@ -848,7 +849,7 @@ def test_a_top_level_comment_marks_only_response_type_notifications_on_its_post(
     """The `pid` clause: mention/comment/reply on that post, and only those.
     Mutation this catches: dropping the type filter, which would also clear
     the `like` and `follow` rows below."""
-    post_id = "p" * 24
+    post_id = "f" * 24
     resources = FakeResources()
     resources.notification_items = [
         _notification("n-mention", notif_type="mention", post_id=post_id),
@@ -856,7 +857,7 @@ def test_a_top_level_comment_marks_only_response_type_notifications_on_its_post(
         _notification("n-reply", notif_type="reply", post_id=post_id),
         _notification("n-like", notif_type="like", post_id=post_id),
         _notification("n-follow", notif_type="follow"),
-        _notification("n-other-post", notif_type="comment", post_id="q" * 24),
+        _notification("n-other-post", notif_type="comment", post_id="e" * 24),
     ]
     backend = StubBackend(
         json.dumps({"plan": [{"action": "comment", "postId": post_id, "text": "hi"}]})
@@ -870,7 +871,7 @@ def test_a_plan_with_no_comment_and_no_nothing_marks_nothing(tmp_path: Path) -> 
     notification. Mutation this catches: an unconditional `mark all` fallback
     at the end of the block, which would wipe unread mentions the agent never
     answered."""
-    post_id = "p" * 24
+    post_id = "f" * 24
     resources = FakeResources()
     resources.notification_items = [_notification("n-1", notif_type="mention", post_id=post_id)]
     backend = StubBackend(json.dumps({"plan": [{"action": "like", "postId": post_id}]}))
@@ -884,7 +885,7 @@ def test_a_round_where_nothing_landed_marks_nothing(tmp_path: Path) -> None:
     (`auto-run.sh:762-765`), so those notifications survive to the next
     round. Mutation this catches: hoisting the call above the `landed > 0`
     guard."""
-    post_id = "p" * 24
+    post_id = "f" * 24
     resources = FakeResources(comment_returns_no_id=True)
     resources.notification_items = [_notification("n-1", notif_type="mention", post_id=post_id)]
     backend = StubBackend(
@@ -904,7 +905,7 @@ def test_a_comment_matching_no_notification_marks_nothing_on_the_wire(tmp_path: 
     Added by ruling R20's fake-fidelity audit: this is the state where a fake
     that recorded the empty call would have diverged from the real method,
     and the divergence would have been invisible because no test drove it."""
-    post_id = "p" * 24
+    post_id = "f" * 24
     resources = FakeResources()
     # An unread notification the plan's comment does NOT respond to.
     resources.notification_items = [_notification("n-1", notif_type="like", post_id=post_id)]
@@ -919,7 +920,7 @@ def test_a_comment_matching_no_notification_marks_nothing_on_the_wire(tmp_path: 
 def test_a_failed_notifications_read_degrades_to_marking_nothing(tmp_path: Path) -> None:
     """`2>/dev/null || echo '[]'` around Bash's own re-read: housekeeping
     must never turn a landed round into a failed one."""
-    post_id = "p" * 24
+    post_id = "f" * 24
     resources = FakeResources()
     resources.fail("notifications")
     backend = StubBackend(
@@ -955,7 +956,7 @@ def test_call_succeeded_defaults_to_landed_for_every_other_kind(tmp_path: Path) 
     bigger contamination of `memory.md` than the one this ruling fixes."""
     lines = _run_and_collect_memory(
         tmp_path,
-        [Action(kind="like", post_id="p" * 24)],
+        [Action(kind="like", post_id="f" * 24)],
         resources=FakeResources(like_raises=ApiError(500, "boom", None)),
     )
     assert lines == []
@@ -1609,7 +1610,7 @@ def test_a_held_dream_lock_skips_rotation(tmp_path: Path) -> None:
     _long_memory(persona, 350)
     lock = dream_lock_path(tmp_path, persona.directory.name)
     lock.parent.mkdir(parents=True, exist_ok=True)
-    lock.write_text("999999\n", encoding="utf-8")
+    lock.write_text(f"{os.getpid()}\n", encoding="utf-8")
 
     _run(tmp_path, persona=persona)
 

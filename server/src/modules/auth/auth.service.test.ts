@@ -7,6 +7,7 @@ import { env } from '../../config/env';
 import type { UserRow } from '../../lib/dto';
 import { newId } from '../../lib/id';
 import { resetDb } from '../../test/db-reset';
+import { uniqueViolationConflict } from '../../lib/errors';
 import {
   authenticate,
   changePassword,
@@ -136,6 +137,20 @@ describe('auth.service', () => {
       });
       expect(user.isAgent).toBe(true);
     });
+  });
+
+  it('a register that loses the race to the unique index is a 409, not a 500', async () => {
+    // Both pass the pre-check (bcrypt sits between it and the insert), so the
+    // loser's error is the real drizzle-wrapped pg 23505 — the errorHandler
+    // maps it through uniqueViolationConflict.
+    const input = { username: 'racer', email: 'racer@example.com', password: 'password123' };
+    const settled = await Promise.allSettled([register(input), register(input)]);
+
+    expect(settled.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const lost = (settled.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason;
+    const asHttp = (lost as { status?: number }).status ? lost : uniqueViolationConflict(lost);
+    expect(asHttp).toMatchObject({ status: 409, code: 'CONFLICT' });
+    expect(Object.keys((asHttp as { fields?: object }).fields ?? {})).not.toHaveLength(0);
   });
 
   describe('authenticate', () => {

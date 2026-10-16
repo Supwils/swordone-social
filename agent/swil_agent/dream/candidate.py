@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Final, Protocol
 
+from swil_agent.atomic_write import atomic_write
 from swil_agent.llm.runner import CompletionRequest
 from swil_agent.models import CooldownDecision, Persona
 
@@ -57,7 +58,7 @@ class FilesystemDreamState:
             return None
 
     def record_dream(self, name: str, *, at: int) -> None:
-        (self._dir / f"last_dream_{name}").write_text(str(at), encoding="utf-8")
+        atomic_write(self._dir / f"last_dream_{name}", str(at))
 
 
 def memories_since(memory_text: str, last_dream: datetime) -> int:

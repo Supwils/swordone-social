@@ -1,13 +1,12 @@
 """Backend dispatch for LLM calls.
 
-All three current backends are CLI subprocesses, not HTTP APIs — `codex` has no
-API at all. `Runner` is the seam that makes them testable: production uses
+The five roster-capable backends -- claude, codex, cursor (`cursor-agent`),
+grok and deepseek (claude on DeepSeek's endpoint) -- are CLI subprocesses, not
+HTTP APIs. `Runner` is the seam that makes them testable: production uses
 `SubprocessRunner`, tests inject a fake.
 
 `ApiBackend` (BYOK over HTTP, `llm/api_backend.py`) sits beside these
 implementations and is off unless configured.
-
-Ported from the deleted `agent/scripts/llm.sh:80-124` (`_llm_raw`, `llm_text`, `llm_json`).
 """
 
 from __future__ import annotations
@@ -33,14 +32,15 @@ def build_backend(
     *,
     deepseek_api_key: str | None = None,
 ) -> Backend:
-    """Map a personality's `AI Backend` bullet to a backend.
+    """Map a resolved wire name (`BackendChoice.wire_name`) to a backend.
 
-    Unknown names fall back to the claude path, as the Bash runtime did.
-    `mangniu` records `haiku`, which must not raise.
+    An unknown spelling is refused before this point, by the persona loader
+    and by `resolve_backend_choice`, so the claude fallthrough at the end is
+    only ever reached by `claude` itself.
 
     `deepseek_api_key` is an injection seam, not a production concern: leave
     it unset and the real key is read from `~/.claude/.deepseek-key` (via
-    `_default_deepseek_key`), exactly like the Bash runtime. It exists so
+    `_default_deepseek_key`). It exists so
     `test_backends.py` can supply a fixed string instead of depending on a
     file outside the repository — without it, the deepseek tests would pass
     locally (if the developer happens to have the file) and fail in CI (which

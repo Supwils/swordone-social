@@ -237,6 +237,104 @@ describe('drift.ingestSnapshot', () => {
     expect(untouched.d).toBe(0.77);
   });
 
+  it('measures against the NEWEST anchor when an account has two', async () => {
+    const agent = await seedUser({ username: 'zenith', isAgent: true });
+    // The older anchor goes in first, so an unordered `LIMIT 1` reads it.
+    await seedSnapshot(agent.id, {
+      contentHash: uniqHash('old-anchor'),
+      embedding: axis(0),
+      snapshotType: 'anchor',
+      capturedAt: new Date('2026-10-01T00:00:00.000Z'),
+    });
+    await seedSnapshot(agent.id, {
+      contentHash: uniqHash('new-anchor'),
+      embedding: axis(1),
+      snapshotType: 'anchor',
+      capturedAt: new Date('2026-10-10T00:00:00.000Z'),
+    });
+
+    const out = await ingestSnapshot('zenith', agent, {
+      contentHash: uniqHash('dream-after'),
+      embedding: axis(1),
+      snapshotType: 'dream',
+      capturedAt: new Date('2026-10-12T00:00:00.000Z'),
+      archivePath: 'agents/zenith/personality.archive.md#9',
+      excerpt: '',
+    });
+
+    // Identical to the newer anchor (distance 0), orthogonal to the older (1).
+    expect(out.driftFromAnchor).toBeCloseTo(0, 6);
+  });
+
+  it('does not rebase the series onto a late-backfilled OLDER anchor', async () => {
+    const agent = await seedUser({ username: 'zenith', isAgent: true });
+    await seedSnapshot(agent.id, {
+      contentHash: uniqHash('cur-anchor'),
+      embedding: axis(1),
+      snapshotType: 'anchor',
+      capturedAt: new Date('2026-10-10T00:00:00.000Z'),
+    });
+    const dream = await seedSnapshot(agent.id, {
+      contentHash: uniqHash('dream'),
+      embedding: axis(1),
+      capturedAt: new Date('2026-10-11T00:00:00.000Z'),
+      driftFromAnchor: 0,
+    });
+
+    await ingestSnapshot('zenith', agent, {
+      contentHash: uniqHash('older-anchor'),
+      embedding: axis(0),
+      snapshotType: 'anchor',
+      capturedAt: new Date('2026-10-01T00:00:00.000Z'),
+      archivePath: 'agents/zenith/personality.md',
+      excerpt: '',
+    });
+
+    const [row] = await db
+      .select()
+      .from(personalitySnapshots)
+      .where(eq(personalitySnapshots.id, dream.id));
+    expect(row.driftFromAnchor).toBe(0);
+  });
+
+  it('breaks a capturedAt tie like the lookup does: only the higher-id anchor rebases', async () => {
+    const agent = await seedUser({ username: 'zenith', isAgent: true });
+    const at = new Date('2026-10-10T00:00:00.000Z');
+    // The lookup orders capturedAt desc, id desc — so at one instant the anchor
+    // with the highest id is the one measured against. An all-`f` id sorts above
+    // any id the ingest below can be given.
+    await seedSnapshot(agent.id, {
+      id: 'f'.repeat(24),
+      contentHash: uniqHash('tie-anchor-high'),
+      embedding: axis(1),
+      snapshotType: 'anchor',
+      capturedAt: at,
+    });
+    const dream = await seedSnapshot(agent.id, {
+      contentHash: uniqHash('dream'),
+      embedding: axis(1),
+      capturedAt: new Date('2026-10-11T00:00:00.000Z'),
+      driftFromAnchor: 0,
+    });
+
+    await ingestSnapshot('zenith', agent, {
+      contentHash: uniqHash('tie-anchor-low'),
+      embedding: axis(0),
+      snapshotType: 'anchor',
+      capturedAt: at,
+      archivePath: 'agents/zenith/personality.md',
+      excerpt: '',
+    });
+
+    const [row] = await db
+      .select()
+      .from(personalitySnapshots)
+      .where(eq(personalitySnapshots.id, dream.id));
+    // Still measured against the high-id anchor (identical vector), not rebased
+    // onto the orthogonal low-id one.
+    expect(row.driftFromAnchor).toBe(0);
+  });
+
   it('computes drift = 0 when no anchor or prev snapshot exists yet', async () => {
     const agent = await seedUser({ username: 'zenith', isAgent: true });
 

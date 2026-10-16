@@ -11,6 +11,14 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { newId } from '../../lib/id';
+// Event enums come from the contract (type-only), like `social.ts` does, so the
+// column types cannot drift from what the ingest body accepts.
+import type {
+  AgentEventAction,
+  AgentEventOutcome,
+  AgentEventPhase,
+  AgentEventType,
+} from '../../contract/lab/runtime';
 
 export type DriftAspect = 'values' | 'style' | 'topic';
 export type AspectDrift = {
@@ -73,18 +81,10 @@ export const agentEvents = pgTable(
   {
     id: text('id').primaryKey().$defaultFn(newId),
     userId: text('user_id').notNull(),
-    type: text('type')
-      .$type<'cycle' | 'dream' | 'snapshot' | 'memory' | 'echo_flag' | 'rule_check' | 'anomaly'>()
-      .notNull(),
-    phase: text('phase')
-      .$type<'act' | 'dream' | 'snapshot' | 'memory' | 'echo' | 'rule' | 'anomaly'>()
-      .notNull(),
-    outcome: text('outcome')
-      .$type<'started' | 'success' | 'skip' | 'fail' | 'warn' | 'flagged' | 'cleared'>()
-      .notNull(),
-    action: text('action').$type<
-      'post' | 'comment' | 'like' | 'follow' | 'unfollow' | 'delete' | 'dm' | 'echo' | 'nothing'
-    >(),
+    type: text('type').$type<AgentEventType>().notNull(),
+    phase: text('phase').$type<AgentEventPhase>().notNull(),
+    outcome: text('outcome').$type<AgentEventOutcome>().notNull(),
+    action: text('action').$type<AgentEventAction>(),
     summary: text('summary').notNull(),
     reason: text('reason'),
     targetId: text('target_id'),

@@ -140,6 +140,52 @@ describe('errorHandler', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
+  it('answers a unique violation (pg 23505, wrapped by drizzle) with 409 and the field', async () => {
+    // A check-then-insert race (register, BYOA create) loses to the unique
+    // index; that is the client's conflict, not a 500. The driver's `detail`
+    // carries the conflicting value and must not be echoed.
+    const { errorHandler, logger } = await loadHandlers(true);
+    const res = makeRes();
+    const pgError = Object.assign(new Error('duplicate key value violates unique constraint'), {
+      code: '23505',
+      constraint: 'users_email_uq',
+      detail: 'Key (email)=(ada@example.com) already exists.',
+    });
+    const wrapped = Object.assign(new Error('Failed query: insert into "users" …'), {
+      cause: pgError,
+    });
+
+    errorHandler(wrapped, { id: 'req-7' } as Request, res, vi.fn());
+
+    expect(res.statusCode).toBe(409);
+    expect(res.payload).toEqual({
+      error: {
+        code: 'CONFLICT',
+        message: 'Already exists',
+        fields: { email: 'Already taken' },
+        requestId: 'req-7',
+      },
+    });
+    expect(JSON.stringify(res.payload)).not.toContain('ada@example.com');
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('maps an unknown unique index to 409 without a field', async () => {
+    const { errorHandler } = await loadHandlers(true);
+    const res = makeRes();
+    const err = Object.assign(new Error('dup'), {
+      code: '23505',
+      constraint: 'likes_user_target_uq',
+    });
+
+    errorHandler(err, { id: 'req-8' } as Request, res, vi.fn());
+
+    expect(res.statusCode).toBe(409);
+    expect(res.payload).toEqual({
+      error: { code: 'CONFLICT', message: 'Already exists', requestId: 'req-8' },
+    });
+  });
+
   it('still treats a 5xx-tagged unknown error as a server fault', async () => {
     // The status passthrough must not become a way for an upstream library to
     // claim a 4xx-shaped 500, nor swallow a real one.

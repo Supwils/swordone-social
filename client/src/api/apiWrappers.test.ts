@@ -40,7 +40,11 @@ const mocks = vi.hoisted(() => {
   return { http, unwrap };
 });
 
-vi.mock('@/api/client', () => ({ http: mocks.http, unwrap: mocks.unwrap }));
+// `apiPath` stays real: the encoding of path segments is the wrappers' own work.
+vi.mock('@/api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/client')>();
+  return { apiPath: actual.apiPath, http: mocks.http, unwrap: mocks.unwrap };
+});
 
 /** Wrap a payload the way the server does: AxiosResponse.data is the envelope. */
 function respond<T>(payload: T): { data: { data: T } } {
@@ -139,16 +143,16 @@ describe('bookmarks.api', () => {
     expect(mocks.unwrap).not.toHaveBeenCalled();
   });
 
-  it('listBookmarks forwards cursor, limit and signal', async () => {
+  it('listBookmarks forwards cursor, limit, lang and signal', async () => {
     const page = { items: [], nextCursor: null };
     mocks.http.get.mockResolvedValueOnce(respond(page));
     const signal = new AbortController().signal;
 
-    const out = await bookmarksApi.listBookmarks({ cursor: 'c-9', limit: 5, signal });
+    const out = await bookmarksApi.listBookmarks({ cursor: 'c-9', limit: 5, lang: 'zh', signal });
 
     expect(out).toBe(page);
     expect(mocks.http.get).toHaveBeenCalledWith('/bookmarks', {
-      params: { cursor: 'c-9', limit: 5 },
+      params: { cursor: 'c-9', limit: 5, lang: 'zh' },
       signal,
     });
   });
@@ -222,17 +226,38 @@ describe('feed.api', () => {
     mocks.http.get.mockResolvedValueOnce(respond(summary));
 
     await expect(feedApi.getExploreSummary()).resolves.toBe(summary);
-    expect(mocks.http.get).toHaveBeenCalledWith('/feed/explore-summary');
+    expect(mocks.http.get).toHaveBeenCalledWith('/feed/explore-summary', { params: undefined });
   });
 
-  it('byUser GETs the user posts route with cursor and limit only', async () => {
+  it('getExploreSummary forwards the viewer language for its featured post', async () => {
+    mocks.http.get.mockResolvedValueOnce(respond({}));
+
+    await feedApi.getExploreSummary('zh');
+
+    expect(mocks.http.get).toHaveBeenCalledWith('/feed/explore-summary', {
+      params: { lang: 'zh' },
+    });
+  });
+
+  it('byUser GETs the user posts route with cursor, limit and lang', async () => {
+    // Profile posts are translated on read: without lang an anonymous 中文
+    // reader got English bodies (resolveLang falls back to en).
     mocks.http.get.mockResolvedValueOnce(respond(page));
 
-    await feedApi.byUser('zenith', { cursor: 'c-3', limit: 2 });
+    await feedApi.byUser('zenith', { cursor: 'c-3', limit: 2, lang: 'zh' });
 
     expect(mocks.http.get).toHaveBeenCalledWith('/users/zenith/posts', {
-      params: { cursor: 'c-3', limit: 2 },
+      params: { cursor: 'c-3', limit: 2, lang: 'zh' },
     });
+  });
+
+  it('following forwards the viewer language', async () => {
+    mocks.http.get.mockResolvedValueOnce(respond(page));
+
+    await feedApi.following({ lang: 'zh' });
+
+    const [, config] = mocks.http.get.mock.calls[0];
+    expect(config?.params?.lang).toBe('zh');
   });
 });
 
@@ -365,6 +390,14 @@ describe('messages.api', () => {
 
     expect(mocks.http.post).toHaveBeenCalledWith('/conversations/c-1/read');
     expect(mocks.unwrap).not.toHaveBeenCalled();
+  });
+
+  it('markRead encodes the id, so a decoded route param cannot climb out of its path', async () => {
+    // React Router decodes %2F; axios does not encode. Unencoded, this POSTed
+    // /conversations/../users/x/follow?/read — i.e. /users/x/follow.
+    await messagesApi.markRead('../users/x/follow?');
+
+    expect(mocks.http.post).toHaveBeenCalledWith('/conversations/..%2Fusers%2Fx%2Ffollow%3F/read');
   });
 });
 
@@ -670,16 +703,22 @@ describe('posts.api', () => {
     expect(secondConfig?.params).toBeUndefined();
   });
 
-  it('searchPosts trims q and forwards cursor, limit and signal', async () => {
+  it('searchPosts trims q and forwards cursor, limit, lang and signal', async () => {
     const page = { items: [], nextCursor: null };
     mocks.http.get.mockResolvedValueOnce(respond(page));
     const signal = new AbortController().signal;
 
-    const out = await postsApi.searchPosts({ q: '  agents  ', cursor: 'c-1', limit: 2, signal });
+    const out = await postsApi.searchPosts({
+      q: '  agents  ',
+      cursor: 'c-1',
+      limit: 2,
+      lang: 'zh',
+      signal,
+    });
 
     expect(out).toBe(page);
     expect(mocks.http.get).toHaveBeenCalledWith('/posts/search', {
-      params: { q: 'agents', cursor: 'c-1', limit: 2 },
+      params: { q: 'agents', cursor: 'c-1', limit: 2, lang: 'zh' },
       signal,
     });
   });

@@ -1,6 +1,11 @@
-import { expect, test, type APIRequestContext, type Playwright } from '@playwright/test';
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type PlaywrightWorkerArgs,
+} from '@playwright/test';
 import { BASE_URL } from '../playwright.config';
-import { PASSWORD, registerViaApi, uniqueName } from './helpers';
+import { registerViaApi, uniqueName } from './helpers';
 
 /**
  * Social flows across the real stack: DMs (UI compose → API receipt → a
@@ -9,15 +14,13 @@ import { PASSWORD, registerViaApi, uniqueName } from './helpers';
  * own throwaway accounts; nothing depends on seed data.
  */
 
+/** A second, independent API session (its own cookie jar) registered as `username`. */
 async function registerApiContext(
-  playwright: Playwright,
+  playwright: PlaywrightWorkerArgs['playwright'],
   username: string,
 ): Promise<APIRequestContext> {
   const ctx = await playwright.request.newContext({ baseURL: BASE_URL });
-  const res = await ctx.post('/api/v1/auth/register', {
-    data: { username, email: `${username}@e2e.test`, password: PASSWORD },
-  });
-  expect(res.status(), await res.text()).toBe(201);
+  await registerViaApi(ctx, username);
   return ctx;
 }
 

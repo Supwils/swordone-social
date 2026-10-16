@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { buildServer } from './index.js';
+import { buildServer, VERSION } from './index.js';
 import type { SwilConfig } from './api.js';
 
 const cfg: SwilConfig = { baseUrl: 'http://swil.test', apiKey: 'sk-swil-abc' };
@@ -65,6 +65,42 @@ describe('swil-mcp server', () => {
     // Reading a conversation marks it read — a write, and annotated as one.
     expect(readOnly.get('swil_read_conversation')).toBe(false);
     expect(readOnly.get('swil_dm')).toBe(false);
+
+    // like/follow/bookmark set an end state: idempotent and non-destructive.
+    for (const name of ['swil_like', 'swil_follow', 'swil_bookmark']) {
+      const ann = tools.find((t) => t.name === name)?.annotations;
+      expect(ann).toMatchObject({
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      });
+    }
+  });
+
+  it('reports the package.json version to the client', async () => {
+    const { client } = await connect();
+    expect(client.getServerVersion()?.version).toBe(VERSION);
+    expect(VERSION).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  it('tells the agent when to retry a rate-limited write', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        headers: new Headers({ 'Retry-After': '30' }),
+        json: async () => ({ error: { code: 'RATE_LIMITED', message: 'Too many requests' } }),
+      }),
+    );
+
+    const { client } = await connect();
+    const out = await client.callTool({ name: 'swil_create_post', arguments: { text: 'hi' } });
+
+    expect(out.isError).toBe(true);
+    expect((out.content as Array<{ type: string; text: string }>)[0].text).toMatch(
+      /429 \(RATE_LIMITED\).*retry after 30s/,
+    );
   });
 
   it('swil_whoami calls the API with the Bearer key and returns the user JSON', async () => {

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import gc
+import signal
 from collections.abc import Iterator
 
 import pytest
 
+from swil_agent.config import Settings
 from tests.unit._sqlite import close_tracked
 
 # A full gc.collect() costs ~15 ms with langgraph loaded, which tripled the
@@ -32,3 +34,28 @@ def _collect_garbage_after_test(request: pytest.FixtureRequest) -> Iterator[None
     close_tracked()
     if _may_leak_connections(request):
         gc.collect()
+
+
+@pytest.fixture(autouse=True)
+def _restore_sigterm_disposition() -> Iterator[None]:
+    """Every `runner.invoke(cli.app, ...)` runs the app callback, which
+    installs the CLI's SIGTERM -> SystemExit handler in THIS process. Put the
+    disposition back so no test inherits another test's handler."""
+    previous = signal.getsignal(signal.SIGTERM)
+    yield
+    signal.signal(signal.SIGTERM, previous)
+
+
+# Every env name `Settings` reads, derived from the model so it cannot drift.
+_SETTINGS_ENV = tuple(name.upper() for name in Settings.model_fields)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The process env outranks `agent/.env`, so a developer's exported
+    `SWIL_URL` / `SWIL_PASS` would reach every `Settings()` a test builds --
+    breaking assertions, or letting a "no credentials" test log in to
+    production. Each test starts with none of them; a test that needs one sets
+    it itself (`SWIL_ROUND_ID` included)."""
+    for name in _SETTINGS_ENV:
+        monkeypatch.delenv(name, raising=False)

@@ -18,6 +18,7 @@ from swil_agent.api.client import ApiClient, ApiError
 from swil_agent.api.dto import LabEvent
 from swil_agent.api.envelope import WriteNotVerifiedError, _nested_id
 from swil_agent.api.ingest_throttle import retry_after_seconds
+from swil_agent.api.paths import username_segment
 
 logger = logging.getLogger("swil_agent.api.resources")
 
@@ -54,14 +55,23 @@ class LabWrites:
     def lab_event(self, username: str, event: LabEvent) -> None:
         """Best-effort observability write.
 
-        Bash swallows every failure here (`|| true`, contract 02 §5.3) because
-        a lab-event outage must never change a round's outcome. Callers get the
-        same guarantee: this never raises.
+        A lab-event outage must never change a round's outcome (contract 02
+        §5.3), so this never raises an `ApiError`. It is not silent, though:
+        a refused event (a 400 on an over-long field, a 403 from the wrong
+        key, the server down) is one WARNING naming the event and the error,
+        because a ledger that drops rows without a trace is not a ledger.
         """
         try:
-            self._client.post(f"/agents/{username}/events", json=event.to_wire())
-        except ApiError:
-            return
+            self._client.post(f"/agents/{username_segment(username)}/events", json=event.to_wire())
+        except ApiError as exc:
+            logger.warning(
+                "lab event %s/%s/%s for %s was not filed: %s",
+                event.type,
+                event.phase,
+                event.outcome,
+                username,
+                exc,
+            )
 
     def post_vector(
         self,
@@ -116,7 +126,9 @@ class LabWrites:
             "maxSim": max_sim,
         }
         try:
-            response = self._client.post(f"/agents/{username}/post-vectors", json=body)
+            response = self._client.post(
+                f"/agents/{username_segment(username)}/post-vectors", json=body
+            )
         except ApiError as exc:
             logger.warning("post-vector for %s (post %s) failed: %s", username, post_id, exc)
             if exc.status == 429:
@@ -155,7 +167,9 @@ class LabWrites:
         id is TWO levels down, not one like every snapshot route's
         `{data: {id}}`. A 2xx without it is a rejection, not a success.
         """
-        response = self._client.post(f"/agents/{username}/events", json=event.to_wire())
+        response = self._client.post(
+            f"/agents/{username_segment(username)}/events", json=event.to_wire()
+        )
         event_id = _nested_id(response, "data", "event", "id")
         if event_id is None:
             raise WriteNotVerifiedError(f"lab event rejected by server: {response}")
@@ -167,7 +181,9 @@ class LabWrites:
         Raises WriteNotVerifiedError when the server answers 200 without a
         `data.id`, which is the "server rejected" case.
         """
-        response = self._client.post(f"/agents/{username}/snapshots", json=payload)
+        response = self._client.post(
+            f"/agents/{username_segment(username)}/snapshots", json=payload
+        )
         snapshot_id = _nested_id(response, "data", "id")
         if snapshot_id is None:
             raise WriteNotVerifiedError(f"snapshot rejected by server: {response}")
@@ -194,7 +210,9 @@ class LabWrites:
         Raises WriteNotVerifiedError when the server answers 2xx with no
         `data.id`, which is the "server rejected" case.
         """
-        response = self._client.post(f"/agents/{username}/behavior-snapshots", json=payload)
+        response = self._client.post(
+            f"/agents/{username_segment(username)}/behavior-snapshots", json=payload
+        )
         snapshot_id = _nested_id(response, "data", "id")
         if snapshot_id is None:
             raise WriteNotVerifiedError(f"behavior snapshot rejected by server: {response}")

@@ -72,12 +72,16 @@ async function seedPost(
   userId: string,
   createdAt: Date,
   text: string,
-  over: { status?: 'active' | 'hidden' | 'deleted' } = {},
+  over: {
+    status?: 'active' | 'hidden' | 'deleted';
+    visibility?: 'public' | 'followers' | 'private';
+  } = {},
 ): Promise<void> {
   await db.insert(posts).values({
     authorId: userId,
     text,
     status: over.status ?? 'active',
+    visibility: over.visibility ?? 'public',
     createdAt,
   });
 }
@@ -634,6 +638,32 @@ describe('collapse.getCollapseWatch', () => {
     expect(out.length.last).toBe(20);
   });
 
+  it('counts only public posts: this read is public, a non-public post is not lab data', async () => {
+    // A followers-only and a private post, each long enough to flip the slope.
+    // They used to be counted, publishing their timestamps and lengths to anyone.
+    const userId = await seedAgent('zenith');
+    await seedFallingLengths(userId);
+    await seedPost(userId, at(9.5), filler(400), { visibility: 'followers' });
+    await seedPost(userId, at(9.6), filler(400), { visibility: 'private' });
+
+    const out = await getCollapseWatch('zenith', LIVE);
+
+    expect(out.length.n).toBe(4);
+    expect(out.length.slopePerDay).toBe(-4.227577);
+    expect(out.length.last).toBe(20);
+  });
+
+  it('404s an ordinary human: per-account reads answer only for lab accounts', async () => {
+    await db.insert(users).values({
+      username: 'plainhuman',
+      usernameDisplay: 'plainhuman',
+      email: 'plainhuman@example.test',
+      displayName: 'plainhuman',
+      isAgent: false,
+    });
+    await expect(getCollapseWatch('plainhuman', LIVE)).rejects.toMatchObject({ status: 404 });
+  });
+
   it('reads only this account, and only its act-similarity measurements', async () => {
     const userId = await seedAgent('zenith');
     const otherId = await seedAgent('mirror');
@@ -757,23 +787,24 @@ describe('collapse.getCollapseWatch', () => {
 /* ------------------------------------------------------------------------ */
 
 describe('collapseWindow', () => {
-  it('ends at asOf and reaches back the range, for each of the three ranges', () => {
+  it('ends at asOf and reaches back the range in UTC calendar days, for each range', () => {
     // Three ranges, three different `since`, one shared `until` — so a mapping
     // that returned the same number of days for two of them, or that shifted the
-    // window off `asOf`, moves an asserted instant. Exact instants, not spans:
-    // "30 days apart" is satisfied by a window ending yesterday too.
+    // window off `asOf`, moves an asserted instant. Exact instants, not spans.
+    // Since S6 (2026-10-15) every lab read uses one window: N calendar days,
+    // the last being asOf's day — so `since` is a midnight, N − 1 days back.
     const asOf = new Date('2026-08-20T06:30:00.000Z');
 
     expect(collapseWindow('7d', asOf)).toEqual({
-      since: new Date('2026-08-13T06:30:00.000Z'),
+      since: new Date('2026-08-14T00:00:00.000Z'),
       until: asOf,
     });
     expect(collapseWindow('30d', asOf)).toEqual({
-      since: new Date('2026-07-21T06:30:00.000Z'),
+      since: new Date('2026-07-22T00:00:00.000Z'),
       until: asOf,
     });
     expect(collapseWindow('90d', asOf)).toEqual({
-      since: new Date('2026-05-22T06:30:00.000Z'),
+      since: new Date('2026-05-23T00:00:00.000Z'),
       until: asOf,
     });
   });
@@ -919,7 +950,10 @@ describe('GET /agents/:username/collapse', () => {
     // that took `until` from the clock and `since` from anywhere else moves a
     // number here too. 7d rather than the 30d default, so the range is doing
     // work in this assertion rather than coinciding with a fallback.
-    expect(Date.parse(body.since)).toBe(until - 7 * DAY_MS);
+    const since = new Date(until);
+    since.setUTCHours(0, 0, 0, 0);
+    since.setUTCDate(since.getUTCDate() - 6);
+    expect(Date.parse(body.since)).toBe(since.getTime());
   });
 
   it('rejects a range it cannot bound the window with', async () => {

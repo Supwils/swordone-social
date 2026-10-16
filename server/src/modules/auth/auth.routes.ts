@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { validate } from '../../middlewares/validate';
-import { requireUser } from '../../middlewares/auth';
+import { allowArchived, requireUser } from '../../middlewares/auth';
 import { asyncHandler } from '../../middlewares/asyncHandler';
 import {
   loginLimiter,
@@ -28,12 +28,15 @@ authRouter.post(
 
 authRouter.post('/login', loginLimiter, validate(loginSchema), asyncHandler(ctrl.login));
 
-authRouter.post('/logout', requireUser, asyncHandler(ctrl.logout));
+// `allowArchived` (logout, password, key management): a sealed Era 2 account
+// may still look after its own credentials — it just may not act on the world.
+authRouter.post('/logout', allowArchived, requireUser, asyncHandler(ctrl.logout));
 
 authRouter.get('/me', requireUser, asyncHandler(ctrl.me));
 
 authRouter.post(
   '/password',
+  allowArchived,
   requireUser,
   passwordChangeLimiter,
   validate(changePasswordSchema),
@@ -45,6 +48,7 @@ authRouter.post(
 // router; it had neither, and `name` reached pg unvalidated.
 authRouter.post(
   '/api-keys',
+  allowArchived,
   requireUser,
   apiKeyLimiter,
   validate(createApiKeySchema),
@@ -53,6 +57,7 @@ authRouter.post(
 authRouter.get('/api-keys', requireUser, asyncHandler(ctrl.listApiKeys));
 authRouter.delete(
   '/api-keys/:keyId',
+  allowArchived,
   requireUser,
   validate(apiKeyIdParamSchema, 'params'),
   asyncHandler(ctrl.revokeApiKey),

@@ -9,7 +9,7 @@ import * as likesApi from '@/api/likes.api';
 import * as postsApi from '@/api/posts.api';
 import * as bookmarksApi from '@/api/bookmarks.api';
 import { qk } from '@/api/queryKeys';
-import type { PostDTO, Paginated, ApiError } from '@/api/types';
+import type { PostDTO, ApiError } from '@/api/types';
 import {
   AccountBadge,
   Avatar,
@@ -22,6 +22,7 @@ import {
   UITag,
 } from '@/components/primitives';
 import { useSession } from '@/stores/session.store';
+import { useDrafts } from '@/stores/draft.store';
 import { useUI } from '@/stores/ui.store';
 import { formatRelative, formatAbsolute } from '@/lib/formatDate';
 import { MarkdownBody } from './MarkdownBody';
@@ -31,7 +32,9 @@ import { PostCardImages } from './PostCardImages';
 import { PostCardLightbox } from './PostCardLightbox';
 import { PostCardActions } from './PostCardActions';
 import { useDisplayText } from './useDisplayText';
+import { dropPost, invalidatePost, patchPost } from './postCache';
 import s from './PostCard.module.css';
+import { LIMITS } from '@/contract/limits';
 
 function EchoFrame({ post }: { post: PostDTO }) {
   return (
@@ -56,9 +59,12 @@ export const PostCard = memo(function PostCard({
   post,
   compact = false,
   disableNavigate = false,
+  defaultCommentsOpen = false,
 }: {
   post: PostDTO;
   compact?: boolean;
+  /** Start with the comment thread open (the /p/:id detail page). */
+  defaultCommentsOpen?: boolean;
   /**
    * The card is already the focused subject (immersive reader), so a body
    * click must not route away and drop the surface it is being read in.
@@ -73,46 +79,32 @@ export const PostCard = memo(function PostCard({
   const me = useSession((st) => st.user);
   const isMine = Boolean(me && me.id === post.author.id);
 
-  const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [echoOpen, setEchoOpen] = useState(false);
-  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(defaultCommentsOpen);
   const [expanded, setExpanded] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   // X-style on-demand translation, kept per card; the auto path arrives as post.originalText.
   const [manual, setManual] = useState<{ text: string; from: 'en' | 'zh' } | null>(null);
   const language = useUI((st) => st.language);
-  const [draftText, setDraftText] = useState(post.text);
+  // A reader's own post can arrive translated (`originalText` set): the edit
+  // box must hold what they wrote, or saving would store the translation.
+  const editableText = post.originalText ?? post.text;
+  // The in-progress edit lives in the draft store, not component state: the
+  // virtualized list unmounts rows that scroll away, and local state would
+  // silently throw the reader's unsaved edit with them.
+  const editKey = `post.edit.${post.id}`;
+  const editDraft = useDrafts((st) => st.drafts[editKey]);
+  const editing = editDraft !== undefined;
+  const draftText = editDraft?.text ?? editableText;
+  const setDraftText = (text: string) => useDrafts.getState().setDraft(editKey, text);
+  const setEditing = (on: boolean) => {
+    if (on) useDrafts.getState().setDraft(editKey, editableText);
+    else useDrafts.getState().clearDraft(editKey);
+  };
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
-  // Helper: apply a per-post patch across all caches that may hold this post.
-  const patchPostInCaches = (patch: Partial<PostDTO>) => {
-    const applyToInfinite = (
-      old: { pages: Paginated<PostDTO>[]; pageParams: unknown[] } | undefined,
-    ) => {
-      if (!old) return old;
-      return {
-        ...old,
-        pages: old.pages.map((pg) => ({
-          ...pg,
-          items: pg.items.map((p) => (p.id === post.id ? { ...p, ...patch } : p)),
-        })),
-      };
-    };
-    qc.setQueriesData({ queryKey: ['feed'] }, applyToInfinite);
-    // Every other infinite list this card is rendered from. /bookmarks and
-    // Explore search were missing, and since PostCard is memo'd on `post`,
-    // an unpatched cache means the action simply never renders there.
-    qc.setQueriesData({ queryKey: qk.bookmarks.list }, applyToInfinite);
-    qc.setQueriesData({ queryKey: ['posts', 'search'] }, applyToInfinite);
-    qc.setQueryData<{ pages: Paginated<PostDTO>[]; pageParams: unknown[] }>(
-      ['users', post.author.username, 'posts'],
-      applyToInfinite,
-    );
-    qc.setQueriesData<PostDTO>({ queryKey: ['posts', post.id, 'detail'] }, (old) =>
-      old ? { ...old, ...patch } : old,
-    );
-  };
+  const patchPostInCaches = (patch: Partial<PostDTO>) => patchPost(qc, post.id, patch);
 
   const bookmark = useMutation({
     mutationFn: async () =>
@@ -129,7 +121,7 @@ export const PostCard = memo(function PostCard({
       toast.error((err as unknown as ApiError).message ?? t('post.bookmarkFailed'));
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: qk.bookmarks.list });
+      void qc.invalidateQueries({ queryKey: qk.bookmarks.all });
     },
   });
 
@@ -156,27 +148,12 @@ export const PostCard = memo(function PostCard({
   const editMutation = useMutation({
     mutationFn: () => postsApi.update(post.id, { text: draftText }),
     onSuccess: (updated) => {
-      const applyToInfinite = (
-        old: { pages: Paginated<PostDTO>[]; pageParams: unknown[] } | undefined,
-      ) => {
-        if (!old) return old;
-        return {
-          ...old,
-          pages: old.pages.map((pg) => ({
-            ...pg,
-            items: pg.items.map((p) => (p.id === post.id ? updated : p)),
-          })),
-        };
-      };
-      qc.setQueriesData({ queryKey: ['feed'] }, applyToInfinite);
-      qc.setQueryData<{ pages: Paginated<PostDTO>[]; pageParams: unknown[] }>(
-        ['users', post.author.username, 'posts'],
-        applyToInfinite,
-      );
-      qc.setQueryData(qk.posts.byId(post.id, language), updated);
+      // Whole-object replace: a merge would keep the old `originalText` next
+      // to the new body.
+      patchPost(qc, post.id, () => updated);
       // The edit cleared this post's server-side translation cache, so every
       // other language's copy is now the old body translated.
-      qc.invalidateQueries({ queryKey: ['posts', post.id, 'detail'] });
+      invalidatePost(qc, post.id);
       setEditing(false);
       toast.success(t('post.updated'));
     },
@@ -186,26 +163,11 @@ export const PostCard = memo(function PostCard({
   const deleteMutation = useMutation({
     mutationFn: () => postsApi.remove(post.id),
     onSuccess: () => {
-      const dropInInfinite = (
-        old: { pages: Paginated<PostDTO>[]; pageParams: unknown[] } | undefined,
-      ) => {
-        if (!old) return old;
-        return {
-          ...old,
-          pages: old.pages.map((pg) => ({
-            ...pg,
-            items: pg.items.filter((p) => p.id !== post.id),
-          })),
-        };
-      };
-      qc.setQueriesData({ queryKey: ['feed'] }, dropInInfinite);
-      qc.setQueryData<{ pages: Paginated<PostDTO>[]; pageParams: unknown[] }>(
-        ['users', post.author.username, 'posts'],
-        dropInInfinite,
-      );
-      qc.removeQueries({ queryKey: ['posts', post.id] });
+      dropPost(qc, post.id);
       setDeleting(false);
       toast.success(t('post.deleted'));
+      // Its own detail page has nothing left to show.
+      if (loc.pathname === `/p/${post.id}`) void nav(me ? '/feed' : '/global', { replace: true });
     },
     onError: (err) => toast.error((err as unknown as ApiError).message ?? t('post.deleteFailed')),
   });
@@ -272,7 +234,6 @@ export const PostCard = memo(function PostCard({
           >
             <MenuItem
               onSelect={() => {
-                setDraftText(post.text);
                 setEditing(true);
               }}
             >
@@ -294,7 +255,7 @@ export const PostCard = memo(function PostCard({
           <Textarea
             value={draftText}
             onChange={(e) => setDraftText(e.target.value)}
-            maxLength={5000}
+            maxLength={LIMITS.postText}
             showCounter
             serif
             autoResize
@@ -309,7 +270,7 @@ export const PostCard = memo(function PostCard({
               variant="primary"
               size="sm"
               type="submit"
-              disabled={editMutation.isPending || !draftText.trim() || draftText === post.text}
+              disabled={editMutation.isPending || !draftText.trim() || draftText === editableText}
             >
               {editMutation.isPending ? t('post.saving') : t('post.save')}
             </Button>

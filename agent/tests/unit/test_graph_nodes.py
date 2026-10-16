@@ -32,6 +32,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import random
 from datetime import UTC, datetime
 from pathlib import Path
@@ -74,6 +75,7 @@ from ._runners import (
     ScriptedBackend,
     SilentBackend,
     StubBackend,
+    make_cycle_deps,
     make_persona,
 )
 
@@ -154,23 +156,14 @@ def _deps(tmp_path: Path, **overrides: Any) -> CycleDeps:
     """`CycleDeps` with every collaborator a harmless double and every
     moment frozen, so each test overrides only what it is about."""
     defaults: dict[str, Any] = {
-        "resources": FakeResources(),
-        "backend": StubBackend('{"plan":[{"action":"nothing"}]}'),
-        "persona_source": FakePersonaSource(),
         "embedder": FakeEmbedder(vectors=[[1.0], [1.0]]),
-        "dream_state": FakeState(),
         "settings": Settings(),
-        "agent_root": tmp_path,
-        "health_check": lambda: True,
-        "memory_text": "",
-        "llm_backend": "claude",
         "llm_model": "opus",
         "rng": random.Random(0),
         "now": NOW,
         "captured_at": CAPTURED_AT,
     }
-    defaults.update(overrides)
-    return CycleDeps(**defaults)
+    return make_cycle_deps(tmp_path, **(defaults | overrides))
 
 
 def _plan_json(*actions: dict[str, str]) -> str:
@@ -292,21 +285,6 @@ def _spy_on(monkeypatch: pytest.MonkeyPatch, step: str) -> dict[str, Any]:
 
     monkeypatch.setattr(caller_of(step), step, spy)
     return seen
-
-
-class ScriptedClock:
-    """A monotonic-shaped clock returning scripted values in call order, and
-    its last value forever after -- so a test pins WHEN the deadline is read
-    without sleeping for it."""
-
-    def __init__(self, *values: float) -> None:
-        self._values = list(values)
-        self.calls = 0
-
-    def __call__(self) -> float:
-        value = self._values[min(self.calls, len(self._values) - 1)]
-        self.calls += 1
-        return value
 
 
 # ── login ───────────────────────────────────────────────────────────────────
@@ -728,69 +706,6 @@ def test_an_empty_reply_is_reported_as_the_dreams_reason(tmp_path: Path) -> None
     assert "recent" not in update
 
 
-def test_the_dream_node_stops_at_its_deadline_instead_of_starting_the_rewrite(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    """§5.4, as corrected: LangGraph refuses `timeout=` on a sync node, and
-    the async form orphans the subprocess. A node making several bounded
-    calls is therefore bounded in aggregate by an explicit deadline computed
-    at node entry and checked between calls.
-
-    Driven by a fake clock, never by sleeping: entry reads 0.0, the check
-    before the rewrite reads 50.0, and the budget is 45.0 -- deliberately
-    NOT `DREAM_DEADLINE_SECONDS`, so a node ignoring the dep in favour of the
-    module constant fails here. The rewrite call -- the expensive one, up to
-    `SubprocessRunner`'s 300s -- is the one that must not start.
-
-    Mutation this kills: deleting the check. The backend is then called and
-    the list comes back.
-    """
-    persona = _persona(tmp_path)
-    backend = ScriptedBackend(DREAM_REPLY)
-    clock = ScriptedClock(0.0, 50.0)
-    node = make_dream_node(
-        _deps(
-            tmp_path,
-            backend=backend,
-            monotonic=clock,
-            # NOT `DREAM_DEADLINE_SECONDS`: a budget equal to the module
-            # constant cannot tell `deps.dream_deadline_seconds` from a node
-            # that ignores the dep and uses the constant (review finding 6).
-            dream_deadline_seconds=45.0,
-        )
-    )
-
-    with caplog.at_level(logging.WARNING, logger="swil_agent.graph.nodes"):
-        update = node({"persona": persona})
-
-    assert backend.calls == []
-    assert update["proceeded"] is True
-    assert "deadline" in update["dream_reason"]
-    assert "recent" not in update
-    assert DIR_NAME in caplog.text
-
-
-def test_a_dream_inside_its_deadline_runs_normally(tmp_path: Path) -> None:
-    """The other half of the fake clock: the same node, the same budget, a
-    clock that has barely moved. Without this, a deadline hardcoded to
-    "always expired" would pass the test above."""
-    persona = _persona(tmp_path)
-    backend = ScriptedBackend(DREAM_REPLY)
-    node = make_dream_node(
-        _deps(
-            tmp_path,
-            backend=backend,
-            monotonic=ScriptedClock(0.0, 1.0),
-            dream_deadline_seconds=45.0,
-        )
-    )
-
-    update = node({"persona": persona})
-
-    assert len(backend.calls) == 1
-    assert update["recent"] == NEW_RECENT
-
-
 # ── write ───────────────────────────────────────────────────────────────────
 
 
@@ -982,12 +897,16 @@ def test_the_logout_node_releases_nothing_the_lease_owns(tmp_path: Path) -> None
     """
     lock_path = act_lock_path(tmp_path, DIR_NAME)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_path.write_text("999999", encoding="utf-8")
-    node = make_logout_node(_deps(tmp_path, resources=ExplodingCollaborator("Resources")))
+    lock_path.write_text(str(os.getpid()), encoding="utf-8")
+    # The logout node files the `cycle_run` card, so `Resources` is a recording
+    # fake rather than an exploding one; the file is the claim under test.
+    resources = FakeResources()
+    node = make_logout_node(_deps(tmp_path, resources=resources))
 
     node({"persona": _persona(tmp_path), "run_id": "run-7"})
 
     assert lock_path.exists()
+    assert len(resources.lab_events) == 1
 
 
 # ── every node ──────────────────────────────────────────────────────────────

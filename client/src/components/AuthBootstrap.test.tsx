@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@/i18n';
 import { useSession } from '@/stores/session.store';
 import { useUI } from '@/stores/ui.store';
+import { useDrafts } from '@/stores/draft.store';
 import { makeUser } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
@@ -93,6 +94,44 @@ describe('AuthBootstrap', () => {
     act(() => handler());
     expect(useSession.getState().user).toBeNull();
     expect(clearSpy).toHaveBeenCalledOnce();
+  });
+
+  it('drops drafts when bootstrap finds the session already gone', async () => {
+    // The cookie expired while the tab was closed: no 401 handler ever ran.
+    useDrafts.getState().claim('u-old');
+    useDrafts.getState().setDraft('post.new', 'left behind');
+    mocks.me.mockResolvedValue(null);
+
+    renderBootstrap();
+
+    await waitFor(() => expect(useSession.getState().bootstrap).toBe('ready'));
+    expect(useDrafts.getState().drafts).toEqual({});
+  });
+
+  it('keeps drafts when /auth/me fails on the network, not on the session', async () => {
+    useDrafts.getState().claim('u-1');
+    useDrafts.getState().setDraft('post.new', 'still mine');
+    mocks.me.mockRejectedValue(new Error('network down'));
+
+    renderBootstrap();
+
+    await waitFor(() => expect(useSession.getState().bootstrap).toBe('ready'));
+    expect(useDrafts.getState().getDraft('post.new')?.text).toBe('still mine');
+    useDrafts.setState({ drafts: {}, ownerId: null });
+  });
+
+  it('drops composer drafts when a signed-in session ends on a 401', async () => {
+    // Drafts are text this account typed; the next account on this browser
+    // must not open a composer pre-filled with it.
+    renderBootstrap();
+    await waitFor(() => expect(mocks.onUnauthorized).toHaveBeenCalled());
+    const handler = mocks.onUnauthorized.mock.calls[0][0] as () => void;
+    useDrafts.getState().setDraft('post.new', 'private half-thought');
+
+    act(() => useSession.setState({ user: makeUser(), bootstrap: 'ready' }));
+    act(() => handler());
+
+    expect(useDrafts.getState().drafts).toEqual({});
   });
 
   it('applies the chosen theme to the document root', async () => {

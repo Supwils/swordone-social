@@ -23,20 +23,11 @@ import {
   YAxis,
 } from 'recharts';
 import { Card, Skeleton } from '@/components/primitives';
-import {
-  getAgentDrift,
-  getAgentEvents,
-  getAgentFidelity,
-  getAgentStats,
-  getInfluences,
-} from '@/features/lab/api';
+import { getAgentEvents, getAgentFidelity, getAgentStats, getInfluences } from '@/features/lab/api';
 import type { AgentEventDTO } from '@/features/lab/types';
 import { CollapsePanel } from '../CollapsePanel';
-import {
-  DriftCountdownPanel,
-  aspectThresholdsFrom,
-  useDriftCountdown,
-} from './DriftCountdownPanel';
+import { labKeys, useAgentDrift, useDriftCountdown } from '@/features/lab/queries';
+import { DriftCountdownPanel, aspectThresholdsFrom } from './DriftCountdownPanel';
 import s from '@/features/lab/lab.module.css';
 
 /**
@@ -66,32 +57,28 @@ export function AgentDetail({
 }) {
   const { t } = useTranslation();
   const statsQ = useQuery({
-    queryKey: ['agent-stats', username, '30d'],
+    queryKey: labKeys.stats(username, '30d'),
     queryFn: () => getAgentStats(username, '30d'),
     staleTime: 60_000,
   });
-  const driftQ = useQuery({
-    queryKey: ['agent-drift', username],
-    queryFn: () => getAgentDrift(username),
-    staleTime: 60_000,
-  });
+  const driftQ = useAgentDrift(username);
   const eventsQ = useQuery({
-    queryKey: ['agent-events', username],
+    queryKey: labKeys.events(username),
     queryFn: () => getAgentEvents(username, 20),
     staleTime: 30_000,
   });
   const fidelityQ = useQuery({
-    queryKey: ['agent-fidelity', username],
+    queryKey: labKeys.fidelity(username),
     queryFn: () => getAgentFidelity(username),
     staleTime: 60_000,
   });
   const adherenceQ = useQuery({
-    queryKey: ['agent-adherence', username],
+    queryKey: labKeys.adherence(username),
     queryFn: () => getAgentEvents(username, 12, 'rule_check'),
     staleTime: 60_000,
   });
   const influencesQ = useQuery({
-    queryKey: ['agent-influences', username, '30d'],
+    queryKey: labKeys.influences(username, '30d'),
     queryFn: () => getInfluences(username, '30d'),
     staleTime: 60_000,
   });

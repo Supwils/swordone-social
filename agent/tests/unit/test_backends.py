@@ -8,9 +8,16 @@ import pytest
 from swil_agent.config import Settings
 from swil_agent.dream.round import dream_step
 from swil_agent.llm.backends import build_backend
+from swil_agent.llm.backends.claude import CLAUDE_ISOLATION_FLAGS
 from swil_agent.llm.errors import BackendBinaryMissingError, BackendUnavailableError
 from swil_agent.llm.runner import CompletionRequest, SubprocessRunner
-from tests.unit._runners import FakeResources, RecordingRunner, make_persona
+from tests.unit._runners import (
+    FakeResources,
+    RecordingRunner,
+    RunnerCall,
+    assert_isolated_cwd,
+    make_persona,
+)
 
 
 def _settings() -> Settings:
@@ -49,8 +56,9 @@ def test_codex_uses_exec_and_reads_an_output_file(tmp_path: Path) -> None:
             stdin: str | None = None,
             env: dict[str, str] | None = None,
             timeout: float = 300.0,
+            cwd: str | None = None,
         ) -> str:
-            super().run(argv, stdin, env, timeout)
+            super().run(argv, stdin, env, timeout, cwd)
             out_index = argv.index("-o") + 1
             Path(argv[out_index]).write_text("codex said this", encoding="utf-8")
             return ""
@@ -82,8 +90,9 @@ def test_codex_passes_declared_model_as_dash_m() -> None:
             stdin: str | None = None,
             env: dict[str, str] | None = None,
             timeout: float = 300.0,
+            cwd: str | None = None,
         ) -> str:
-            super().run(argv, stdin, env, timeout)
+            super().run(argv, stdin, env, timeout, cwd)
             Path(argv[argv.index("-o") + 1]).write_text("luna", encoding="utf-8")
             return ""
 
@@ -118,6 +127,7 @@ def test_codex_concurrent_calls_never_collide_on_the_same_output_file() -> None:
             stdin: str | None = None,
             env: dict[str, str] | None = None,
             timeout: float = 300.0,
+            cwd: str | None = None,
         ) -> str:
             out_path = argv[argv.index("-o") + 1]
             with paths_lock:
@@ -255,8 +265,9 @@ def test_empty_output_raises_backend_unavailable() -> None:
 
 
 def test_unknown_backend_name_falls_back_to_claude() -> None:
-    """mangniu records `AI Backend: haiku`. Bash's `case` default branch runs the
-    claude path, so an unknown name must NOT raise."""
+    """`build_backend` takes a resolved wire name -- an unknown spelling is
+    refused upstream (loader, `resolve_backend_choice`) -- and its last branch
+    is the claude path."""
     runner = RecordingRunner("ok")
     backend = build_backend("haiku", runner, _settings())
     backend.complete(CompletionRequest(system="S", user="U", model="haiku"))
@@ -389,6 +400,7 @@ class _MissingBinaryRunner:
         stdin: str | None = None,
         env: dict[str, str] | None = None,
         timeout: float = 300.0,
+        cwd: str | None = None,
     ) -> str:
         raise BackendBinaryMissingError(f"executable not found on PATH: {argv[0]!r}")
 
@@ -447,8 +459,9 @@ def test_codex_runs_read_only_and_never_full_auto() -> None:
             stdin: str | None = None,
             env: dict[str, str] | None = None,
             timeout: float = 300.0,
+            cwd: str | None = None,
         ) -> str:
-            super().run(argv, stdin, env, timeout)
+            super().run(argv, stdin, env, timeout, cwd)
             Path(argv[argv.index("-o") + 1]).write_text("out", encoding="utf-8")
             return ""
 
@@ -478,37 +491,58 @@ class _CodexOutRunner(RecordingRunner):
         stdin: str | None = None,
         env: dict[str, str] | None = None,
         timeout: float = 300.0,
+        cwd: str | None = None,
     ) -> str:
-        super().run(argv, stdin, env, timeout)
+        super().run(argv, stdin, env, timeout, cwd)
         if argv[0] == "codex":
             Path(argv[argv.index("-o") + 1]).write_text("out", encoding="utf-8")
         return "out"
 
 
-def _bench_argv(spec: str) -> list[str]:
+def _bench_call(spec: str) -> RunnerCall:
+    from swil_agent.bench.judge import Judge
     from swil_agent.bench.models import resolve_model
 
     runner = _CodexOutRunner()
-    model = resolve_model(spec, runner, _settings(), deepseek_api_key="k")
-    model.backend.complete(CompletionRequest(system="S", user="U", model=model.model))
-    return runner.calls[0].argv
+    if spec == "judge":
+        Judge(runner, "sonnet").score("R", "O")
+    else:
+        model = resolve_model(spec, runner, _settings(), deepseek_api_key="k")
+        model.backend.complete(CompletionRequest(system="S", user="U", model=model.model))
+    return runner.calls[0]
+
+
+def _bench_argv(spec: str) -> list[str]:
+    return _bench_call(spec).argv
 
 
 @pytest.mark.parametrize("spec", ["judge", "sonnet", "grok", "ds-flash", "claude:claude-opus-5-5"])
-def test_every_bench_claude_invocation_disables_tools(spec: str) -> None:
+def test_every_bench_claude_invocation_disables_tools_and_is_isolated(spec: str) -> None:
     """The judge and every model-under-test spelling that lands on `claude -p`
-    (bare aliases, `ds-flash`, the roster form)."""
-    from swil_agent.bench.judge import judge_argv
-
-    argv = judge_argv("sonnet") if spec == "judge" else _bench_argv(spec)
+    (bare aliases, `ds-flash`, the roster form): no built-in tools, none of
+    the operator's configuration, and a temp cwd outside the repository."""
+    call = _bench_call(spec)
+    argv = call.argv
     assert argv[0] == "claude"
-    assert argv[argv.index("--tools") : argv.index("--tools") + 2] == ["--tools", ""]
+    tools = argv.index("--tools")
+    assert argv[tools : tools + 2 + len(CLAUDE_ISOLATION_FLAGS)] == [
+        "--tools",
+        "",
+        *CLAUDE_ISOLATION_FLAGS,
+    ]
+    assert_isolated_cwd(call)
 
 
 def test_the_bench_grok_roster_form_is_tool_less_and_read_only() -> None:
-    argv = _bench_argv("grok:grok-4.6")
+    from swil_agent.llm.backends.grok import GROK_DISALLOWED_TOOLS, GROK_ISOLATION_ENV
+
+    call = _bench_call("grok:grok-4.6")
+    argv = call.argv
     assert argv[0] == "grok"
     assert argv[argv.index("--tools") : argv.index("--tools") + 2] == ["--tools", ""]
+    denied = argv[argv.index("--disallowed-tools") + 1]
+    assert denied.split(",") == list(GROK_DISALLOWED_TOOLS)
+    assert call.env == GROK_ISOLATION_ENV
     assert argv[argv.index("--permission-mode") : argv.index("--permission-mode") + 2] == [
         "--permission-mode",
         "plan",
@@ -523,7 +557,15 @@ def test_the_bench_cursor_roster_form_runs_in_ask_mode() -> None:
 
 @pytest.mark.parametrize("spec", ["codex", "codex:gpt-5.6-luna"])
 def test_bench_codex_invocation_is_not_full_auto(spec: str) -> None:
-    argv = _bench_argv(spec)
+    call = _bench_call(spec)
+    argv = call.argv
     assert argv[:2] == ["codex", "exec"]
+    assert argv[argv.index("--ignore-user-config") : argv.index("--ignore-user-config") + 4] == [
+        "--ignore-user-config",
+        "--ignore-rules",
+        "-C",
+        call.cwd,
+    ]
+    assert_isolated_cwd(call)
     assert "--full-auto" not in argv
     assert argv[argv.index("-s") : argv.index("-s") + 2] == ["-s", "read-only"]

@@ -5,15 +5,15 @@
   "description": "MCP server exposing the Swil Social API — connect Claude (or any MCP client) as a BYOA agent",
   "type": "module",
   "bin": {
-    "swil-mcp": "dist/index.js"
+    "swil-mcp": "dist/bin.js"
   },
   "engines": {
-    "node": ">=20.10"
+    "node": ">=22"
   },
   "scripts": {
-    "dev": "tsx src/index.ts",
+    "dev": "tsx src/bin.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "start": "node dist/bin.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint 'src/**/*.ts' 'scripts/**/*.mts' --max-warnings=0",
     "lint:fix": "eslint 'src/**/*.ts' 'scripts/**/*.mts' --fix",
@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^26.1.1",
+    "@types/node": "^22.20.5",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",

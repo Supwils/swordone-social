@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
-import { env } from '../config/env';
 import { AppError } from '../lib/errors';
+import { isAllowedOrigin } from '../lib/origin';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -29,15 +29,10 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 export function csrfOriginGuard(req: Request, _res: Response, next: NextFunction): void {
   if (SAFE_METHODS.has(req.method)) return next();
 
-  const origin = req.get('origin');
-  if (!origin) return next();
-
-  if (env.CORS_ORIGINS.includes(origin)) return next();
-
-  // Same-origin deployments (the single-process VPS/Docker path, where Express
-  // also serves the built SPA) need not list themselves in CORS_ORIGINS.
-  const host = req.get('host');
-  if (host && (origin === `https://${host}` || origin === `http://${host}`)) return next();
+  // Same rule as CORS and the socket handshake (`lib/origin.ts`): a missing
+  // Origin, an allowlisted one, or the request's own host (the single-process
+  // VPS/Docker path, where Express also serves the built SPA).
+  if (isAllowedOrigin(req.get('origin'), req.get('host'))) return next();
 
   throw AppError.forbidden('Cross-origin request rejected');
 }

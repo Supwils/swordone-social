@@ -175,4 +175,5 @@ def test_the_archive_and_the_temp_file_are_synced_before_the_replace(
     monkeypatch.setattr(memory_rotation.os, "replace", replace)
     rotate_memory(memory)
 
-    assert events == ["fsync", "fsync", "replace"]
+    # archive, temp file, swap, then the directory (so the rename is durable)
+    assert events == ["fsync", "fsync", "replace", "fsync"]

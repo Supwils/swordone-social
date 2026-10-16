@@ -14,15 +14,13 @@
 # ============================================================
 
 # ---------- 1. deps ----------
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 
-# Copy lockfiles + .npmrc for both packages first so this layer caches well.
-# .npmrc carries `legacy-peer-deps=true` (see comment in those files); without
-# it the install fails on eslint-plugin-react's outdated peer range.
+# Copy lockfiles (+ any per-package .npmrc) first so this layer caches well.
+# Only server/ and client/ are installed; the root package is tooling only.
 COPY server/package.json server/package-lock.json* server/.npmrc* ./server/
 COPY client/package.json client/package-lock.json* client/.npmrc* ./client/
-COPY package.json package-lock.json* .npmrc* ./
 
 # Install with dev deps (needed for build steps).
 RUN --mount=type=cache,target=/root/.npm \
@@ -30,23 +28,23 @@ RUN --mount=type=cache,target=/root/.npm \
     npm --prefix client ci --no-audit --no-fund
 
 # ---------- 2. build-server ----------
-FROM node:20-alpine AS build-server
+FROM node:22-alpine AS build-server
 WORKDIR /app
 COPY --from=deps /app/server/node_modules ./server/node_modules
 COPY server ./server
-COPY package.json ./
+# The build also copies src/db/migrations into dist/ (scripts/copy-migrations.mjs),
+# so the runtime image can migrate with `node server/dist/src/db/migrate.js`.
 RUN npm --prefix server run build
 
 # ---------- 3. build-client ----------
-FROM node:20-alpine AS build-client
+FROM node:22-alpine AS build-client
 WORKDIR /app
 COPY --from=deps /app/client/node_modules ./client/node_modules
 COPY client ./client
-COPY package.json ./
 RUN npm --prefix client run build
 
 # ---------- 4. runtime ----------
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=8899 \
@@ -60,7 +58,7 @@ COPY server/package.json server/package-lock.json* server/.npmrc* ./server/
 RUN --mount=type=cache,target=/root/.npm \
     npm --prefix server ci --omit=dev --no-audit --no-fund
 
-# Bring in compiled output.
+# Bring in compiled output (server/dist includes src/db/migrations).
 COPY --from=build-server /app/server/dist ./server/dist
 COPY --from=build-client /app/client/dist ./client/dist
 

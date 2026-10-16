@@ -70,23 +70,22 @@
  * significance test has the ingredients; this endpoint does not take that
  * decision on their behalf.
  *
- * ORDINARY LEAST SQUARES IS DUPLICATED FROM `persona/countdown.ts`, knowingly
- * (standing constraint §7 — the condition is written down rather than assumed
- * away). The sibling's `fitSeries` is entangled with thresholds, crossings and
- * round arithmetic, and none of that applies here; what the two share is about
- * a dozen lines of arithmetic, and this one additionally needs `slopeStdErr`,
- * which the countdown has no use for. The condition under which the duplication
- * stays harmless: the two fit DIFFERENT quantities (cosine similarity there,
- * characters here) and no surface compares their outputs, so a divergence
- * cannot produce two contradicting numbers about one thing. If a third consumer
- * appears, or if anything starts plotting these two slopes together, extract
- * the core into a shared helper at that point and delete both copies.
+ * ORDINARY LEAST SQUARES IS SHARED with `persona/countdown.ts` through
+ * `lib/ols.ts` (S6: the third consumer the earlier note here anticipated did
+ * arrive — the arms report — so the core was extracted). Both callers still
+ * round the slope to 6 dp and measure residuals against that rounded line;
+ * this one additionally derives `slopeStdErr`. `arms/stats.ts` `olsSlope`
+ * stays separate: it feeds the pre-registered Era 3 slopes.
  */
 import type { LabRange } from '../../../contract/lab/era';
 import { and, asc, eq, gte, lte, ne, sql } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import { agentEvents, posts } from '../../../db/schema';
-import { findAgentByUsername } from '../lab/shared';
+import { olsFit, olsResiduals } from '../../../lib/ols';
+import { finiteOrNull } from '../../../lib/numeric';
+import { SIMILARITY_SUMMARIES } from '../arms/metrics';
+import { findLabAccount } from '../lab/shared';
+import { calendarWindow } from '../lab/window';
 import type {
   CollapseBasis,
   CollapseSeriesDTO,
@@ -108,7 +107,8 @@ import type {
  * `n: 0`, which reads like "quiet account"; the two-language test at the bottom
  * of the suite turns that into a red test instead.
  */
-export const ACT_SIMILARITY_SUMMARY = 'act self-similarity measured';
+// Defined once, in `arms/metrics.ts` (the arms report reads both summaries).
+export const ACT_SIMILARITY_SUMMARY = SIMILARITY_SUMMARIES[0];
 
 /** The metrics key `_similarity_event` writes the similarity under. */
 const MAX_SIM_KEY = 'maxSim';
@@ -137,7 +137,6 @@ const ACT_SIMILARITY_SINCE = new Date('2026-08-19T00:00:00.000Z');
 const MIN_POINTS = 4;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const RANGE_DAYS: Record<LabRange, number> = { '7d': 7, '30d': 30, '90d': 90 };
 
 /**
  * Rounded to 6 decimal places, and the ROUNDED value is what decides `trend` as
@@ -150,9 +149,14 @@ function round6(x: number): number {
   return Math.round(x * 1e6) / 1e6;
 }
 
-/** The window an HTTP `range` means, ending at `asOf`. Inclusive at both ends. */
+/**
+ * The window an HTTP `range` means, ending at `asOf`: the range's UTC calendar
+ * days, the last being `asOf`'s day (`lab/window.ts`, the one window every lab
+ * read uses). Inclusive at both ends.
+ */
 export function collapseWindow(range: LabRange, asOf: Date): { since: Date; until: Date } {
-  return { since: new Date(asOf.getTime() - RANGE_DAYS[range] * DAY_MS), until: asOf };
+  const { since, until } = calendarWindow(range, asOf);
+  return { since, until };
 }
 
 interface SeriesPoint {
@@ -201,26 +205,13 @@ function fitSeries(points: SeriesPoint[], preempted: CollapseSeriesFit | null): 
   const t0 = points[0].t;
   const xs = points.map((p) => (p.t - t0) / DAY_MS);
   const ys = points.map((p) => p.y);
-  const n = points.length;
-  const xBar = xs.reduce((a, b) => a + b, 0) / n;
-  const yBar = ys.reduce((a, b) => a + b, 0) / n;
-  let sxx = 0;
-  let sxy = 0;
-  for (let i = 0; i < n; i += 1) {
-    sxx += (xs[i] - xBar) ** 2;
-    sxy += (xs[i] - xBar) * (ys[i] - yBar);
-  }
-  const slope = round6(sxy / sxx);
+  const fit = olsFit(xs, ys);
+  const { n, sxx } = fit;
+  const slope = round6(fit.slope);
   // Everything below is residual against the line this endpoint actually
   // REPORTS — the rounded slope — not against the unrounded one. Otherwise the
   // shipped `r2` and `slopeStdErr` would describe a line nobody is shown.
-  const intercept = yBar - slope * xBar;
-  let ssRes = 0;
-  let ssTot = 0;
-  for (let i = 0; i < n; i += 1) {
-    ssRes += (ys[i] - (intercept + slope * xs[i])) ** 2;
-    ssTot += (ys[i] - yBar) ** 2;
-  }
+  const { ssRes, ssTot } = olsResiduals(xs, ys, fit, slope);
   // A perfectly flat series has no variance to explain. `1` says "the line
   // describes these points exactly", which it does; the slope of 0 beside it is
   // what tells the reader nothing is moving.
@@ -260,10 +251,13 @@ function seriesOf(
  */
 export async function getCollapseWatch(
   username: string,
-  window: { since: Date; until: Date },
+  window: { since: Date; until: Date } | LabRange,
 ): Promise<CollapseWatchDTO> {
-  const agent = await findAgentByUsername(username);
-  const { since, until } = window;
+  const agent = await findLabAccount(username);
+  // A range is the HTTP case: the window ends now, or at a sealed account's
+  // seal, so a sealed account's watch does not slide off its own data.
+  const { since, until } =
+    typeof window === 'string' ? collapseWindow(window, agent.archivedAt ?? new Date()) : window;
 
   const [postRows, simRows] = await Promise.all([
     db
@@ -282,6 +276,9 @@ export async function getCollapseWatch(
         and(
           eq(posts.authorId, agent.id),
           eq(posts.status, 'active'),
+          // Public only: this read is public, and a followers-only or private
+          // post's timestamp and length are not the lab's to publish.
+          eq(posts.visibility, 'public'),
           // A post with no body is not a shorter post — it is a different act:
           // an image-only post, or a bare echo whose body is the quoted post.
           // Counting those as zero-character writing would read an account that
@@ -317,9 +314,8 @@ export async function getCollapseWatch(
     // `null` is what a round with fewer than two priors records, and it means
     // "not computed" — a different fact from a similarity of 0, and it must not
     // be fitted as one.
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      simPoints.push({ t: row.createdAt.getTime(), y: value });
-    }
+    const y = finiteOrNull(value);
+    if (y !== null) simPoints.push({ t: row.createdAt.getTime(), y });
   }
 
   // WHY THIS IS CONDITIONED ON THE SERIES BEING EMPTY, and not on the dates
