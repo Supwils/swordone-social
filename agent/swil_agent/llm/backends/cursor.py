@@ -64,9 +64,16 @@ class CursorCLIBackend:
     # a permission file that fails open is the whole hazard.
     DENY: Final = ("Shell(*)", "Write(**)")
 
-    def __init__(self, runner: Runner, *, default_model: str | None = None) -> None:
+    def __init__(
+        self,
+        runner: Runner,
+        *,
+        default_model: str | None = None,
+        api_key: str | None = None,
+    ) -> None:
         self._runner = runner
         self._default_model = default_model
+        self._api_key = api_key
 
     def complete(self, req: CompletionRequest) -> str:
         model = req.model or self._default_model
@@ -110,6 +117,9 @@ class CursorCLIBackend:
                     "--trust",
                     prompt,
                 ],
+                # Only to this subprocess; without a key the CLI falls back to
+                # its own login (`cursor-agent login`).
+                env={"CURSOR_API_KEY": self._api_key} if self._api_key else None,
                 # The process starts there too, not only the agent's
                 # workspace: the CLI itself never runs from the repository.
                 cwd=str(workspace),

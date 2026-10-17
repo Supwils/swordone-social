@@ -43,6 +43,7 @@ class WorkspaceReadingRunner:
     def __init__(self, output: str = "ok") -> None:
         self.output = output
         self.argvs: list[list[str]] = []
+        self.envs: list[dict[str, str] | None] = []
         self.configs: list[dict[str, object]] = []
         self.workspaces: list[Path] = []
         self.listings: list[list[str]] = []
@@ -56,6 +57,7 @@ class WorkspaceReadingRunner:
         cwd: str | None = None,
     ) -> str:
         self.argvs.append(list(argv))
+        self.envs.append(env)
         workspace = Path(argv[argv.index("--workspace") + 1])
         self.workspaces.append(workspace)
         config = workspace / ".cursor" / "cli.json"
@@ -216,3 +218,31 @@ def test_silence_is_reported_like_every_other_backend() -> None:
 def test_build_backend_knows_the_name() -> None:
     backend = build_backend("cursor", WorkspaceReadingRunner(), Settings(swil_url="https://e.test"))
     assert isinstance(backend, CursorCLIBackend)
+
+
+# ── auth: the same key inside and outside the round ──────────────────────
+
+
+def test_an_api_key_reaches_only_the_cursor_subprocess() -> None:
+    """The round exports `.env` wholesale; a manual `cycle`/`doctor` does not.
+    Handing the key to this one call makes both authenticate the same way."""
+    runner = WorkspaceReadingRunner()
+    CursorCLIBackend(runner, api_key="crsr_test").complete(REQ)
+    assert runner.envs == [{"CURSOR_API_KEY": "crsr_test"}]
+
+
+def test_without_a_key_the_cli_keeps_its_own_login() -> None:
+    runner = WorkspaceReadingRunner()
+    CursorCLIBackend(runner).complete(REQ)
+    assert runner.envs == [None]
+
+
+def test_build_backend_reads_the_key_from_settings() -> None:
+    runner = WorkspaceReadingRunner()
+    settings = Settings(swil_url="https://e.test", cursor_api_key="crsr_from_env")
+    build_backend("cursor", runner, settings).complete(REQ)
+    assert runner.envs == [{"CURSOR_API_KEY": "crsr_from_env"}]
+
+
+def test_a_blank_key_means_unset() -> None:
+    assert Settings(swil_url="https://e.test", cursor_api_key="  ").cursor_api_key is None

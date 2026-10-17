@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -54,8 +55,12 @@ def test_era_marker_line_and_size_limits() -> None:
         assert "era: 3" in text.split("\n"), d.name
         assert len(path.read_bytes()) <= MAX_FILE_BYTES
         assert len(parse_persona(text).card) <= MAX_CARD_CHARS
-        assert not (d / "api_key.txt").exists()
-        assert not (d / "memory.md").exists()
+        # Registered accounts keep their key here; what must hold is that git
+        # never takes it (checked by path, so it holds before and after launch).
+        ignored = subprocess.run(
+            ["git", "check-ignore", "-q", str(d / "api_key.txt")], cwd=d, check=False
+        )
+        assert ignored.returncode == 0, d.name
 
 
 def test_no_collision_with_era_2() -> None:

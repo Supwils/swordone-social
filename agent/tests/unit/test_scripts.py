@@ -485,7 +485,9 @@ def test_a_timed_out_worker_loses_its_whole_group_and_counts_as_a_timeout(
     `run_one` returns 124 and the summary counts a timeout, not a failure."""
     names = ["solo"]
     root, env = _round_tree(tmp_path, names)
-    env |= {"ACCOUNT_TIMEOUT": "1", "ACCOUNT_KILL_GRACE": "2", "STUB_MODE": mode}
+    # 3 s, not 1: under a loaded full-suite run the stub could be killed before
+    # it wrote its `.started` marker, which failed the test for the wrong reason.
+    env |= {"ACCOUNT_TIMEOUT": "3", "ACCOUNT_KILL_GRACE": "2", "STUB_MODE": mode}
     try:
         result = subprocess.run(
             ["/bin/bash", str(root / "scripts" / "opportunistic-round.sh"), "--force"],

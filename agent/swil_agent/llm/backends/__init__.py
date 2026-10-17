@@ -48,11 +48,11 @@ def build_backend(
     raises `BackendUnavailableError` rather than building a backend that
     would silently authenticate with nothing.
     """
-    _ = settings  # no per-backend settings yet; kept for interface stability
     if name == "codex":
         return CodexCLIBackend(runner)
     if name == "cursor":
-        return CursorCLIBackend(runner)
+        key = settings.cursor_api_key
+        return CursorCLIBackend(runner, api_key=key.get_secret_value() if key else None)
     if name == "grok":
         return GrokCLIBackend(runner)
     if name == "deepseek":

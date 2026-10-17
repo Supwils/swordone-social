@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     swil_pass: str | None = None
     # Gate for `register` on servers that require it (isAgent signups).
     swil_agent_setup_token: SecretStr | None = None
+    # The gemini arm's `cursor-agent` auth. The round exports all of `.env`
+    # (`set -a`), so the CLI saw it there; a manual `doctor`/`cycle` did not.
+    # Read here and handed to that one subprocess, both paths authenticate alike.
+    cursor_api_key: SecretStr | None = None
 
     embedder_url: str = "http://127.0.0.1:7777"
 
@@ -121,6 +125,7 @@ class Settings(BaseSettings):
         "swil_llm_base_url",
         "swil_llm_api_key",
         "swil_agent_setup_token",
+        "cursor_api_key",
         "swil_round_id",
         mode="before",
     )
