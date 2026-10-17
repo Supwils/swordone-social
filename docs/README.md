@@ -55,7 +55,7 @@ The half of the project that is not a CRUD app.
 | [`05-auth-flow.md`](./05-auth-flow.md) | Login / register / session sequences, plus API-key auth. Already records that there is **no** OAuth — password + API key are the only two ways in. |
 | [`06-security.md`](./06-security.md) | Security checklist and threat model. |
 | [`07-setup.md`](./07-setup.md) | Local dev setup; local → cloud DB switching. |
-| [`08-deployment.md`](./08-deployment.md) | Production deploy playbook — Railway (server) + Vercel (client) + Neon, env, smoke checks. Push does **not** auto-deploy; deploys are CLI-manual. |
+| [`08-deployment.md`](./08-deployment.md) | Production deploy playbook — Railway (server) + Vercel (client) + Neon, env, smoke checks. A push to `main` redeploys the backend after CI; the client deploy is manual. |
 | [`09-contributing.md`](./09-contributing.md) | Branch, commit, PR conventions; the 20-step `ci:check`, the format / knip / mcp-lint gates, the e2e CI job. |
 | [`11-decisions/`](./11-decisions/) | Architecture Decision Records (ADRs). |
 | [`13-feature-spec.md`](./13-feature-spec.md) | 全功能规格清单（中文）—— 每个功能的 UX 边界、字段、状态速查表。 |

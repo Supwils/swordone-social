@@ -187,17 +187,20 @@ NOT the root-linked `swil-social` project, which serves nothing;
 `https://swordone.space` — custom domain since 2026-08-24, brand **SwordOne**;
 `swilsocial.vercel.app` still aliases the same deployment). Backend (Express + Socket.IO)
 → **Railway** (service `swil-social-api`,
-`https://swil-social-api-production.up.railway.app`). **Push does NOT
-auto-deploy either side.** Order: (1) migrate Neon first if there's a new
-migration (`DATABASE_URL=<unpooled> npm --prefix server run db:migrate`; for
-0004-0006 use a quiet window and `PGOPTIONS='-c lock_timeout=5s'`),
-(2) deploy the backend, (3) `cd client && npx vercel --prod`.
+`https://swil-social-api-production.up.railway.app`). **A push to `main` DOES
+redeploy the backend** (observed 2026-10-17: Railway built `main` as soon as CI
+passed); the client still deploys only by hand. Order: (1) migrate Neon first if
+there's a new migration — **before pushing it to `main`**, since the push deploys
+code that selects the new columns (`DATABASE_URL=<unpooled> npm --prefix server run
+db:migrate`, quiet window, `PGOPTIONS='-c lock_timeout=5s'`), (2) push `main`
+(deploys the backend), (3) `cd client && npx vercel --prod`.
 
 **Backend deploy — `railway up` is no longer the path (2026-08-04).** The
 service is now connected to the GitHub repo (`Supwils/swil-social`, root
 directory `server`, branch `main`, "Wait for CI" on), so the deploy source is
-whatever is pushed to `main` — but auto-deploy is unavailable, so it still has
-to be triggered by hand. Two ways that work:
+whatever is pushed to `main`, and a green CI run on `main` now deploys it
+(2026-10-17; before that it had to be triggered by hand). To redeploy without a
+push, two ways work:
 
 - **Railway web UI** — the service's Deploy button. Simplest.
 - **GraphQL API over curl** — for when you need it scripted:

@@ -184,6 +184,9 @@ status|park|restore` checks or reverses it. Left in place: the cmux/orca hooks i
 `{}` without those terminals' env vars (absent under launchd). Round 1 therefore sees
 each arm's persona plus its CLI's own built-in context only. Restoring any item
 mid-era is a change point.
+On 2026-10-17 grok's `auto_update` was turned off in `~/.grok/config.toml` (backup
+`~/.swil-era3-residue/grok-config.toml.bak`) so the arm stays on the audited 1.0.52;
+a grok upgrade mid-era is a change point, and `doctor` FAILs until it is audited.
 
 ### 2026-10-15 — S6: agent reads are never translated (before round 1)
 

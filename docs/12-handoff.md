@@ -126,10 +126,9 @@ Current as of 2026-10-15; supersedes the S1-era copy in the archive.
    - **Node 22 on Railway and Vercel.** `engines` is `>=22`; confirm each build log
      shows Node 22 (pin `RAILPACK_NODE_VERSION=22` / the Vercel project's Node version
      if it picks a newer major).
-   - **CSP.** `client/vercel.json` ships `Content-Security-Policy-Report-Only`. On the
-     first preview deploy check the browser console for reports (the API/socket host
-     is hard-coded in `connect-src`; a different `VITE_API_BASE`/`VITE_SOCKET_URL`
-     host must be added), then switch the header name to `Content-Security-Policy`.
+   - **CSP.** Enforcing since 2026-10-17 (report-only on the first deploy, no
+     violation on 12 production routes). The API/socket host is hard-coded in
+     `connect-src`; a different `VITE_API_BASE`/`VITE_SOCKET_URL` host must be added.
    - **Operator residue in persona calls** (S6 above): **parked 2026-10-16** for the era
      (`~/.swil-era3-residue/residue.sh status`; `docs/13` change point). Check it still
      says `parked` before round 1.
@@ -220,7 +219,8 @@ Current as of 2026-10-15; supersedes the S1-era copy in the archive.
   it (since S6), so `SWIL_URL=… swil-agent …` targets that host. Do not run
   `cycle`/`act` casually; `SWIL_REQUIRE_NON_PROD=1` refuses them there unless
   `--i-mean-production` (any unrecognised value counts as on).
-- **Deploys are manual.** Push does not deploy either side. Order: migrate Neon,
+- **Backend deploys on push to `main`** (after CI; observed 2026-10-17); the client is
+  manual. Migrate Neon before pushing code that needs it. Order: migrate Neon,
   backend (Railway UI or the GraphQL API; the `railway` CLI hangs on this
   machine), then `cd client && npx vercel --prod`. See `08-deployment.md`.
 - **Gate before any push:** `npm run ci:check` (20 steps, `09-contributing.md`).
@@ -238,7 +238,18 @@ Current as of 2026-10-15; supersedes the S1-era copy in the archive.
 
 - **Undeployed SPA deep-link fix (2026-10-11)** — `client/vercel.json`; ships with
   the next client deploy (entry below).
-- **Era 3 launch** — the checklist above; nothing in it has been done.
+- **Era 3 launched 2026-10-17.** PR #58 merged (`main` = `b3b77fb`); Neon 0004–0006
+  migrated (17 FKs NOT VALID; Railway redeployed itself on the push ~10 min before the
+  migration); client deployed; 36 accounts archived; 20 registered (`registerLimiter`
+  3/h/IP made it take four batches); `ERA_START=2026-10-17T13:06:00Z`; `doctor --smoke`
+  ready; round 1 `20261017T130841Z-r` ok=20 failed=0 (measure-status: 0 missing samples,
+  0 post vectors missing); `com.swil.round` loaded. CSP switched to enforcing in
+  `client/vercel.json` (live from the next client deploy). Left: optional step 7
+  (`db:orphans`, `db:validate-fks`; re-create the unpooled URL file for it).
+- **cursor auth outside the round — fixed 2026-10-17.** The gemini arm authenticates
+  with `CURSOR_API_KEY` from `agent/.env`. Only the round exported it (`set -a`), so a
+  manual `doctor`/`cycle` failed with "Authentication required". `Settings.cursor_api_key`
+  now hands it to `cursor-agent` alone, the same value the round passes.
 - **Sealing Era 3 later** — `eraSeal()` (`lab/window.ts`) is `max(archived_at)` over all archived accounts; scope it to the Era 2 boundary first.
 - **e2e CI job unrun on GitHub** — first run happens on the first push.
 - **Owner action items** (section below) — still mandatory before going public.

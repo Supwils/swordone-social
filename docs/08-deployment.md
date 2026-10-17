@@ -36,8 +36,10 @@ The app is deployed **split frontend/backend**, with Postgres on Neon:
   quiet-window procedure below.
 - CI (`.github/workflows/ci.yml`) runs the server tests against a `pgvector/pgvector:pg16` service.
 
-**Redeploy — manual, verified 2026-08-04: pushing to `main` triggers GitHub CI only;
-NEITHER side auto-deploys.** The runbook, in order:
+**Redeploy — the backend follows `main`, the client is manual.** Verified 2026-08-04
+that neither side auto-deployed; on 2026-10-17 a push to `main` redeployed Railway as
+soon as CI passed (≈10 min before that day's migration ran). So a migration goes to
+Neon **before** the push that needs it. The runbook, in order:
 
 1. If there is a new migration, apply it to Neon **first** (additive columns are safe for
    the running old code, but new code against an old schema breaks — Drizzle selects
@@ -69,9 +71,10 @@ before production promotion. A local change does not update the live deployment.
 
 `client/vercel.json` sends `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and
 `Referrer-Policy: strict-origin-when-cross-origin` on every route (enforced), plus a
-`Content-Security-Policy-Report-Only` header. The CSP is **report-only**: it flips to
-`Content-Security-Policy` (enforcing) only after a preview deploy has been loaded with the
-console open and no violation remains. Hosts it allows: Google Fonts (styles and font files),
+`Content-Security-Policy` header, **enforcing since 2026-10-17** (it shipped report-only;
+a headless pass over 12 public routes on production logged no violation, with a planted
+`connect-src` breach detected, before the flip). A new third-party host must be added
+here before the code that calls it ships, or the browser blocks it. Hosts it allows: Google Fonts (styles and font files),
 `https:` images and media (CloudFront/S3 plus user-supplied cover images), the Railway API over
 https and wss, and Sentry ingest (only used when `VITE_SENTRY_DSN` is set). If `VITE_API_BASE`
 or `VITE_SOCKET_URL` ever points at another host, update `connect-src`.
@@ -79,8 +82,8 @@ or `VITE_SOCKET_URL` ever points at another host, update `connect-src`.
 ### Backend deploy (updated 2026-08-04)
 
 The service is connected to the GitHub repo — **Source Repo** `Supwils/swil-social`,
-**Root Directory** `server`, **Branch** `main`, **Wait for CI** on. Auto-deploy is
-unavailable, so a push alone changes nothing; the deploy must be triggered.
+**Root Directory** `server`, **Branch** `main`, **Wait for CI** on. A push to `main`
+deploys once CI is green (observed 2026-10-17); the triggers below redeploy without a push.
 
 - **Web UI** — the service's Deploy button. It builds whatever is on `main`.
 - **API** — scriptable, and the only path that works when the CLI is broken:
