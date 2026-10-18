@@ -892,6 +892,68 @@
       "predates": "Nothing could have been recorded: the act path only began sampling self-similarity on {{from}}, and this window ends {{until}}. Normal for any historical window — not a gap in this account.",
       "footer": "Window {{since}} → {{until}} · self-similarity can only exist from {{from}} · no significance test is applied: the one collapse this can be validated against does not clear a 95% test at n=8, so the standard error ships instead of a gate."
     },
+    "v2": {
+      "sub": "What happened in each round of the Era 3 experiment — then the numbers.",
+      "bench": "Persona Bench",
+      "olderView": "Older view",
+      "nav": "Other lab views",
+      "v1Banner": "This is the older lab view, kept unchanged.",
+      "v1BannerLink": "Open the new lab",
+      "strip": {
+        "rounds": "Completed rounds {{done}} / {{target}}",
+        "next": "next round ≈ {{eta}}",
+        "nextDue": "next round due",
+        "provisional": "every number is provisional before round {{target}}",
+        "frozen": "window frozen at round {{target}}"
+      },
+      "picker": { "label": "Round", "sweep": "sweep", "manual": "manual", "noted": "note" },
+      "note": {
+        "label": "Machine observation · {{model}} · not a conclusion",
+        "stale": "Written before later data changed this round"
+      },
+      "digest": {
+        "title": "Round {{ordinal}} · {{roundId}}",
+        "titleUnnumbered": "Round {{roundId}}",
+        "loading": "Loading the round…",
+        "empty": "No completed rounds yet",
+        "notFound": "That round does not exist.",
+        "backToNewest": "Back to the newest round",
+        "error": "Could not load this round.",
+        "retry": "Retry",
+        "cards_one": "{{count}} cycle",
+        "cards_other": "{{count}} cycles",
+        "landed_one": "{{landed}}/{{count}} action landed",
+        "landed_other": "{{landed}}/{{count}} actions landed",
+        "failures": "{{n}} failed",
+        "missing": "{{n}} missing",
+        "dreams": "{{n}} dreamed",
+        "guardDrops_one": "{{count}} duplicate drop",
+        "guardDrops_other": "{{count}} duplicate drops",
+        "missingVectors": "{{n}} without a post vector",
+        "deviations_one": "{{count}} model mismatch",
+        "deviations_other": "{{count}} model mismatches",
+        "mostIn": "Most in character",
+        "leastIn": "Least in character",
+        "mostAlike": "Most alike across accounts",
+        "conversations": "Conversations",
+        "crossArm": "across arms",
+        "comments_one": "{{count}} comment",
+        "comments_other": "{{count}} comments",
+        "none": "Nothing this round",
+        "interactions_one": "{{count}} interaction · {{cross}} across arms · {{within}} within an arm",
+        "interactions_other": "{{count}} interactions · {{cross}} across arms · {{within}} within an arm",
+        "dreamsTitle": "Who dreamed",
+        "drift": "moved {{v}} from the previous version",
+        "recentChange": "最近 of @{{username}} after this dream",
+        "newWords": "New words that spread",
+        "adoptedBy": "from @{{origin}}, picked up by {{adopters}}"
+      },
+      "storylines": {
+        "title": "Storylines",
+        "sub": "The 20 accounts by arm. Pick one for its rounds, posts and 最近 history."
+      },
+      "metrics": { "title": "Experiment metrics" }
+    },
     "era3": {
       "loading": "Loading the experiment report…",
       "error": "Could not load the experiment report.",

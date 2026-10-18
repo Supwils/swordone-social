@@ -21,6 +21,8 @@ import type {
   BenchmarkLeaderboardDTO,
   BenchmarkMatrixDTO,
   BenchmarkCompareDTO,
+  RoundDigestDTO,
+  RoundsListDTO,
 } from '@/features/lab/types';
 
 /**
@@ -95,6 +97,16 @@ export async function getArmsReport(): Promise<ArmsReportDTO> {
 /** One account's rounds, newest first, at most 60 (S2 §7). */
 export async function getAccountRounds(username: string): Promise<AccountRoundsDTO> {
   return unwrap<AccountRoundsDTO>(http.get(apiPath`/agents/${username}/rounds`));
+}
+
+/** Era 3 rounds, newest first, ≤ 60 (lab v2 §4). */
+export async function listRounds(): Promise<RoundsListDTO> {
+  return unwrap<RoundsListDTO>(http.get('/agents/rounds'));
+}
+
+/** One round's digest (lab v2 §4): 400 on a malformed id, 404 on an unknown round. */
+export async function getRoundDigest(roundId: string): Promise<RoundDigestDTO> {
+  return unwrap<RoundDigestDTO>(http.get(apiPath`/agents/rounds/${roundId}`));
 }
 
 export async function getBenchmarkLeaderboard(): Promise<BenchmarkLeaderboardDTO> {

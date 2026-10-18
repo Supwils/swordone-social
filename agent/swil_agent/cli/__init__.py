@@ -10,7 +10,7 @@ is laid out by responsibility (S3 §6):
   * `errors.py`   -- the SKIP classification and the policy-gate reporting;
   * `report.py`   -- what a finished round prints;
   * `run.py`      -- `act`, `dream`, `cycle`;
-  * `analysis.py` -- the samplers, the backfill and `intervention`;
+  * `analysis.py` -- the samplers, the backfill, `intervention` and `observe`;
   * `ops.py`      -- `version`, `doctor`, `register`, `measure-status`;
   * `prompt_ab.py` -- `prompt-ab`, the offline v1/v2 prompt comparison;
   * `bench.py`    -- the `bench` group (`run`, `all`), bound as `bench_app`.
@@ -42,6 +42,7 @@ app.command("backfill-post-vectors")(_analysis.backfill_post_vectors)
 app.command("population-metric")(_analysis.population_metric)
 app.command()(_analysis.intervention)
 app.command()(_analysis.summary)
+app.command()(_analysis.observe)
 app.command()(_ops.version)
 app.command()(_ops.doctor)
 app.command()(_ops.register)

@@ -19,10 +19,10 @@ import { CollapsePanel } from '@/features/lab/CollapsePanel';
 import { Sparkline } from '@/features/lab/Sparkline';
 import type { AccountRoundDTO, AgentSummaryDTO, LabRange } from '@/features/lab/types';
 import labStyles from '@/features/lab/lab.module.css';
-import { ARM_COLOR } from './armColors';
-import { ArmName } from './ArmName';
-import { fmtNum } from './format';
-import s from './era3.module.css';
+import { ARM_COLOR } from '../metrics/armColors';
+import { ArmName } from '../metrics/ArmName';
+import { fmtNum } from '../metrics/format';
+import s from '../metrics/metrics.module.css';
 
 const DASH = '—';
 

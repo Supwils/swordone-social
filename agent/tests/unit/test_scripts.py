@@ -80,6 +80,15 @@ def test_status_counts_only_era_3_agents(tmp_path: Path) -> None:
 
 
 _COMMIT_SECTION = "# ── 9. commit the round's output"
+_OBSERVE_SECTION = "# ── 10. observer note"
+_FINAL_EXIT = '\nexit "$round_status"\n'
+
+
+def _commit_section() -> str:
+    text = (SCRIPTS / "opportunistic-round.sh").read_text(encoding="utf-8")
+    return text[text.index(_COMMIT_SECTION) : text.index(_OBSERVE_SECTION)]
+
+
 _ARCHIVE_GUARD = "git ls-files --error-unmatch agent/archive/era-2/boundary.json"
 _SKIP_LINE = 'log "auto-commit skipped: Era 2 archive not committed yet"'
 
@@ -87,8 +96,7 @@ _SKIP_LINE = 'log "auto-commit skipped: Era 2 archive not committed yet"'
 def test_auto_commit_is_guarded_by_the_committed_era_2_archive() -> None:
     """`git add agent/agents` must never run before the archive is tracked,
     or history records the Era 2 roster as deleted."""
-    text = (SCRIPTS / "opportunistic-round.sh").read_text(encoding="utf-8")
-    section = text[text.index(_COMMIT_SECTION) :]
+    section = _commit_section()
     assert _ARCHIVE_GUARD in section
     assert _SKIP_LINE in section
     assert section.index(_ARCHIVE_GUARD) < section.index("\n    git add agent/agents\n")
@@ -97,8 +105,7 @@ def test_auto_commit_is_guarded_by_the_committed_era_2_archive() -> None:
 def test_auto_commit_skips_and_stages_nothing_while_the_archive_is_untracked(
     tmp_path: Path,
 ) -> None:
-    text = (SCRIPTS / "opportunistic-round.sh").read_text(encoding="utf-8")
-    section = text[text.index(_COMMIT_SECTION) :]
+    section = _commit_section()
     repo = tmp_path / "repo"
     (repo / "agent" / "agents" / "a").mkdir(parents=True)
     (repo / "agent" / "agents" / "a" / "memory.md").write_text("x\n", encoding="utf-8")
@@ -417,6 +424,7 @@ def _round_tree(tmp_path: Path, names: list[str]) -> tuple[Path, dict[str, str]]
         "ACCOUNT_TIMEOUT": "60",
         "ACCOUNT_KILL_GRACE": "3",
         "PARALLEL": "5",
+        "OBSERVE_SETTLE_SECS": "0",
     }
     return root, env
 
@@ -623,8 +631,7 @@ def test_the_default_account_timeout_is_derived_not_900() -> None:
 def test_auto_commit_commits_only_agent_agents_never_the_owners_index(tmp_path: Path) -> None:
     """F6. The owner had something unrelated staged; the unattended,
     --no-verify commit must leave it staged and out of HEAD."""
-    text = (SCRIPTS / "opportunistic-round.sh").read_text(encoding="utf-8")
-    section = text[text.index(_COMMIT_SECTION) :]
+    section = _commit_section()
     repo = tmp_path / "repo"
     (repo / "agent" / "agents" / "a").mkdir(parents=True)
     (repo / "agent" / "archive" / "era-2").mkdir(parents=True)
@@ -665,3 +672,347 @@ def test_auto_commit_commits_only_agent_agents_never_the_owners_index(tmp_path: 
     assert "committed round output (not pushed)" in result.stdout
     assert git("show", "--name-only", "--format=", "HEAD").split() == ["agent/agents/a/memory.md"]
     assert git("diff", "--cached", "--name-only").split() == ["unrelated.txt"]
+
+
+# ── opportunistic-round.sh: the observer note (lab v2.1) ───────────────────
+
+
+def _observe_section() -> str:
+    text = (SCRIPTS / "opportunistic-round.sh").read_text(encoding="utf-8")
+    return text[text.index(_OBSERVE_SECTION) : text.index(_FINAL_EXIT)]
+
+
+def _run_observe_section(
+    tmp_path: Path, *, observe: str, uv_rc: int, uv_body: str = "", extra: str = ""
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "uv.calls"
+    uv = bin_dir / "uv"
+    uv.write_text(f'#!/bin/sh\necho "$*" >> "{calls}"\n{uv_body}exit {uv_rc}\n', encoding="utf-8")
+    uv.chmod(0o755)
+    caffeinate = bin_dir / "caffeinate"
+    caffeinate.write_text(
+        f'#!/bin/sh\necho "$*" >> "{tmp_path}/caffeinate.calls"\nshift\nexec "$@"\n',
+        encoding="utf-8",
+    )
+    caffeinate.chmod(0o755)
+    root = tmp_path / "agent"
+    (root / "logs").mkdir(parents=True)
+    text = (SCRIPTS / "opportunistic-round.sh").read_text(encoding="utf-8")
+    setsid_exec = next(line for line in text.splitlines() if line.startswith("SETSID_EXEC="))
+    workers = tmp_path / "workers"
+    workers.mkdir()
+    prelude = (
+        "set -uo pipefail\n"
+        'log() { echo "$*"; }\n'
+        f'ROOT_DIR="{root}"\nWORKER_DIR="{workers}"\n{setsid_exec}\n'
+        "SWIL_ROUND_ID=20261017T062000Z-r\nACCOUNT_KILL_GRACE=10\nOBSERVE_SETTLE_SECS=0\n"
+        f"OBSERVE={observe}\n{extra}"
+    )
+    result = subprocess.run(
+        ["/bin/bash", "-c", prelude + _observe_section() + 'echo "after rc=$?"\n'],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path), "TMPDIR": str(tmp_path)},
+    )
+    return result, calls
+
+
+def test_the_observer_runs_after_the_commit_and_never_sets_the_exit_status() -> None:
+    """A signal during the note must not cost the round its commit, so the
+    note comes after it; the status the commit section settled is the exit."""
+    text = (SCRIPTS / "opportunistic-round.sh").read_text(encoding="utf-8")
+    done = text.index('log "round done')
+    commit = text.index(_COMMIT_SECTION)
+    status = text.index("\nround_status=$?\n")
+    observe = text.index(_OBSERVE_SECTION)
+    assert done < commit < status < observe < text.index(_FINAL_EXIT)
+    assert text.endswith(_FINAL_EXIT)
+    assert "\nexit " not in text[commit:observe], "the commit section must not end the script"
+
+
+def test_the_observer_runs_under_caffeinate(tmp_path: Path) -> None:
+    result, _ = _run_observe_section(tmp_path, observe="1", uv_rc=0)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "caffeinate.calls").read_text(encoding="utf-8").splitlines() == [
+        f"-i uv run --project {tmp_path / 'agent'} swil-agent observe 20261017T062000Z-r"
+    ]
+
+
+@pytest.mark.parametrize("value", ["abc", "-5", "1.5", "10s"])
+def test_a_bad_observe_timeout_warns_once_and_uses_the_default(tmp_path: Path, value: str) -> None:
+    result, calls = _run_observe_section(
+        tmp_path, observe="1", uv_rc=0, extra=f"OBSERVE_TIMEOUT='{value}'\n"
+    )
+    assert result.returncode == 0, result.stderr
+    warn = f"WARN OBSERVE_TIMEOUT='{value}' is not a non-negative integer — using the default 600"
+    assert result.stdout.count(warn) == 1, result.stdout
+    assert result.stdout.count("WARN") == 1, result.stdout
+    assert "observer note written" in result.stdout
+    assert calls.exists()
+
+
+def _observe_secs(name: str, value: str | None, default: str) -> str:
+    """Run the section's `observe_secs` alone (OBSERVE=0 defines it, runs nothing)."""
+    assign = "" if value is None else f"{name}='{value}'\n"
+    snippet = (
+        'log() { echo "$*"; }\nOBSERVE=0\n'
+        + _observe_section()
+        + f'{assign}observe_secs {name} {default}\necho "value=$OBSERVE_SECS"\n'
+    )
+    return subprocess.run(
+        ["/bin/bash", "-c", snippet], capture_output=True, text=True, timeout=30, check=True
+    ).stdout
+
+
+@pytest.mark.parametrize(
+    ("value", "expected", "warns"),
+    [
+        (None, "130", False),
+        ("", "130", False),
+        ("0", "0", False),
+        ("45", "45", False),
+        ("08", "8", False),
+        ("-1", "130", True),
+        ("2m", "130", True),
+        (" 5", "130", True),
+    ],
+)
+def test_observe_settle_secs_is_a_non_negative_integer_or_the_default(
+    value: str | None, expected: str, warns: bool
+) -> None:
+    out = _observe_secs("OBSERVE_SETTLE_SECS", value, "130")
+    assert f"value={expected}" in out.splitlines(), out
+    assert ("WARN OBSERVE_SETTLE_SECS=" in out) is warns, out
+    assert out.count("WARN") == (1 if warns else 0), out
+
+
+def test_the_observer_waits_out_the_settle_before_it_starts(tmp_path: Path) -> None:
+    import time
+
+    started = time.monotonic()
+    result, calls = _run_observe_section(
+        tmp_path, observe="1", uv_rc=0, extra="OBSERVE_SETTLE_SECS=2\n"
+    )
+    assert result.returncode == 0, result.stderr
+    assert time.monotonic() - started >= 2
+    assert "observer note waits 2s for the lab's round caches to expire" in result.stdout
+    assert calls.exists()
+
+
+def test_the_round_exit_status_survives_the_observer(tmp_path: Path) -> None:
+    """The status is the commit section's, as when that section ended the
+    script: a failing commit still exits non-zero after a note was written."""
+    bin_dir = tmp_path / "stubs"
+    bin_dir.mkdir()
+    (bin_dir / "git").write_text(
+        '#!/bin/sh\ncase "$*" in\n'
+        "  *ls-files*) exit 0 ;;\n"
+        '  *status*) echo " M agent/agents/a/memory.md"; exit 0 ;;\n'
+        "  *commit*) exit 3 ;;\n"
+        "esac\nexit 0\n",
+        encoding="utf-8",
+    )
+    (bin_dir / "git").chmod(0o755)
+    calls = tmp_path / "uv.calls"
+    (bin_dir / "uv").write_text(f'#!/bin/sh\necho "$*" >> "{calls}"\nexit 0\n', encoding="utf-8")
+    (bin_dir / "uv").chmod(0o755)
+    (bin_dir / "caffeinate").write_text('#!/bin/sh\nshift\nexec "$@"\n', encoding="utf-8")
+    (bin_dir / "caffeinate").chmod(0o755)
+    root = tmp_path / "agent"
+    (root / "logs").mkdir(parents=True)
+    workers = tmp_path / "workers"
+    workers.mkdir()
+    text = (SCRIPTS / "opportunistic-round.sh").read_text(encoding="utf-8")
+    setsid_exec = next(line for line in text.splitlines() if line.startswith("SETSID_EXEC="))
+    tail = text[text.index(_COMMIT_SECTION) :]
+    prelude = (
+        "set -uo pipefail\n"
+        'log() { echo "$*"; }\n'
+        f'ROOT_DIR="{root}"\nREPO_DIR="{tmp_path}"\nWORKER_DIR="{workers}"\n{setsid_exec}\n'
+        "SWIL_ROUND_ID=20261017T062000Z-r\nACCOUNT_KILL_GRACE=10\nOBSERVE_SETTLE_SECS=0\n"
+        "AUTO_COMMIT=1\nOBSERVE=1\nok=1; bad=0; timedout=0\n"
+    )
+    result = subprocess.run(
+        ["/bin/bash", "-c", prelude + tail],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path)},
+    )
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert "committed round output" not in result.stdout
+    assert "observer note written" in result.stdout
+    assert calls.exists()
+
+
+def test_the_observer_note_runs_once_with_the_sweep_id(tmp_path: Path) -> None:
+    result, calls = _run_observe_section(tmp_path, observe="1", uv_rc=0)
+    assert result.returncode == 0, result.stderr
+    assert calls.read_text(encoding="utf-8").splitlines() == [
+        f"run --project {tmp_path / 'agent'} swil-agent observe 20261017T062000Z-r"
+    ]
+    assert "observer note written" in result.stdout
+
+
+def test_a_failed_observer_note_never_fails_the_round(tmp_path: Path) -> None:
+    result, _ = _run_observe_section(tmp_path, observe="1", uv_rc=75)
+    assert result.returncode == 0, result.stderr
+    assert "WARN observer note failed" in result.stdout
+    assert "after rc=0" in result.stdout
+
+
+def test_a_hung_observer_is_stopped_after_its_timeout(tmp_path: Path) -> None:
+    result, _ = _run_observe_section(
+        tmp_path,
+        observe="1",
+        uv_rc=0,
+        uv_body=f'echo "$$" > "{tmp_path}/obs.pgid"\nsleep 60 &\n'
+        f'echo "$!" > "{tmp_path}/obs.child"\nwait\n',
+        extra="OBSERVE_TIMEOUT=1\nACCOUNT_KILL_GRACE=1\n",
+    )
+    assert result.returncode == 0, result.stderr
+    pgid = int((tmp_path / "obs.pgid").read_text(encoding="utf-8"))
+    child = int((tmp_path / "obs.child").read_text(encoding="utf-8"))
+    assert _wait_for(lambda: not _alive(pgid) and not _alive(child), 5)
+    assert "observer note timed out" in result.stdout
+    assert "WARN observer note failed" in result.stdout
+    assert "after rc=0" in result.stdout
+
+
+def test_observe_0_skips_the_note(tmp_path: Path) -> None:
+    result, calls = _run_observe_section(tmp_path, observe="0", uv_rc=0)
+    assert result.returncode == 0, result.stderr
+    assert not calls.exists()
+
+
+def test_observe_is_a_caller_variable_that_outranks_the_env_file() -> None:
+    text = (SCRIPTS / "opportunistic-round.sh").read_text(encoding="utf-8")
+    loop = next(line for line in text.splitlines() if line.startswith("for v in SWIL_URL "))
+    assert " OBSERVE" in loop
+    assert 'OBSERVE="${OBSERVE:-1}"' in text
+
+
+def test_a_finished_observer_is_reported_by_its_own_status(tmp_path: Path) -> None:
+    result, _ = _run_observe_section(tmp_path, observe="1", uv_rc=75)
+    assert "observer note failed" in result.stdout
+    assert "rc=75" in result.stdout
+    assert "timed out" not in result.stdout
+
+
+def test_sigterm_during_the_observer_stops_its_group_and_the_round(tmp_path: Path) -> None:
+    """...and the round's commit, made before the note, is already in HEAD."""
+    import signal
+
+    names = ["one"]
+    root, env = _round_tree(tmp_path, names)
+    (root / "scripts" / "cycle-one.sh").write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+    env |= {
+        "AUTO_COMMIT": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@example.test",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@example.test",
+    }
+    (root / "archive" / "era-2").mkdir(parents=True)
+    (root / "archive" / "era-2" / "boundary.json").write_text("{}\n", encoding="utf-8")
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), *args], capture_output=True, text=True, check=True, env=env
+        ).stdout
+
+    git("init", "-q")
+    git("add", "agent/archive/era-2/boundary.json")
+    git("commit", "-q", "-m", "chore: seed")
+    uv = tmp_path / "bin" / "uv"
+    uv.write_text(
+        "#!/bin/bash\n"
+        'case "$*" in *observe*) sleep 600 &\n'
+        '  echo "$$ $!" > "$STUB_OUT/observer.started"; wait ;; esac\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    proc = subprocess.Popen(
+        ["/bin/bash", str(root / "scripts" / "opportunistic-round.sh"), "--force"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    marker = tmp_path / "out" / "observer.started"
+    try:
+        assert _wait_for(marker.exists)
+        pgid, child = (int(x) for x in marker.read_text(encoding="utf-8").split())
+        proc.send_signal(signal.SIGTERM)
+        _, stderr = proc.communicate(timeout=30)
+        assert proc.returncode == 143, stderr
+        assert _wait_for(lambda: not _alive(pgid) and not _alive(child), 5)
+        assert not (root / ".agent-state" / "round.lock").exists()
+        assert "round interrupted by SIGTERM" in _round_log(root)
+        assert "committed round output (not pushed)" in _round_log(root)
+        assert git("show", "--name-only", "--format=", "HEAD").split() == [
+            "agent/agents/one/personality.md"
+        ]
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate()
+        _reap(tmp_path, names)
+
+
+def test_sigterm_during_the_settle_wait_exits_143_and_never_starts_the_observer(
+    tmp_path: Path,
+) -> None:
+    import signal
+    import time
+
+    names = ["one"]
+    root, env = _round_tree(tmp_path, names)
+    env |= {"OBSERVE_SETTLE_SECS": "120"}
+    (root / "scripts" / "cycle-one.sh").write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+    calls = tmp_path / "uv.calls"
+    uv = tmp_path / "bin" / "uv"
+    uv.write_text(f'#!/bin/sh\necho "$*" >> "{calls}"\nexit 0\n', encoding="utf-8")
+    proc = subprocess.Popen(
+        ["/bin/bash", str(root / "scripts" / "opportunistic-round.sh"), "--force"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    log = root / "logs" / "opportunistic.log"
+    try:
+        assert _wait_for(lambda: log.exists() and "observer note waits 120s" in _round_log(root))
+        sent = time.monotonic()
+        proc.send_signal(signal.SIGTERM)
+        _, stderr = proc.communicate(timeout=15)
+        assert proc.returncode == 143, stderr
+        assert time.monotonic() - sent < 5, "the trap must not wait out the settle"
+        assert not calls.exists() or "observe" not in calls.read_text(encoding="utf-8")
+        assert not (root / ".agent-state" / "round.lock").exists()
+        assert "round interrupted by SIGTERM" in _round_log(root)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate()
+
+
+def test_dry_run_never_invokes_the_observer(tmp_path: Path) -> None:
+    root, env = _round_tree(tmp_path, ["one"])
+    calls = tmp_path / "uv.calls"
+    uv = tmp_path / "bin" / "uv"
+    uv.write_text(f'#!/bin/sh\necho "$*" >> "{calls}"\nexit 0\n', encoding="utf-8")
+    result = subprocess.run(
+        ["/bin/bash", str(root / "scripts" / "opportunistic-round.sh"), "--dry-run"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not calls.exists() or "observe" not in calls.read_text(encoding="utf-8")

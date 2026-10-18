@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { Verdict } from '@/features/lab/types';
 import { describeVerdict } from './format';
-import s from './era3.module.css';
+import s from './metrics.module.css';
 
 /**
  * One verdict's status words. Provisional (with k/12) until the window

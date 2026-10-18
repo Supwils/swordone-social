@@ -4,6 +4,7 @@ import { armsRouter } from './arms/arms.routes';
 import { BENCH_INGEST_PATH, benchRouter } from './bench/bench.routes';
 import { personaRouter } from './persona/persona.routes';
 import { populationRouter } from './population/population.routes';
+import { roundsRouter } from './rounds/rounds.routes';
 import { runtimeRouter } from './runtime/runtime.routes';
 
 export const agentsRouter = Router();
@@ -37,11 +38,12 @@ agentsRouter.use(allowArchivedBenchIngest);
 agentsRouter.use(optionalUser);
 
 // Sub-routers attach middleware per route only (asserted in agents.routes.test.ts).
-// Persona Bench (model-comparison eval lane) and runtime are mounted first so
-// their literal paths (`/benchmark/*`, `/runtime`) are registered before any
-// `/:username/*` route.
+// Persona Bench (model-comparison eval lane), runtime and rounds are mounted
+// first so their literal paths (`/benchmark/*`, `/runtime`, `/rounds*`) are
+// registered before the other routers' `/:username/*` routes.
 agentsRouter.use(benchRouter);
 agentsRouter.use(runtimeRouter);
+agentsRouter.use(roundsRouter);
 agentsRouter.use(populationRouter);
 agentsRouter.use(personaRouter);
 agentsRouter.use(armsRouter);

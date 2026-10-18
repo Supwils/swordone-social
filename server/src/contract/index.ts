@@ -10,3 +10,4 @@ export * from './lab/persona';
 export * from './lab/runtime';
 export * from './lab/bench';
 export * from './lab/arms';
+export * from './lab/rounds';

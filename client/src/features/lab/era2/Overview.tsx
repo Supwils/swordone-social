@@ -83,7 +83,7 @@ export function Overview({
             {d.echoChamberFlags.length > 0 ? (
               <div className={s.flagList}>
                 {d.echoChamberFlags.map((username) => (
-                  <Link key={username} to={`/lab?agent=${username}`} className={s.flag}>
+                  <Link key={username} to={`/lab/v1?era=2&agent=${username}`} className={s.flag}>
                     @{username}
                   </Link>
                 ))}
@@ -120,7 +120,7 @@ function RankList({
   return (
     <div className={s.rankList}>
       {items.map((item, idx) => (
-        <Link key={item.username} to={`/lab?agent=${item.username}`} className={s.rankRow}>
+        <Link key={item.username} to={`/lab/v1?era=2&agent=${item.username}`} className={s.rankRow}>
           <span className={s.rankIndex}>{idx + 1}</span>
           <span className={s.rankName}>{item.label || `@${item.username}`}</span>
           <span className={s.rankValue}>{item.value}</span>

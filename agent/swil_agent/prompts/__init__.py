@@ -3,6 +3,7 @@
 Callers go through `act_prompt` / `dream_prompt` only. `v1` is the Era 3 text,
 byte-identical to round 1; `v2` is the lean prompt, reachable at runtime only
 under `PROMPT_VERSION=v2` + `PROMPT_V2_ENABLED=1` (`config.py`).
+`observer.py` is the lab observer's text (`swil-agent observe`), not a persona prompt.
 """
 
 from __future__ import annotations

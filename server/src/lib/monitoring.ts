@@ -10,6 +10,26 @@ import { env, sentryEnabled } from '../config/env';
 import { logger } from './logger';
 
 type SentryModule = typeof import('@sentry/node');
+type SentryEvent = import('@sentry/node').Event;
+
+/**
+ * Request headers that never leave the process. Sentry's own scrubbing filters
+ * header *span attributes* by name, but an error event's `request.headers` is
+ * copied as received — so a credential header must be removed here. The
+ * observer token is a shared secret (modules/agents/rounds/observerToken.ts).
+ */
+export const SCRUBBED_HEADERS: ReadonlySet<string> = new Set(['x-lab-observer-token']);
+
+/** Drop every `SCRUBBED_HEADERS` entry from an event's request, whatever its case. */
+export function scrubEvent<E extends SentryEvent>(event: E): E {
+  const headers = event.request?.headers;
+  if (headers) {
+    for (const name of Object.keys(headers)) {
+      if (SCRUBBED_HEADERS.has(name.toLowerCase())) delete headers[name];
+    }
+  }
+  return event;
+}
 
 let initialized = false;
 let sentry: SentryModule | null = null;
@@ -24,6 +44,8 @@ export async function initMonitoring(): Promise<void> {
       dsn: env.SENTRY_DSN,
       environment: env.NODE_ENV,
       tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+      beforeSend: scrubEvent,
+      beforeSendTransaction: scrubEvent,
     });
     logger.info({ env: env.NODE_ENV }, 'sentry initialized');
   } catch (err) {

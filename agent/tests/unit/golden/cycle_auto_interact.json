@@ -324,7 +324,10 @@
         "zenith",
         {
           "action": null,
-          "metrics": {},
+          "metrics": {
+            "recentAfter": "[\"读完了一本书\", \"和流明聊了几句\"]",
+            "recentBefore": "[\"一件旧事\"]"
+          },
           "occurred_at": null,
           "outcome": "success",
           "phase": "dream",

@@ -22,7 +22,7 @@ import { ARM_COLOR, ARM_IDS, ARM_LABEL } from './armColors';
 import { buildChartRows, describeVerdict, fmtNum, metricFormat } from './format';
 import { ArmName } from './ArmName';
 import { VerdictText } from './VerdictText';
-import s from './era3.module.css';
+import s from './metrics.module.css';
 
 export function MetricPanel({ block, report }: { block: MetricBlock; report: ArmsReportDTO }) {
   const { t } = useTranslation();

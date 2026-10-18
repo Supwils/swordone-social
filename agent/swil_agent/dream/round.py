@@ -17,6 +17,7 @@ raises, and logs a WARNING when the server refuses one.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -63,8 +64,24 @@ class Embedder(Protocol):
     def embed(self, texts: list[str]) -> list[list[float]]: ...
 
 
-def _dream_event(outcome: str, summary: str) -> LabEvent:
-    return LabEvent(type="dream", phase="dream", outcome=outcome, summary=summary)
+def _dream_event(outcome: str, summary: str, metrics: dict[str, str] | None = None) -> LabEvent:
+    return LabEvent(
+        type="dream", phase="dream", outcome=outcome, summary=summary, metrics=metrics or {}
+    )
+
+
+def _recent_diff_metrics(before: list[str], written: list[str]) -> dict[str, str]:
+    """The 最近 before and as written, for the round digest's diff. Lab-only:
+    no lab event ever enters a prompt. JSON strings, because the event
+    ingest takes scalar metric values only.
+
+    `before` is `persona.recent`, the list the dream prompt was built from
+    (loaded at the start of the run), not a re-read of the file at write
+    time: the diff shows what this dream saw and what it wrote."""
+    return {
+        "recentBefore": json.dumps(before, ensure_ascii=False),
+        "recentAfter": json.dumps(written, ensure_ascii=False),
+    }
 
 
 def snapshot_content(persona: Persona, recent: list[str]) -> str:
@@ -261,7 +278,14 @@ def write_step(
     state.record_dream(name, at=int(now.timestamp()))
     persona_source.append_memory(name, f"{now:%Y-%m-%d} | {DREAM_MEMORY_NOTE}")
     logger.info("DONE %s dreamed — 最近 updated (old → personality.archive.md)", name)
-    resources.lab_event(persona.username, _dream_event("success", "personality updated"))
+    resources.lab_event(
+        persona.username,
+        _dream_event(
+            "success",
+            "personality updated",
+            _recent_diff_metrics(list(persona.recent), list(clamp_recent(recent))),
+        ),
+    )
     return WriteStep(written=True)
 
 

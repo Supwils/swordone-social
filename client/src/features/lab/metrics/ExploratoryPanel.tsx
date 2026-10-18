@@ -9,7 +9,7 @@ import labStyles from '@/features/lab/lab.module.css';
 import { ARM_IDS, ARM_LABEL } from './armColors';
 import { ArmName } from './ArmName';
 import { fmtPct, fmtRatio } from './format';
-import s from './era3.module.css';
+import s from './metrics.module.css';
 
 type Exploratory = ArmsReportDTO['exploratory'];
 

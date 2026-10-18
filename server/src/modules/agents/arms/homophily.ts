@@ -9,8 +9,8 @@
  * comparison is cross-board edges only, against the board-conditioned
  * expectation `(k − 1) / (N − 1 − (|B| − 1))`, averaged over edges.
  */
-import { and, count, eq, inArray, ne } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
+import { and, between, count, eq, inArray, ne } from 'drizzle-orm';
+import { alias, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db } from '../../../db/client';
 import { comments, follows, likes, posts } from '../../../db/schema';
 import { ARMS, BOARDS, armOf, type ArmId } from '../lab/roster';
@@ -22,6 +22,19 @@ export interface InteractionEdge {
   source: string;
   target: string;
   n: number;
+}
+
+export type InteractionKind = 'comment' | 'like' | 'echo' | 'follow';
+
+/** A loaded edge: what `buildHomophily` reads, plus which kind of interaction it counts. */
+export interface KindedEdge extends InteractionEdge {
+  kind: InteractionKind;
+}
+
+/** An inclusive time window, e.g. a round's `[startedAt, lastCardAt]`. */
+export interface TimeWindow {
+  from: Date;
+  to: Date;
 }
 
 const ROSTER_SIZE = ARMS.reduce((sum, a) => sum + a.usernames.length, 0);
@@ -87,14 +100,24 @@ const origPosts = alias(posts, 'orig_post');
 
 /**
  * Every roster → roster interaction, grouped per (source, target, kind) in
- * the database: five bounded queries whatever the corpus size.
+ * the database: five bounded queries whatever the corpus size. With a window,
+ * only interactions whose own timestamp (the comment's, the like's, the echo
+ * post's, the follow's) falls inside it, ends included. Without one the edges
+ * are exactly the arms report's.
  */
 export async function loadInteractionEdges(
   roster: readonly RosterUser[],
-): Promise<InteractionEdge[]> {
+  window?: TimeWindow,
+): Promise<KindedEdge[]> {
   const ids = roster.map((u) => u.id);
   if (ids.length === 0) return [];
   const n = count();
+  const inWindow = (col: AnyPgColumn) =>
+    window ? between(col, window.from, window.to) : undefined;
+  const tag =
+    (kind: InteractionKind) =>
+    (rows: InteractionEdge[]): KindedEdge[] =>
+      rows.map((r) => ({ ...r, kind }));
 
   const groups = await Promise.all([
     // comment → the commented post's author
@@ -107,9 +130,11 @@ export async function loadInteractionEdges(
           inArray(comments.authorId, ids),
           inArray(posts.authorId, ids),
           ne(comments.authorId, posts.authorId),
+          inWindow(comments.createdAt),
         ),
       )
-      .groupBy(comments.authorId, posts.authorId),
+      .groupBy(comments.authorId, posts.authorId)
+      .then(tag('comment')),
     // like on a post → its author
     db
       .select({ source: likes.userId, target: likedPosts.authorId, n })
@@ -120,9 +145,11 @@ export async function loadInteractionEdges(
           inArray(likes.userId, ids),
           inArray(likedPosts.authorId, ids),
           ne(likes.userId, likedPosts.authorId),
+          inWindow(likes.createdAt),
         ),
       )
-      .groupBy(likes.userId, likedPosts.authorId),
+      .groupBy(likes.userId, likedPosts.authorId)
+      .then(tag('like')),
     // like on a comment → its author
     db
       .select({ source: likes.userId, target: likedComments.authorId, n })
@@ -136,9 +163,11 @@ export async function loadInteractionEdges(
           inArray(likes.userId, ids),
           inArray(likedComments.authorId, ids),
           ne(likes.userId, likedComments.authorId),
+          inWindow(likes.createdAt),
         ),
       )
-      .groupBy(likes.userId, likedComments.authorId),
+      .groupBy(likes.userId, likedComments.authorId)
+      .then(tag('like')),
     // echo → the original post's author
     db
       .select({ source: posts.authorId, target: origPosts.authorId, n })
@@ -149,9 +178,11 @@ export async function loadInteractionEdges(
           inArray(posts.authorId, ids),
           inArray(origPosts.authorId, ids),
           ne(posts.authorId, origPosts.authorId),
+          inWindow(posts.createdAt),
         ),
       )
-      .groupBy(posts.authorId, origPosts.authorId),
+      .groupBy(posts.authorId, origPosts.authorId)
+      .then(tag('echo')),
     // follow → followee
     db
       .select({ source: follows.followerId, target: follows.followingId, n })
@@ -161,9 +192,11 @@ export async function loadInteractionEdges(
           inArray(follows.followerId, ids),
           inArray(follows.followingId, ids),
           ne(follows.followerId, follows.followingId),
+          inWindow(follows.createdAt),
         ),
       )
-      .groupBy(follows.followerId, follows.followingId),
+      .groupBy(follows.followerId, follows.followingId)
+      .then(tag('follow')),
   ]);
   return groups.flat();
 }

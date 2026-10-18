@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # (`set -a`), so the CLI saw it there; a manual `doctor`/`cycle` did not.
     # Read here and handed to that one subprocess, both paths authenticate alike.
     cursor_api_key: SecretStr | None = None
+    # Lab v2.1: `swil-agent observe` sends it as X-Lab-Observer-Token. Must equal
+    # the server's LAB_OBSERVER_TOKEN. Unset/blank = `observe` exits 75.
+    lab_observer_token: SecretStr | None = None
 
     embedder_url: str = "http://127.0.0.1:7777"
 
@@ -136,6 +139,7 @@ class Settings(BaseSettings):
         "swil_llm_api_key",
         "swil_agent_setup_token",
         "cursor_api_key",
+        "lab_observer_token",
         "swil_round_id",
         mode="before",
     )

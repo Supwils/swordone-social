@@ -10,6 +10,7 @@ own, then the node wiring around them. Tests that read bytes back use the real
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -228,6 +229,8 @@ def test_dream_step_fails_on_garbage_and_writes_nothing(root: Path) -> None:
     assert step.failure_reason == "unparseable dream output"
     assert _dream_events(resources)[-1] == ("fail", "unparseable dream output")
     assert _personality(root) == before
+    # Neither the started nor the fail event carries the 最近 lists.
+    assert [e.metrics for e in resources.lab_events if e.type == "dream"] == [{}, {}]
 
 
 def test_dream_step_survives_a_failing_notifications_read(root: Path) -> None:
@@ -269,7 +272,9 @@ def test_write_step_writes_marks_and_logs_in_order() -> None:
     source = FakePersonaSource(order=order)
     state = FakeState(order=order)
     resources = FakeResources()
-    persona = Persona.model_validate({**_bare_persona_fields(), "directory": Path("/x/xiaoman")})
+    persona = Persona.model_validate(
+        {**_bare_persona_fields(), "recent": ["旧的一条"], "directory": Path("/x/xiaoman")}
+    )
     step = write_step(
         persona=persona,
         persona_source=source,
@@ -289,7 +294,26 @@ def test_write_step_writes_marks_and_logs_in_order() -> None:
         "success",
         "personality updated",
     )
-    assert not success.metrics
+    # Lab-only: the 最近 before and as written, as JSON strings (scalar metrics).
+    assert set(success.metrics) == {"recentBefore", "recentAfter"}
+    assert json.loads(success.metrics["recentBefore"]) == ["旧的一条"]
+    assert json.loads(success.metrics["recentAfter"]) == ["一", "二"]
+
+
+def test_write_step_files_the_clamped_list_and_keeps_cjk_unescaped() -> None:
+    resources = FakeResources()
+    persona = Persona.model_validate({**_bare_persona_fields(), "directory": Path("/x/xiaoman")})
+    write_step(
+        persona=persona,
+        persona_source=FakePersonaSource(),
+        state=FakeState(),
+        resources=resources,
+        recent=["- 新的一条", "", "第二条   有空格"],
+        now=NOW,
+    )
+    metrics = resources.lab_events[-1].metrics
+    assert metrics["recentBefore"] == "[]"
+    assert metrics["recentAfter"] == '["新的一条", "第二条 有空格"]'
 
 
 def test_write_step_keys_on_the_directory_name() -> None:
@@ -332,6 +356,7 @@ def test_write_step_refuses_an_over_size_file_and_leaves_it_untouched(root: Path
     assert not (directory / "personality.archive.md").exists()
     assert state.last_dream_ts("xiaoman") is None
     assert resources.lab_events[-1].outcome == "fail"
+    assert resources.lab_events[-1].metrics == {}  # the 最近 diff rides on success only
 
 
 def test_write_step_on_disk_keeps_card_and_frontmatter(root: Path) -> None:

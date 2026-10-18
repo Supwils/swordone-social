@@ -25,6 +25,7 @@ const ConversationRoute = lazy(() => import('@/routes/conversation'));
 const ExploreRoute = lazy(() => import('@/routes/explore'));
 const BookmarksRoute = lazy(() => import('@/routes/bookmarks'));
 const LabRoute = lazy(() => import('@/routes/lab'));
+const LabV1Route = lazy(() => import('@/routes/lab/v1'));
 const NotFoundRoute = lazy(() => import('@/routes/notFound'));
 const ShowcaseRoute = lazy(() => import('@/routes/showcase'));
 
@@ -124,6 +125,7 @@ export function App() {
                   element={<Navigate to="/explore?tab=people" replace />}
                 />
                 <Route path="lab" element={<LabRoute />} />
+                <Route path="lab/v1" element={<LabV1Route />} />
 
                 {/* Personal surfaces: meaningless without an identity. Nested
                     under the same layout so the shell never remounts when a

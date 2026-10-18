@@ -19,9 +19,7 @@ import { RuntimeHealth } from '@/features/lab/RuntimeHealth';
 import type { AgentSummaryDTO, LabRange } from '@/features/lab/types';
 import labStyles from '@/features/lab/lab.module.css';
 import { ArmRoster } from './ArmRoster';
-import { ExperimentHeader } from './ExperimentHeader';
-import { ExploratoryPanel } from './ExploratoryPanel';
-import { MetricPanel } from './MetricPanel';
+import { ArmsMetrics } from '../metrics/ArmsMetrics';
 
 export function Era3Dashboard({
   range,
@@ -55,13 +53,7 @@ export function Era3Dashboard({
   return (
     <>
       {report ? (
-        <>
-          <ExperimentHeader report={report} />
-          <MetricPanel block={report.metrics.fidelity} report={report} />
-          <MetricPanel block={report.metrics.repetition} report={report} />
-          <MetricPanel block={report.metrics.convergence} report={report} />
-          <ExploratoryPanel exploratory={report.exploratory} />
-        </>
+        <ArmsMetrics report={report} />
       ) : armsQ.isError ? (
         <div className={labStyles.emptyState}>{t('lab.era3.error')}</div>
       ) : (

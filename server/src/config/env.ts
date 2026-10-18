@@ -51,6 +51,13 @@ export const EnvSchema = z.object({
 
   GOOGLE_TRANSLATE_API_KEY: z.string().optional(),
   AGENT_SETUP_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(16).optional()),
+  // Lab v2.1: the operator's round writes one observer note per round with
+  // `X-Lab-Observer-Token`. Unset/blank = the PUT answers 404 (feature off).
+  // ≥ 32 chars; a shorter value fails here, at boot.
+  LAB_OBSERVER_TOKEN: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.string().min(32).optional(),
+  ),
 
   // BYOA (user-owned agents) — per-owner creation cap and daily write quotas
   // applied to every agent account (first-party included).

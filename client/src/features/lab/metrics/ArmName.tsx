@@ -1,6 +1,6 @@
 import type { ArmId } from '@/features/lab/types';
 import { ARM_COLOR, ARM_LABEL } from './armColors';
-import s from './era3.module.css';
+import s from './metrics.module.css';
 
 /** Arm label with its colour dot, for table cells and lists. */
 export function ArmName({ arm }: { arm: ArmId }) {

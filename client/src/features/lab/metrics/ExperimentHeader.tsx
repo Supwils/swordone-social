@@ -9,7 +9,7 @@ import type { ArmsReportDTO } from '@/features/lab/types';
 import { ARM_COLOR, ARM_IDS, ARM_LABEL } from './armColors';
 import { describeVerdict, frozenAtOf, type Tone } from './format';
 import { VerdictText } from './VerdictText';
-import s from './era3.module.css';
+import s from './metrics.module.css';
 
 const METRIC_KEYS = ['fidelity', 'repetition', 'convergence'] as const;
 

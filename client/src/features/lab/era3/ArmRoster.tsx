@@ -7,8 +7,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentGrid } from '@/features/lab/AgentGrid';
 import type { AgentSummaryDTO, ArmId } from '@/features/lab/types';
-import { ARM_COLOR, ARM_IDS, ARM_LABEL } from './armColors';
-import s from './era3.module.css';
+import { ARM_COLOR, ARM_IDS, ARM_LABEL } from '../metrics/armColors';
+import s from '../metrics/metrics.module.css';
 
 export function ArmRoster({
   agents,

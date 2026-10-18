@@ -24,6 +24,8 @@ export const labKeys = {
   runtime: (era: LabEra, range: LabRange) => ['lab-runtime', era, range] as const,
   arms: ['lab-arms'] as const,
   accountRounds: (username: string) => ['lab-account-rounds', username] as const,
+  rounds: ['lab-rounds'] as const,
+  round: (roundId: string) => ['lab-round', roundId] as const,
   drift: (username: string) => ['agent-drift', username] as const,
   countdown: (username: string, range: LabRange) => ['agent-countdown', username, range] as const,
   collapse: (username: string, range: LabRange) => ['agent-collapse', username, range] as const,

@@ -32,6 +32,8 @@ import {
   getAlerts,
   getArmsReport,
   getCollapseWatch,
+  getRoundDigest,
+  listRounds,
   getDriftCountdown,
   getHomogenization,
   getInteractionGraph,
@@ -167,5 +169,23 @@ describe('lab paths encode every interpolated segment', () => {
       `/agents/${enc}/influences?range=90d`,
       `/agents/${enc}/events?limit=5&type=dream`,
     ]);
+  });
+});
+
+describe('lab v2 round reads', () => {
+  it('lists rounds at /agents/rounds', async () => {
+    const payload = { rounds: [] };
+    vi.mocked(http.get).mockResolvedValue({ data: { data: payload } });
+    await expect(listRounds()).resolves.toBe(payload);
+    expect(vi.mocked(http.get).mock.calls[0][0]).toBe('/agents/rounds');
+  });
+
+  it('fetches one digest with the round id encoded', async () => {
+    const payload = { digestHash: 'x' };
+    vi.mocked(http.get).mockResolvedValue({ data: { data: payload } });
+    await expect(getRoundDigest('20261017T062000Z-r')).resolves.toBe(payload);
+    expect(vi.mocked(http.get).mock.calls[0][0]).toBe('/agents/rounds/20261017T062000Z-r');
+    await getRoundDigest('../users/x');
+    expect(vi.mocked(http.get).mock.calls[1][0]).toBe('/agents/rounds/..%2Fusers%2Fx');
   });
 });

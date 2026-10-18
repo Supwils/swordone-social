@@ -63,7 +63,12 @@ import LabPage from './LabPage';
 
 function LocationProbe() {
   const loc = useLocation();
-  return <output data-testid="search">{loc.search}</output>;
+  return (
+    <>
+      <output data-testid="search">{loc.search}</output>
+      <output data-testid="pathname">{loc.pathname}</output>
+    </>
+  );
 }
 
 function renderLab(
@@ -237,6 +242,21 @@ describe('LabPage — era switch', () => {
     expect(await screen.findByText('graph-panel era=2')).toBeTruthy();
     expect(search().get('view')).toBe('graph');
     expect(search().get('era')).toBe('2');
+  });
+});
+
+describe('LabPage — stays on its own path', () => {
+  it('era and view switches on /lab/v1 never leave /lab/v1', async () => {
+    mockReads();
+    renderLab('/lab/v1?era=2&view=graph');
+    await screen.findByText('graph-panel era=2');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Era 3 · model-native' }));
+    expect(await screen.findByText('graph-panel era=3')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Overview' }));
+    expect(await screen.findByText('era3-dashboard')).toBeTruthy();
+    expect(screen.getByTestId('pathname').textContent).toBe('/lab/v1');
+    expect(search().has('view')).toBe(false);
   });
 });
 

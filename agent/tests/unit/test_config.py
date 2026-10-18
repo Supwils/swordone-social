@@ -282,3 +282,23 @@ def test_the_dot_env_file_can_switch_both_keys(
     env = tmp_path / ".env"
     env.write_text("PROMPT_VERSION=v2\nPROMPT_V2_ENABLED=1\n", encoding="utf-8")
     assert load_settings(env).prompt_version == "v2"
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_a_blank_observer_token_is_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    env = tmp_path / ".env"
+    env.write_text(f"LAB_OBSERVER_TOKEN={value}\n", encoding="utf-8")
+    monkeypatch.delenv("LAB_OBSERVER_TOKEN", raising=False)
+    assert load_settings(env).lab_observer_token is None
+
+
+def test_the_observer_token_is_secret(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    env = tmp_path / ".env"
+    env.write_text(f"LAB_OBSERVER_TOKEN={'s' * 40}\n", encoding="utf-8")
+    monkeypatch.delenv("LAB_OBSERVER_TOKEN", raising=False)
+    settings = load_settings(env)
+    assert settings.lab_observer_token is not None
+    assert settings.lab_observer_token.get_secret_value() == "s" * 40
+    assert "s" * 40 not in repr(settings)

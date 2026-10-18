@@ -25,10 +25,40 @@ here. Closed dated entries (everything up to 2026-09-18, plus the 2026-10-14
 - **S4** — one API contract (zod in `server/src/contract/`, synced to client, mcp and agent).
 - **S5** — hygiene (spec `docs/superpowers/specs/2026-10-15-s5-hygiene-design.md`, section below).
 - **S6** — whole-project review fixes (plan `docs/superpowers/plans/2026-10-15-s6-review-fixes.md`, section below).
+- **Lab v2** — round digests and observer notes (section below); not deployed.
 
 S2 (`cbdf77d`), S3 (`5f5c367`), S4 (`4ac01d2`), S5 (`9932513`) and S6 (the commit after
 it) are committed and pushed to branch `era3-launch` (PR to `main`, not merged).
 `npm run ci:check` (20 steps) is green at the end of S6.
+
+## Lab v2 — 2026-10-17
+
+**Status: built locally on `feat/lab-v2-prompt-v2`, not pushed, nothing deployed.**
+v2.0: round list + digest reads, `/lab` v2 page, old lab at `/lab/v1`, Era 3 metric
+panels in `client/src/features/lab/metrics/`. v2.1: `round_observations` (0007),
+`LAB_OBSERVER_TOKEN`, `PUT /agents/rounds/:roundId/observation`, `swil-agent observe`,
+round-script hook. Runtime prompt v2 (next section) stays **OFF**; this rollout does
+not switch it on.
+
+**Operator rollout (production writes, in this order):**
+
+1. Migrate Neon to 0007 in a quiet window with `com.swil.round` unloaded, **before
+   pushing**: `DATABASE_URL=<unpooled> PGOPTIONS='-c lock_timeout=5s' npm --prefix server run db:migrate`
+   (one additive `CREATE TABLE`). A push to `main` deploys the backend, and the round
+   read and the PUT touch `round_observations`.
+2. Generate one token (`openssl rand -hex 32`) and set it as `LAB_OBSERVER_TOKEN` on
+   Railway (`variableUpsert`, then `serviceInstanceRedeploy`; a variable change alone
+   does not restart) **and** in `agent/.env`. A value under 32 chars stops the API
+   from starting; blank leaves the feature off (PUT answers 404).
+3. Push `main` (Railway deploys the backend).
+4. `cd client && npx vercel --prod`.
+5. Backfill notes for finished rounds: `uv run --project agent swil-agent observe <roundId>`
+   per round (`--dry-run` previews). From then on each sweep writes its own note after
+   its local commit, once `OBSERVE_SETTLE_SECS` (default 130) has let the server's
+   round-read caches expire; `OBSERVE=0` turns that off.
+6. After the first post-merge round: confirm the `cycle_run` cards show
+   `promptVersion: "v1"` and measure the checkpoint DB size (`ActContext.sources`
+   estimate in the next section).
 
 ## Runtime prompt v2 — 2026-10-17
 

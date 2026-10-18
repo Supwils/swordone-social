@@ -46,4 +46,8 @@ export type {
   MetricBlock,
   SeriesPoint,
   Verdict,
+  // rounds.ts
+  RoundDigestDTO,
+  RoundListItem,
+  RoundsListDTO,
 } from '@/contract';

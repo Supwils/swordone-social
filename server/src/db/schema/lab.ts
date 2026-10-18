@@ -186,3 +186,19 @@ export const events = pgTable(
     index('events_user_created_idx').on(t.userId, t.createdAt),
   ],
 );
+
+/**
+ * One machine-written observer note per round (lab v2.1), replaced in place
+ * on re-run. `round_id` is the natural key; round ids are not a table, so
+ * there is no FK. `digest_hash` is the digest the note read: the read flags
+ * the note stale when the round's digest has since changed.
+ */
+export const roundObservations = pgTable('round_observations', {
+  roundId: text('round_id').primaryKey(),
+  text: text('text').notNull(),
+  model: text('model').notNull(),
+  digestHash: text('digest_hash').notNull(),
+  promptVersion: text('prompt_version').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});

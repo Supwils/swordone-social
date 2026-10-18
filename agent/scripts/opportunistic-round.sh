@@ -29,7 +29,8 @@
 #       waiting up to 30 min for the next tick.
 #
 # Env: ROUND_MIN_INTERVAL_HOURS=48  PARALLEL=5  ACCOUNT_TIMEOUT=1800
-#      ACCOUNT_KILL_GRACE=10  NET_WAIT_SECS=90  ALLOW_BATTERY=0  AUTO_COMMIT=1
+#      ACCOUNT_KILL_GRACE=10  NET_WAIT_SECS=90  ALLOW_BATTERY=0  AUTO_COMMIT=1  OBSERVE=1
+#      OBSERVE_TIMEOUT=600  OBSERVE_SETTLE_SECS=130
 #
 # NOT `set -e`. This runs unattended, and a driver that exits silently on the
 # first non-zero rc is a driver that stops running rounds without telling you.
@@ -62,6 +63,7 @@ ACCOUNT_TIMEOUT="${ACCOUNT_TIMEOUT:-1800}"
 ACCOUNT_KILL_GRACE="${ACCOUNT_KILL_GRACE:-10}"
 ALLOW_BATTERY="${ALLOW_BATTERY:-0}"
 AUTO_COMMIT="${AUTO_COMMIT:-1}"
+OBSERVE="${OBSERVE:-1}"
 
 MODE="run"
 case "${1:-}" in
@@ -243,7 +245,7 @@ fail_precondition() { log "skip — $1"; exit 0; }   # exit 0: not an error, jus
 # takes effect. It is the order `swil_agent/config.py` uses as well (process
 # env over agent/.env), so the workers see the URL this script's checks used.
 _caller_env=""
-for v in SWIL_URL EMBEDDER_URL ROUND_MIN_INTERVAL_HOURS PARALLEL ACCOUNT_TIMEOUT ACCOUNT_KILL_GRACE ALLOW_BATTERY AUTO_COMMIT; do
+for v in SWIL_URL EMBEDDER_URL ROUND_MIN_INTERVAL_HOURS PARALLEL ACCOUNT_TIMEOUT ACCOUNT_KILL_GRACE ALLOW_BATTERY AUTO_COMMIT OBSERVE; do
   [[ -n "${!v:-}" ]] && _caller_env="${_caller_env}${v}=$(printf '%q' "${!v}") "
 done
 set -a; . "$ROOT_DIR/.env"; set +a
@@ -256,6 +258,7 @@ ACCOUNT_TIMEOUT="${ACCOUNT_TIMEOUT:-1800}"
 ACCOUNT_KILL_GRACE="${ACCOUNT_KILL_GRACE:-10}"
 ALLOW_BATTERY="${ALLOW_BATTERY:-0}"
 AUTO_COMMIT="${AUTO_COMMIT:-1}"
+OBSERVE="${OBSERVE:-1}"
 
 [[ -n "${SWIL_URL:-}" ]] || fail_precondition "SWIL_URL unset in agent/.env"
 
@@ -478,8 +481,10 @@ log "round done — ok=$ok failed=$bad timeout=$timedout"
 # Until agent/archive/era-2 is committed, `git add agent/agents` would stage the
 # Era 2 roster's deletions on their own and history would record Era 2 as
 # deleted rather than archived. The owner commits the Era 3 changeset first.
-if [[ "$AUTO_COMMIT" == "1" ]]; then
-  cd "$REPO_DIR" || exit 0
+#
+# A repo dir that will not `cd` skips the commit with status 0, as the old
+# `exit 0` did, but no longer skips the observer note below.
+if [[ "$AUTO_COMMIT" == "1" ]] && cd "$REPO_DIR"; then
   if ! git ls-files --error-unmatch agent/archive/era-2/boundary.json >/dev/null 2>&1; then
     log "auto-commit skipped: Era 2 archive not committed yet"
   elif [[ -n "$(git status --porcelain -- agent/agents)" ]]; then
@@ -493,3 +498,78 @@ if [[ "$AUTO_COMMIT" == "1" ]]; then
       && log "committed round output (not pushed)"
   fi
 fi
+# The round's exit status is settled here, exactly what it was when this
+# section ended the script; the observer note below never changes it.
+round_status=$?
+
+# ── 10. observer note ───────────────────────────────────────────────────────
+# One machine-written note per round (lab v2 §5): `swil-agent observe` reads
+# this round's digest, makes ONE isolated claude-opus-5-5 call and PUTs the note
+# with LAB_OBSERVER_TOKEN. Presentation, never data -- a failed note never fails
+# the round, so its status is logged and dropped. OBSERVE=0 turns it off.
+#
+# AFTER the commit, so a signal during the note can no longer cost the round
+# its commit. And not at once: the server caches the round reads twice
+# (`stateCache` 60 s, then `freshDigests` 60 s, `rounds/roundReads.ts`), so a
+# /lab view during the last workers can serve a digest without them for ~120 s
+# -- a note written from that describes half a round and reads "stale"
+# forever. OBSERVE_SETTLE_SECS (default 130) waits that out in 1 s steps, so a
+# SIGTERM/SIGINT still reaches the trap within a second.
+#
+# It runs in its own session, registered like a worker (so a SIGTERM to the
+# round stops it), under `caffeinate -i` like every worker, and is bounded by
+# OBSERVE_TIMEOUT: TERM, a grace, then KILL by PGID -- never by pattern.
+# Output goes to the round log; the token is only ever read from the
+# environment by the CLI and is never echoed here.
+observe_secs() {                    # observe_secs <name> <default> -> sets OBSERVE_SECS
+  local raw="${!1:-}"
+  if [[ -z "$raw" ]]; then
+    OBSERVE_SECS="$2"
+  elif [[ "$raw" =~ ^[0-9]+$ ]]; then
+    OBSERVE_SECS=$(( 10#$raw ))     # 10#: "08" is decimal 8, not a bad octal
+  else
+    log "WARN $1='$raw' is not a non-negative integer — using the default $2"
+    OBSERVE_SECS="$2"
+  fi
+}
+if [[ "$OBSERVE" == "1" ]]; then
+  observe_secs OBSERVE_TIMEOUT 600; _obs_limit="$OBSERVE_SECS"
+  observe_secs OBSERVE_SETTLE_SECS 130; _obs_settle="$OBSERVE_SECS"
+  if [[ "$_obs_settle" -gt 0 ]]; then
+    log "observer note waits ${_obs_settle}s for the lab's round caches to expire"
+    _obs_slept=0
+    while [[ "$_obs_slept" -lt "$_obs_settle" ]]; do
+      sleep 1; _obs_slept=$(( _obs_slept + 1 ))
+    done
+  fi
+  _obs_waited=0
+  _obs_rc=0
+  perl -e "$SETSID_EXEC" "$WORKER_DIR" caffeinate -i \
+    uv run --project "$ROOT_DIR" swil-agent observe "$SWIL_ROUND_ID" \
+    >>"$ROOT_DIR/logs/auto-run.log" 2>&1 &
+  _obs_pgid=$!
+  while kill -0 "$_obs_pgid" 2>/dev/null && [[ "$_obs_waited" -lt "$_obs_limit" ]]; do
+    sleep 1; _obs_waited=$(( _obs_waited + 1 ))
+  done
+  if kill -0 "$_obs_pgid" 2>/dev/null && kill -TERM -- "-$_obs_pgid" 2>/dev/null; then
+    log "WARN observer note timed out after ${_obs_waited}s — TERM pgid $_obs_pgid"
+    _obs_g=0
+    while kill -0 -- "-$_obs_pgid" 2>/dev/null && [[ "$_obs_g" -lt "$ACCOUNT_KILL_GRACE" ]]; do
+      sleep 1; _obs_g=$(( _obs_g + 1 ))
+    done
+    kill -0 -- "-$_obs_pgid" 2>/dev/null && kill -KILL -- "-$_obs_pgid" 2>/dev/null
+    wait "$_obs_pgid" 2>/dev/null
+    _obs_rc=124
+  else
+    # Finished (or exited between the poll and the TERM): its own status.
+    wait "$_obs_pgid"; _obs_rc=$?
+  fi
+  rm -f "$WORKER_DIR/$_obs_pgid"
+  if [[ "$_obs_rc" == "0" ]]; then
+    log "observer note written for $SWIL_ROUND_ID"
+  else
+    log "WARN observer note failed for $SWIL_ROUND_ID rc=$_obs_rc (round unaffected) — retry by hand with: swil-agent observe $SWIL_ROUND_ID"
+  fi
+fi
+
+exit "$round_status"

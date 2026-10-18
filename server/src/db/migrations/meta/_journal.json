@@ -50,6 +50,13 @@
       "when": 1792050396381,
       "tag": "0006_platform_foreign_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792300211355,
+      "tag": "0007_round_observations",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
 """The analysis / QA commands: `behavior-snapshot`, `backfill-post-vectors`,
-`population-metric`, `intervention`, `summary`.
+`population-metric`, `intervention`, `summary`, `observe`.
 
 Thin wrappers over `swil_agent/analysis/`: each resolves its collaborators
 through `compose`, runs one measurement or one write, and prints one line
@@ -15,6 +15,7 @@ from typing import Annotated
 import typer
 
 from swil_agent import doctor as doctor_checks
+from swil_agent.analysis import observe as observe_module
 from swil_agent.analysis.backfill_post_vectors import run_backfill_post_vectors
 from swil_agent.analysis.behavior_snapshot import run_behavior_snapshot
 from swil_agent.analysis.intervention import (
@@ -31,7 +32,7 @@ from swil_agent.analysis.population_metric import (
 from swil_agent.analysis.population_metric import run_population_metric as run_metric
 from swil_agent.analysis.summary import local_today, run_summary
 from swil_agent.cli import compose
-from swil_agent.cli.app import EXIT_NO_ACTION, EXIT_NO_SUCH_ACCOUNT, EXIT_OK
+from swil_agent.cli.app import EXIT_NO_ACTION, EXIT_NO_SUCH_ACCOUNT, EXIT_OK, EXIT_USAGE
 from swil_agent.cli.errors import (
     AccountSetupError,
     enforce_era_gate,
@@ -41,6 +42,7 @@ from swil_agent.cli.errors import (
 from swil_agent.cli.logs import ACT_LOG_FILENAME, attach_round_log
 from swil_agent.config import Settings
 from swil_agent.embedder.client import EmbedderClient, EmbedderUnavailable
+from swil_agent.llm.errors import BackendBinaryMissingError
 from swil_agent.persona.format import card_text
 
 # ── analysis / QA commands ───────────────────────────────────────────────
@@ -513,4 +515,47 @@ def summary(
         ),
         nl=False,
     )
+    raise typer.Exit(EXIT_OK)
+
+
+_OBSERVE_EXIT = {"usage": EXIT_USAGE, "missing": EXIT_NO_SUCH_ACCOUNT, "setup": EXIT_NO_ACTION}
+
+
+def observe(
+    round_id: Annotated[str, typer.Argument(help="The round id, e.g. 20261017T062000Z-r.")],
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Print the note; write nothing.")
+    ] = False,
+) -> None:
+    """Write the machine observer note for one round (lab v2 §5).
+
+    GET the round's digest, ONE isolated claude-opus-5-5 completion (tool-less,
+    like every model call), PUT the note with LAB_OBSERVER_TOKEN. Re-running
+    replaces the note. Exit 0 written (or printed with --dry-run), 64 bad round
+    id, 66 no such round, 75 token unset, server or model down (a non-zero exit
+    or timeout publishes nothing), empty reply, digest over 128 KB, or the write
+    refused. The success line names the target host. The round script runs it
+    with `|| true`.
+    """
+    settings = compose.load_settings()
+    try:
+        backend = observe_module.observer_backend(compose.runner_for(settings), settings)
+        result = observe_module.run_observe(
+            settings,
+            round_id,
+            backend,
+            dry_run=dry_run,
+            transport=observe_module.http_transport(),
+        )
+    except observe_module.ObserveError as exc:
+        typer.echo(f"observe: FAIL {exc}", err=True)
+        raise typer.Exit(_OBSERVE_EXIT[exc.kind]) from exc
+    except BackendBinaryMissingError as exc:
+        typer.echo(f"observe: FAIL {exc}", err=True)
+        raise typer.Exit(EXIT_NO_ACTION) from exc
+    if result.written:
+        host = observe_module.target_host(settings.swil_url)
+        typer.echo(f"observe: observed {result.round_id} → {host} (hash {result.digest_hash[:12]})")
+    else:
+        typer.echo(result.text)
     raise typer.Exit(EXIT_OK)

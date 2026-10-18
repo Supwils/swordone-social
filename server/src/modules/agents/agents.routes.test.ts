@@ -73,13 +73,22 @@ describe('agentsRouter auth boundary', () => {
     expect(routes().length).toBeGreaterThanOrEqual(18);
   });
 
-  it('requires auth on every write route', () => {
+  it('requires auth on every write route; the observer note is the one token-gated write', () => {
     const unguarded = routes()
       .filter((r) => r.method !== 'get')
       .filter((r) => !r.handlers.includes('requireUser'))
       .map((r) => `${r.method.toUpperCase()} ${r.path}`);
 
-    expect(unguarded).toEqual([]);
+    // Written by the operator's round, never by a session: its one guard is
+    // the observer token (lab v2 §5), asserted below.
+    expect(unguarded).toEqual(['PUT /rounds/:roundId/observation']);
+  });
+
+  it('guards the observer note with the observer token before anything else', () => {
+    const put = routes().find(
+      (r) => r.method === 'put' && r.path === '/rounds/:roundId/observation',
+    );
+    expect(put?.handlers[0]).toBe('requireObserverToken');
   });
 
   it('leaves every read route public', () => {
@@ -326,6 +335,25 @@ describe('GET /agents/runtime — cycle_run aggregate (spec §5)', () => {
     const usernameIdx = listed.findIndex((r) => r.path.startsWith('/:username'));
     expect(runtimeIdx).toBeGreaterThanOrEqual(0);
     expect(usernameIdx).toBeGreaterThan(runtimeIdx);
+  });
+
+  it('registers GET /rounds and /rounds/:roundId publicly, after /runtime and before the /:username reads', () => {
+    const listed = routes();
+    const getIdx = (path: string) => listed.findIndex((r) => r.method === 'get' && r.path === path);
+    const runtimeIdx = getIdx('/runtime');
+    // persona's and arms' per-account reads, mounted after the rounds router
+    const laterReads = ['/:username/drift', '/:username/rounds'].map(getIdx);
+    for (const path of ['/rounds', '/rounds/:roundId']) {
+      const idx = getIdx(path);
+      expect(idx).toBeGreaterThan(runtimeIdx);
+      expect(listed[idx].handlers).not.toContain('requireUser');
+      for (const later of laterReads) expect(later).toBeGreaterThan(idx);
+      const shadowedBy = listed
+        .slice(0, idx)
+        .filter((r) => r.method === 'get' && shadows(r.path, path))
+        .map((r) => r.path);
+      expect(shadowedBy).toEqual([]);
+    }
   });
 
   it('returns zeros and a zero-filled series when no cycle_run cards exist', async () => {

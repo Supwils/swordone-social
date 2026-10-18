@@ -48,7 +48,7 @@ vi.mock('@/features/lab/AgentGrid', () => ({
 import * as labApi from '@/features/lab/api';
 import { makeLabAgent } from '@/test/fixtures';
 import { Era3Dashboard } from './Era3Dashboard';
-import { emptyReport, seededReport } from './testFixtures';
+import { emptyReport, seededReport } from '../metrics/testFixtures';
 
 const AGENTS = [
   makeLabAgent({ username: 'xiaoman', arm: 'claude-haiku' }),

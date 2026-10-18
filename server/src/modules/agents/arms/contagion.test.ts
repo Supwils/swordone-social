@@ -11,6 +11,7 @@ import {
   loadEra2Baseline,
   loadRosterUtterances,
   resetEra2Baseline,
+  roundAdoptions,
   tokenize,
   type Utterance,
 } from './contagion';
@@ -412,5 +413,60 @@ describe('contagion loaders (DB)', () => {
     );
 
     expect(report.top.map((t) => t.token)).toEqual(['publicword']);
+  });
+});
+
+describe('roundAdoptions (pure)', () => {
+  const five = buildRounds(
+    [
+      ...cards(sweep(1)),
+      ...cards(sweep(2)),
+      ...cards(sweep(3)),
+      ...cards(sweep(4)),
+      ...cards(sweep(5)),
+    ],
+    ROSTER,
+  );
+  const endOf = (d: number) => new Date(Date.UTC(2026, 9, d, 23, 59, 59));
+  const utterances = [
+    say('agen', 3, 7, 'novel'), // origin of "novel", round 3
+    say('awen', 3, 10, 'fresh'), // origin of "fresh", round 3
+    say('dashu', 4, 7, 'novel'), // adopter 1, round 4
+    say('lanlan', 4, 8, 'novel'), // adopter 2, round 4 → adopted as of round 4
+    say('zhenxian', 4, 10, 'fresh'), // one adopter as of round 4: not adopted
+    say('maike', 5, 9, 'fresh'), // second adopter, round 5 → adopted as of round 5
+  ];
+
+  it('lists a token adopted as of the round, with only the adopters of that round', () => {
+    expect(roundAdoptions(five, utterances, new Set(), sweep(4), endOf(4))).toEqual([
+      { token: 'novel', origin: 'agen', adopters: ['dashu', 'lanlan'] },
+    ]);
+    expect(roundAdoptions(five, utterances, new Set(), sweep(5), endOf(5))).toEqual([
+      { token: 'fresh', origin: 'awen', adopters: ['maike'] },
+    ]);
+  });
+
+  it('is as-of: a later round adding adopters does not change a closed round', () => {
+    const later = [...utterances, say('xiaoyu', 5, 11, 'novel')];
+    expect(roundAdoptions(five, later, new Set(), sweep(4), endOf(4))).toEqual([
+      { token: 'novel', origin: 'agen', adopters: ['dashu', 'lanlan'] },
+    ]);
+  });
+
+  it('baseline rounds, the origin round, a manual round and an unknown id have none', () => {
+    const withManual = buildRounds(
+      [...five.cards.map((c) => ({ ...c })), ...cards('20261004T120000Z-m', 1)],
+      ROSTER,
+    );
+    expect(roundAdoptions(five, utterances, new Set(), sweep(2), endOf(2))).toEqual([]);
+    expect(roundAdoptions(five, utterances, new Set(), sweep(3), endOf(3))).toEqual([]);
+    expect(
+      roundAdoptions(withManual, utterances, new Set(), '20261004T120000Z-m', endOf(4)),
+    ).toEqual([]);
+    expect(roundAdoptions(five, utterances, new Set(), sweep(9), endOf(9))).toEqual([]);
+  });
+
+  it('an Era 2 token is never a new word', () => {
+    expect(roundAdoptions(five, utterances, hashes(['novel']), sweep(4), endOf(4))).toEqual([]);
   });
 });

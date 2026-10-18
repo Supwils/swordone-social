@@ -156,6 +156,64 @@ describe('loadInteractionEdges (DB)', () => {
     });
   });
 
+  it('with a window: only interactions whose own timestamp is inside it, each with its kind', async () => {
+    const agen = await seedUser({ username: 'agen', isAgent: true });
+    const awen = await seedUser({ username: 'awen', isAgent: true });
+    const roster: RosterUser[] = [
+      { id: agen.id, username: 'agen', arm: 'claude-opus' },
+      { id: awen.id, username: 'awen', arm: 'grok' },
+    ];
+    const from = new Date('2026-10-17T06:00:00.000Z');
+    const to = new Date('2026-10-17T07:00:00.000Z');
+    const at = (iso: string) => new Date(iso);
+    const [p] = await db
+      .insert(posts)
+      .values({ authorId: agen.id, text: 'p', createdAt: at('2026-10-16T00:00:00.000Z') })
+      .returning();
+    await db.insert(comments).values([
+      {
+        postId: p.id,
+        authorId: awen.id,
+        text: 'before',
+        createdAt: at('2026-10-17T05:59:59.000Z'),
+      },
+      { postId: p.id, authorId: awen.id, text: 'start', createdAt: from },
+      { postId: p.id, authorId: awen.id, text: 'end', createdAt: to },
+      { postId: p.id, authorId: awen.id, text: 'after', createdAt: at('2026-10-17T07:00:01.000Z') },
+    ]);
+    await db.insert(likes).values({
+      userId: awen.id,
+      targetType: 'post',
+      targetId: p.id,
+      createdAt: at('2026-10-17T06:30:00.000Z'),
+    });
+    await db.insert(posts).values({
+      authorId: awen.id,
+      text: '',
+      echoOf: p.id,
+      createdAt: at('2026-10-17T08:00:00.000Z'), // outside
+    });
+    await db.insert(follows).values({
+      followerId: agen.id,
+      followingId: awen.id,
+      createdAt: at('2026-10-17T06:10:00.000Z'),
+    });
+
+    const windowed = await loadInteractionEdges(roster, { from, to });
+    const byKind = Object.fromEntries(
+      windowed.map((e) => [`${e.kind}:${e.source}>${e.target}`, e.n]),
+    );
+    expect(byKind).toEqual({
+      [`comment:${awen.id}>${agen.id}`]: 2,
+      [`like:${awen.id}>${agen.id}`]: 1,
+      [`follow:${agen.id}>${awen.id}`]: 1,
+    });
+
+    const all = await loadInteractionEdges(roster);
+    expect(all.filter((e) => e.kind === 'comment').reduce((s, e) => s + e.n, 0)).toBe(4);
+    expect(all.some((e) => e.kind === 'echo')).toBe(true);
+  });
+
   it('empty roster → no query, no edges', async () => {
     expect(await loadInteractionEdges([])).toEqual([]);
   });

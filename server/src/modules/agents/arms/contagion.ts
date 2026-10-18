@@ -101,12 +101,18 @@ function roundIndex(starts: readonly number[], t: number): number {
   return found;
 }
 
-/** Pure core: rounds, roster utterances (any order) and the Era 2 token hashes. */
-export function buildContagion(
+interface SpreadIndex {
+  spreads: Map<string, Spread>;
+  /** Sweep round start instants (ms), ascending. */
+  starts: number[];
+}
+
+/** The innovation scan shared by the report and the round digest (same rule, one copy). */
+function collectSpreads(
   state: RoundsState,
   utterances: readonly Utterance[],
   era2: ReadonlySet<number>,
-): Contagion {
+): SpreadIndex {
   const byId = new Map(state.roster.map((u) => [u.id, u]));
   const starts = state.rounds
     .filter((r) => r.kind === 'sweep')
@@ -148,6 +154,24 @@ export function buildContagion(
       }
     }
   });
+  return { spreads, starts };
+}
+
+/** Other accounts whose first use is in a strictly later sweep round than the origin's. */
+function adoptersOf(s: Spread): string[] {
+  return [...s.firstRound]
+    .filter(([user, round]) => user !== s.origin && round > s.originRound)
+    .map(([user]) => user);
+}
+
+/** Pure core: rounds, roster utterances (any order) and the Era 2 token hashes. */
+export function buildContagion(
+  state: RoundsState,
+  utterances: readonly Utterance[],
+  era2: ReadonlySet<number>,
+): Contagion {
+  const byId = new Map(state.roster.map((u) => [u.id, u]));
+  const { spreads } = collectSpreads(state, utterances, era2);
 
   const counts = new Map(ARMS.map((a) => [a.id, { innovations: 0, adopted: 0 }]));
   const adopted: { spread: Spread; adopters: string[] }[] = [];
@@ -155,9 +179,7 @@ export function buildContagion(
     const arm = (byId.get(s.origin) as { arm: ArmId }).arm;
     const c = counts.get(arm) as { innovations: number; adopted: number };
     c.innovations += 1;
-    const adopters = [...s.firstRound]
-      .filter(([user, round]) => user !== s.origin && round > s.originRound)
-      .map(([user]) => user);
+    const adopters = adoptersOf(s);
     if (adopters.length < MIN_ADOPTERS) continue;
     c.adopted += 1;
     adopted.push({ spread: s, adopters });
@@ -192,6 +214,65 @@ export function buildContagion(
       };
     }),
   };
+}
+
+/** New words a round digest lists, at most. */
+export const ROUND_ADOPTIONS_LIMIT = 10;
+
+/** One token adopted as of a round: its origin and the adopters whose first use is in that round. */
+export interface RoundAdoption {
+  token: string;
+  origin: string;
+  adopters: string[];
+}
+
+/**
+ * Tokens adopted (the amendment's rule) as of the END of sweep round
+ * `roundId`, with ≥ 1 adopter whose first use falls in that round. As-of:
+ * only utterances up to `endedAt` and sweeps up to this one count, so a closed
+ * round's list does not move when later rounds add adopters. Manual and
+ * unknown rounds have none: contagion is defined over sweep rounds.
+ */
+export function roundAdoptions(
+  state: RoundsState,
+  utterances: readonly Utterance[],
+  era2: ReadonlySet<number>,
+  roundId: string,
+  endedAt: Date,
+): RoundAdoption[] {
+  const round = state.rounds.find((r) => r.roundId === roundId);
+  if (!round || round.kind !== 'sweep') return [];
+  const asOf: RoundsState = {
+    ...state,
+    rounds: state.rounds.filter((r) => r.kind !== 'sweep' || r.startedAt <= round.startedAt),
+  };
+  const until = endedAt.getTime();
+  const { spreads, starts } = collectSpreads(
+    asOf,
+    utterances.filter((u) => u.createdAt.getTime() <= until),
+    era2,
+  );
+  const index = starts.indexOf(Date.parse(round.startedAt));
+  const nameOf = new Map(state.roster.map((u) => [u.id, u.username]));
+  const out: RoundAdoption[] = [];
+  for (const s of spreads.values()) {
+    const adopters = adoptersOf(s);
+    if (adopters.length < MIN_ADOPTERS) continue;
+    const here = adopters.filter((u) => s.firstRound.get(u) === index);
+    if (here.length === 0) continue;
+    out.push({
+      token: s.token,
+      origin: nameOf.get(s.origin) as string,
+      adopters: here.map((u) => nameOf.get(u) as string).sort(),
+    });
+  }
+  return out
+    .sort(
+      (a, b) =>
+        b.adopters.length - a.adopters.length ||
+        (a.token < b.token ? -1 : a.token > b.token ? 1 : 0),
+    )
+    .slice(0, ROUND_ADOPTIONS_LIMIT);
 }
 
 /* ---------- loaders ---------- */
@@ -275,17 +356,16 @@ async function computeEra2Baseline(before: Date | null): Promise<ReadonlySet<num
 const NO_HASHES: ReadonlySet<number> = new Set();
 
 /**
- * `loadBaseline` is injectable for the test that pins the skip below.
- *
- * Until the 3rd sweep starts every utterance is baseline (`buildContagion`'s
- * cutoff is +Infinity) and the Era 2 set is never consulted — so it is not
- * loaded: that was the whole sealed corpus re-read on every 60 s report miss,
- * for nothing. The output is identical; only the wasted load is gone.
+ * The roster's public utterances and the Era 2 token set. Until the 3rd sweep
+ * starts every utterance is baseline (`collectSpreads`' cutoff is +Infinity)
+ * and the Era 2 set is never consulted — so it is not loaded: that was the
+ * whole sealed corpus re-read on every 60 s report miss, for nothing.
+ * `loadBaseline` is injectable for the test that pins the skip.
  */
-export async function contagionReport(
+export async function loadContagionInputs(
   state: RoundsState,
   loadBaseline: typeof loadEra2Baseline = loadEra2Baseline,
-): Promise<Contagion> {
+): Promise<{ utterances: Utterance[]; era2: ReadonlySet<number> }> {
   const sweeps = state.rounds.filter((r) => r.kind === 'sweep');
   const [utterances, era2] = await Promise.all([
     loadRosterUtterances(state.roster.map((u) => u.id)),
@@ -293,5 +373,13 @@ export async function contagionReport(
       ? loadBaseline(sweeps[0].startedAt)
       : Promise.resolve(NO_HASHES),
   ]);
+  return { utterances, era2 };
+}
+
+export async function contagionReport(
+  state: RoundsState,
+  loadBaseline: typeof loadEra2Baseline = loadEra2Baseline,
+): Promise<Contagion> {
+  const { utterances, era2 } = await loadContagionInputs(state, loadBaseline);
   return buildContagion(state, utterances, era2);
 }
