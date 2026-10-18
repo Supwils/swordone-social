@@ -72,6 +72,8 @@ def doctor(
         if start > compose.now(UTC):
             typer.echo("  WARN: ERA_START is in the future -- every era read is empty until then")
 
+    typer.echo(f"prompt: {settings.prompt_version}")
+
     for binary in doctor_checks.doctor_binaries(settings.agent_root):
         if doctor_checks.on_path(binary):
             found = shutil.which(binary) or binary

@@ -9,6 +9,9 @@ Six stages, run in this exact order (reordering changes outcomes):
 5. reduce: at most one `post`, at most one `echo`, dedupe on `"{kind}|{post_id}"`
 6. truncate to `budget`
 
+Before stage 1, a v2 round's handles are mapped back to ids (`resolve_handles`);
+an unknown handle drops its action as `unknown_handle`.
+
 Two things this adds over Bash, which filters silently:
 
 - It records WHY each action was dropped (design spec §7.5). Today, in Bash,
@@ -28,14 +31,64 @@ Two things this adds over Bash, which filters silently:
 
 from __future__ import annotations
 
+from typing import Final
+
 from pydantic import BaseModel, Field
 
-from swil_agent.models import Action, Plan, RhythmPolicy, VetoedAction
+from swil_agent.api.paths import is_id
+from swil_agent.models import Action, HandleMap, Plan, RhythmPolicy, VetoedAction
+
+UNKNOWN_HANDLE: Final = "unknown_handle"
 
 
 class GuardrailResult(BaseModel):
     actions: list[Action] = Field(default_factory=list)
     vetoed: list[VetoedAction] = Field(default_factory=list)
+
+
+def _resolve(value: str | None, table: dict[str, str]) -> tuple[bool, str | None]:
+    """`(known, id)`: a handle maps through `table`, a raw id (`api.paths.is_id`)
+    is taken as written (backwards-compatible), anything else is unknown and
+    comes back unchanged. Stripped first, as the v1 executor strips ids."""
+    if value is None:
+        return True, None
+    key = value.strip()
+    if key in table:
+        return True, table[key]
+    if is_id(key):
+        return True, key
+    return False, value
+
+
+def _map_action(action: Action, handles: HandleMap) -> tuple[bool, Action]:
+    """`(known, mapped)`: every known target mapped, an unknown one kept as written."""
+    post_ok, post_id = _resolve(action.post_id, handles.posts)
+    parent_ok, parent_id = _resolve(action.parent_id, handles.comments)
+    mapped = action.model_copy(update={"post_id": post_id, "parent_id": parent_id})
+    return post_ok and parent_ok, mapped
+
+
+def resolve_handles(plan: Plan, handles: HandleMap) -> GuardrailResult:
+    """Map prompt v2's `p...`/`c...` handles back to platform ids (spec B1).
+
+    An action whose post or reply target is neither a known handle nor a raw
+    id is dropped as `unknown_handle`, exactly as an unknown id fails today.
+    """
+    kept: list[Action] = []
+    vetoed: list[VetoedAction] = []
+    for action in plan.actions:
+        known, mapped = _map_action(action, handles)
+        if known:
+            kept.append(mapped)
+        else:
+            vetoed.append(VetoedAction(action=action, reason=UNKNOWN_HANDLE))
+    return GuardrailResult(actions=kept, vetoed=vetoed)
+
+
+def map_handles(plan: Plan, handles: HandleMap) -> Plan:
+    """The model's whole proposal with its handles mapped to ids, dropping
+    nothing: the probe lane scores what was proposed, not what survived."""
+    return Plan(actions=[_map_action(action, handles)[1] for action in plan.actions])
 
 
 def apply_guardrails(

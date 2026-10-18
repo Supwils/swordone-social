@@ -3139,6 +3139,16 @@ def _doctor_ready(
     monkeypatch.setattr(doctor, "grok_version", lambda: doctor.GROK_AUDITED_VERSION)
 
 
+def test_doctor_prints_the_prompt_version_as_information_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _doctor_ready(monkeypatch, tmp_path)
+    result = runner.invoke(cli.app, ["doctor"])
+    assert result.exit_code == 0
+    (line,) = [ln for ln in result.stdout.splitlines() if ln.startswith("prompt:")]
+    assert line == "prompt: v1" and "WARN" not in line and "FAIL" not in line
+
+
 def test_doctor_exits_75_when_url_is_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Spec §11: empty SWIL_URL is not ready."""
     _doctor_ready(monkeypatch, tmp_path, url="")

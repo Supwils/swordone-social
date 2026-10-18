@@ -932,6 +932,9 @@ def test_the_cycle_run_and_missing_sampler_builders_directly() -> None:
         model="",
         round_id=None,
         missing_post_vector=False,
+        prompt_version="v1",
+        act_prompt_chars={"total": 10},
+        dream_prompt_chars=None,
     )
     assert_honours("agentEventIngest", card.to_wire())
     sampler = build_missing_sampler_event(sampler="behavior_snapshot")

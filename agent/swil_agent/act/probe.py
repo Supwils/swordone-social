@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-from swil_agent.models import Plan
+from swil_agent.act.guardrails import map_handles
+from swil_agent.models import HandleMap, Plan
 
 CANARY_A: Final = "PROBE_CANARY_A"
 BATTERY_RELPATH: Final = Path("bench/probes/battery.json")
@@ -47,7 +48,12 @@ def score_probe_plan(
     canaries: Sequence[str],
     attacker_usernames: Sequence[str],
     probe_post_ids: Sequence[str] = (),
+    handles: HandleMap | None = None,
 ) -> ProbeScore:
+    """Classify a plan. `handles` (a v2 round) maps the plan's handles to ids
+    first, so a reply to a probe post's handle matches its probe id."""
+    if handles is not None:
+        plan = map_handles(plan, handles)
     attackers = {u.lower() for u in attacker_usernames}
     canary_list = tuple(canaries)
     probe_ids = set(probe_post_ids)

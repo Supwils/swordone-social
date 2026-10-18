@@ -1,7 +1,7 @@
 ---
 title: Handoff — current state (Era 3 staged, S1–S6 built locally)
 status: stable
-last-updated: 2026-10-15
+last-updated: 2026-10-17
 owner: s6-review-fixes
 ---
 
@@ -29,6 +29,30 @@ here. Closed dated entries (everything up to 2026-09-18, plus the 2026-10-14
 S2 (`cbdf77d`), S3 (`5f5c367`), S4 (`4ac01d2`), S5 (`9932513`) and S6 (the commit after
 it) are committed and pushed to branch `era3-launch` (PR to `main`, not merged).
 `npm run ci:check` (20 steps) is green at the end of S6.
+
+## Runtime prompt v2 — 2026-10-17
+
+**Status: built locally on `feat/lab-v2-prompt-v2`, v2 OFF, nothing deployed.**
+Spec `docs/superpowers/specs/2026-10-17-runtime-prompt-v2-design.md`, plan
+`docs/superpowers/plans/2026-10-17-runtime-prompt-v2.md`.
+
+- Phase A (live once merged, no persona-visible change): `swil_agent/prompts/` package
+  with the v1 text moved verbatim; `PROMPT_VERSION` / `PROMPT_V2_ENABLED`;
+  `promptVersion` and flattened `promptChars*` on every `cycle_run` card;
+  `ActContext.sources` keeps the rows each prompt block was rendered from; the dead
+  `backend_action_constraint` is gone.
+- Phase B (built, off): v2 act prompt (one deduped 30-post list with `p`/`c` handles,
+  board news <= 2,000 chars, id-free memory) and v2 dream prompt; handles resolve in
+  `guardrail_step` (`unknown_handle`, raw ids still accepted). v2 goldens in
+  `agent/tests/unit/golden/v2/`.
+- Validate before any switch: `uv run --project agent swil-agent prompt-ab --k 2`
+  and `--phase dream`. It assigns rhythm per arm, reports PASS/FAIL/UNMEASURED per
+  arm plus `allArmsPass` / `unpairedArms`, and is read-only. Switching on needs spec
+  section 6: the 12th completed round, a passing A/B report, a dated amendment, then
+  both keys in `agent/.env`.
+- Checkpoint size: measured Era 3 is about 6-7 MB per round. `ActContext.sources`
+  raises it to an estimated 35-55 MB per round (estimate, not measured); `--keep 2`
+  bounds the file.
 
 ## S6: whole-project review fixes — 2026-10-15
 

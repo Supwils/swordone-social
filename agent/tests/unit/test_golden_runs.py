@@ -65,11 +65,14 @@ from swil_agent.config import Settings
 from swil_agent.llm.errors import BackendUnavailableError
 from swil_agent.llm.runner import CompletionRequest
 from swil_agent.locks.file import act_lock_path
+from swil_agent.models import PromptVersion
 
 from ._golden_seams import _FakeEmbedderClient, _FakeGuard, _patch_cycle_seams
+from ._labels import roster_model_labels
 from ._runners import FakeResources, ScriptedBackend
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
+GOLDEN_V2_DIR = GOLDEN_DIR / "v2"
 RECORD_ENV = "SWIL_GOLDEN_RECORD"
 
 runner = CliRunner()
@@ -502,7 +505,7 @@ def pinned_zone() -> Iterator[None]:
         time.tzset()
 
 
-def _settings(agent_root: Path) -> Settings:
+def _settings(agent_root: Path, *, prompt_version: PromptVersion = "v1") -> Settings:
     """Every field the act/dream/cycle path reads, given explicitly: init
     kwargs outrank both `agent/.env` and the process env, so nothing the
     operator's shell exports can reach a golden run."""
@@ -520,6 +523,8 @@ def _settings(agent_root: Path) -> Settings:
         post_duplicate_window=12,
         behavior_post_limit=12,
         swil_round_id=None,
+        prompt_version=prompt_version,
+        prompt_v2_enabled=prompt_version == "v2",
         swil_llm_backend=None,
         swil_llm_model=None,
         swil_llm_provider=None,
@@ -617,6 +622,8 @@ def _run(
     scenario: Scenario,
     agent_root: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    prompt_version: PromptVersion = "v1",
 ) -> dict[str, Any]:
     for variable in ("SWIL_REQUIRE_NON_PROD", "SWIL_ROUND_ID"):
         monkeypatch.delenv(variable, raising=False)
@@ -639,7 +646,7 @@ def _run(
     _patch_cycle_seams(
         monkeypatch,
         agent_root,
-        settings=_settings(agent_root),
+        settings=_settings(agent_root, prompt_version=prompt_version),
         resources=lambda persona, settings: resources,
         backend=lambda persona, settings: backend,
         embedder=lambda settings: embedder,
@@ -684,6 +691,34 @@ def _serialise(record: dict[str, Any]) -> str:
     return json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 
+def _check(
+    scenario: Scenario,
+    path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    prompt_version: PromptVersion,
+) -> None:
+    actual = _serialise(_run(scenario, tmp_path, monkeypatch, prompt_version=prompt_version))
+    if os.environ.get(RECORD_ENV) == "1":
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(actual, encoding="utf-8")
+        return
+    if not path.is_file():
+        pytest.fail(f"{path.name} is missing -- record it with {RECORD_ENV}=1")
+    expected = path.read_text(encoding="utf-8")
+    if actual != expected:
+        diff = "".join(
+            difflib.unified_diff(
+                expected.splitlines(keepends=True),
+                actual.splitlines(keepends=True),
+                fromfile=f"golden/{path.relative_to(GOLDEN_DIR)}",
+                tofile="actual",
+            )
+        )
+        pytest.fail(f"{scenario.name} drifted from its golden file:\n{diff}", pytrace=False)
+
+
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=[s.name for s in SCENARIOS])
 def test_golden_run(
     scenario: Scenario,
@@ -696,27 +731,8 @@ def test_golden_run(
     # under pytest that `basicConfig` is a no-op and the root stays at
     # WARNING, which would drop every INFO line from both round logs.
     caplog.set_level(logging.INFO)
-    actual = _serialise(_run(scenario, tmp_path, monkeypatch))
     path = GOLDEN_DIR / f"{scenario.name}.json"
-
-    if os.environ.get(RECORD_ENV) == "1":
-        GOLDEN_DIR.mkdir(exist_ok=True)
-        path.write_text(actual, encoding="utf-8")
-        return
-
-    if not path.is_file():
-        pytest.fail(f"{path.name} is missing -- record it with {RECORD_ENV}=1")
-    expected = path.read_text(encoding="utf-8")
-    if actual != expected:
-        diff = "".join(
-            difflib.unified_diff(
-                expected.splitlines(keepends=True),
-                actual.splitlines(keepends=True),
-                fromfile=f"golden/{path.name}",
-                tofile="actual",
-            )
-        )
-        pytest.fail(f"{scenario.name} drifted from its golden file:\n{diff}", pytrace=False)
+    _check(scenario, path, tmp_path, monkeypatch, prompt_version="v1")
 
 
 def test_every_scenario_has_a_golden_file_and_no_file_is_orphaned() -> None:
@@ -724,3 +740,121 @@ def test_every_scenario_has_a_golden_file_and_no_file_is_orphaned() -> None:
     weight, and a new one must not pass by having no file to compare."""
     recorded = {path.stem for path in GOLDEN_DIR.glob("*.json")}
     assert recorded == {scenario.name for scenario in SCENARIOS}
+
+
+# -- prompt v2 (spec 2026-10-17 section 7): its own directory; v1 files never move --
+
+_HANDLE_COMMENT_PLAN = '{"plan":[{"action":"comment","post":"p1","text":"同意，写得很好"}]}'
+_UNKNOWN_HANDLE_PLAN = '{"plan":[{"action":"like","post":"p99"}]}'
+_V2_NEWS = (
+    "**抓取时间：** 2026-10-15 03:00\n"
+    "**日报日期：** 2026-10-14\n"
+    "\n"
+    "### [general] 2026年10月14日 · 日常通用新闻日报\n"
+    "- 通用要点一\n"
+    "- 通用要点二\n"
+    "- 通用要点三\n"
+    "- 通用要点四\n"
+    "→ 今天是 golden 的一天。\n"
+    "\n"
+    "### [ai-tech] 2026年10月14日 · AI 与科技圈新闻日报\n"
+    "- AI 要点一\n"
+    "→ AI 总结。\n"
+)
+
+
+def _plant_v2_news(agent_root: Path) -> None:
+    """A structured digest (the v1 fixture has no topics). The board `ai` maps
+    to no topic, so only `general` renders and `ai-tech` must not."""
+    (agent_root / "context" / "news_today.md").write_text(_V2_NEWS, encoding="utf-8")
+
+
+def _plant_v2_news_and_probe(agent_root: Path) -> None:
+    _plant_v2_news(agent_root)
+    _plant_probe_battery(agent_root)
+
+
+V2_SCENARIOS: tuple[Scenario, ...] = (
+    Scenario(
+        name="cycle_auto_post",
+        argv=_CYCLE_AUTO,
+        responses=(_POST_PLAN, _DREAM_REPLY),
+        setup=_plant_v2_news,
+    ),
+    Scenario(
+        name="cycle_auto_interact_handle",
+        argv=_CYCLE_AUTO,
+        responses=(_HANDLE_COMMENT_PLAN, _DREAM_REPLY),
+        memory=_INITIAL_MEMORY + _ALREADY_POSTED_TODAY,
+        setup=_plant_v2_news,
+    ),
+    Scenario(
+        name="cycle_auto_interact_raw_id",
+        argv=_CYCLE_AUTO,
+        responses=(_COMMENT_PLAN, _DREAM_REPLY),
+        memory=_INITIAL_MEMORY + _ALREADY_POSTED_TODAY,
+        setup=_plant_v2_news,
+    ),
+    Scenario(
+        name="cycle_unknown_handle",
+        argv=_CYCLE_AUTO,
+        responses=(_UNKNOWN_HANDLE_PLAN, _DREAM_REPLY),
+        setup=_plant_v2_news,
+    ),
+    Scenario(
+        name="act_dry_run_probe_board",
+        argv=("act", _NAME, "--dry-run", "--seed", "0", "--probe-board", "probe-lab"),
+        responses=(_PROBE_PLAN,),
+        setup=_plant_v2_news_and_probe,
+    ),
+    Scenario(
+        name="dream_forced",
+        argv=("dream", _NAME),
+        responses=(_DREAM_REPLY,),
+        last_dream_hours_ago=1,
+    ),
+)
+
+
+@pytest.mark.parametrize("scenario", V2_SCENARIOS, ids=[s.name for s in V2_SCENARIOS])
+def test_golden_run_v2(
+    scenario: Scenario,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    pinned_zone: None,
+) -> None:
+    caplog.set_level(logging.INFO)
+    path = GOLDEN_V2_DIR / f"{scenario.name}.json"
+    _check(scenario, path, tmp_path, monkeypatch, prompt_version="v2")
+
+
+def test_every_v2_scenario_has_a_golden_file_and_no_file_is_orphaned() -> None:
+    recorded = {path.stem for path in GOLDEN_V2_DIR.glob("*.json")}
+    assert recorded == {scenario.name for scenario in V2_SCENARIOS}
+
+
+def _v2_requests() -> list[tuple[str, dict[str, Any]]]:
+    out: list[tuple[str, dict[str, Any]]] = []
+    for path in sorted(GOLDEN_V2_DIR.glob("*.json")):
+        record = json.loads(path.read_text(encoding="utf-8"))
+        out.extend((path.name, c["args"][0]) for c in record["calls"] if c["seam"] == "backend")
+    return out
+
+
+def test_no_model_label_reaches_a_v2_prompt() -> None:
+    labels = roster_model_labels() | {"claude", "opus"}  # + the golden persona's own model
+    assert {"claude", "codex", "grok", "cursor"} <= labels
+    requests = _v2_requests()
+    assert requests
+    for name, request in requests:
+        text = (request["system"] + "\n" + request["user"]).lower()
+        assert sorted(label for label in labels if label in text) == [], name
+
+
+def test_the_v2_goldens_are_v2_prompts_and_resolve_the_handle_to_the_real_id() -> None:
+    users = [request["user"] for _, request in _v2_requests()]
+    assert all("## 当前上下文" not in user for user in users)
+    record = json.loads((GOLDEN_V2_DIR / "cycle_auto_interact_handle.json").read_text("utf-8"))
+    comments = [c for c in record["calls"] if c["call"] == "create_comment"]
+    assert comments and comments[0]["args"][0] == _OTHER_POST_ID

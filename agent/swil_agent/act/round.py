@@ -30,10 +30,10 @@ from typing import Final, NamedTuple
 
 from swil_agent.act.context import build_context, overlay_probe_posts
 from swil_agent.act.executor import execute_action
-from swil_agent.act.guardrails import apply_guardrails
+from swil_agent.act.guardrails import apply_guardrails, resolve_handles
 from swil_agent.act.memory_log import _write_memory_line
 from swil_agent.act.notifications import _mark_notifications_read
-from swil_agent.act.planner import plan_round
+from swil_agent.act.planner import plan_request
 from swil_agent.act.similarity import (
     DEFAULT_POST_DUPLICATE_THRESHOLD,
     DEFAULT_POST_DUPLICATE_WINDOW,
@@ -53,12 +53,16 @@ from swil_agent.models import (
     ActionResult,
     ActOutcome,
     ActSimilarity,
+    ActSources,
+    HandleMap,
     Persona,
     Plan,
     RhythmDecision,
     VetoedAction,
 )
 from swil_agent.persona.rhythm import decide_rhythm
+from swil_agent.prompts import act_prompt
+from swil_agent.prompts.types import RenderedPrompt
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +186,7 @@ def context_step(
     post_probability: int = DEFAULT_POST_PROBABILITY,
     post_ceiling: int = DEFAULT_POST_CEILING_PER_DAY,
     probe_board: str | None = None,
+    world: ActSources | None = None,
 ) -> ContextStep:
     """Step 3 of the act path: `build_context` then `decide_rhythm`.
 
@@ -199,6 +204,7 @@ def context_step(
         context_now=context_now,
         feed_context=feed_context,
         era_start=era_start,
+        world=world,
     )
     if probe_board:
         with suppress(ApiError):
@@ -218,21 +224,21 @@ def plan_step(
     persona: Persona,
     context: ActContext,
     rhythm: RhythmDecision,
+    prompt: RenderedPrompt | None = None,
 ) -> Plan | None:
     """Step 4 of the act path: ask the backend for this round's plan.
 
-    Thin over `plan_round` on purpose -- what it carries is the WIRING, not
-    logic: the planner takes `rhythm_guidance`, one of `RhythmDecision`'s
-    three string fields, and handing it `prefer_non_post` (or `policy`)
-    instead would still typecheck, still run, and quietly change every
-    prompt the roster sees. Callers pass the whole `RhythmDecision` and this
-    step picks the field, so there is one place where that choice is made.
+    `prompt` is the request the plan node rendered through `prompts.act_prompt`
+    (the node keeps its size for the cycle_run card); `None` renders v1 here.
+    Callers pass the whole `RhythmDecision` and the renderer picks its field,
+    so there is one place where that choice is made.
 
-    `None` is `plan_round`'s "the backend produced nothing at all" signal
-    (`BackendUnavailableError`, or output that parsed to no plan); the
-    caller maps it to `ActOutcome.BACKEND_UNAVAILABLE`.
+    `None` back is "the backend produced nothing at all"
+    (`BackendUnavailableError`, or output that parsed to no plan); the caller
+    maps it to `ActOutcome.BACKEND_UNAVAILABLE`.
     """
-    return plan_round(backend, persona, context, rhythm_guidance=rhythm.guidance)
+    rendered = prompt if prompt is not None else act_prompt("v1", persona, context, rhythm)
+    return plan_request(backend, rendered.request, handle_keys=rendered.handles is not None)
 
 
 class GuardrailStep(NamedTuple):
@@ -273,6 +279,7 @@ def guardrail_step(
     rhythm: RhythmDecision,
     context: ActContext,
     budget: int = 5,
+    handles: HandleMap | None = None,
 ) -> GuardrailStep:
     """Step 5 of the act path: backend allow-list, rhythm veto, dm contacts,
     one-post/one-echo + dedupe, budget cap -- then classify what is left.
@@ -284,8 +291,14 @@ def guardrail_step(
     rhythm decision, and the dm contact list from the context the planner
     was given rather than a fresh read (a re-read could return a DIFFERENT
     contact set from the one the model was shown, silently vetoing a dm the
-    plan was entitled to make).
+    plan was entitled to make). `handles` (v2 only) maps handles back to ids
+    first.
     """
+    pre_vetoed: list[VetoedAction] = []
+    if handles is not None:
+        resolved = resolve_handles(plan, handles)
+        plan = Plan(actions=resolved.actions)
+        pre_vetoed = resolved.vetoed
     guarded = apply_guardrails(
         plan,
         policy=rhythm.policy,
@@ -293,18 +306,19 @@ def guardrail_step(
         contacts=context.contacts,
         allowed=allowed_for(persona),
     )
+    vetoed = [*pre_vetoed, *guarded.vetoed]
     if not guarded.actions:
-        empty = ActOutcome.VETOED_EMPTY if guarded.vetoed else ActOutcome.PLANNER_EMPTY
+        empty = ActOutcome.VETOED_EMPTY if vetoed else ActOutcome.PLANNER_EMPTY
         return GuardrailStep(
             actions=guarded.actions,
-            vetoed=guarded.vetoed,
+            vetoed=vetoed,
             empty_outcome=empty,
             solo_nothing=False,
         )
     solo_nothing = len(guarded.actions) == 1 and guarded.actions[0].kind == "nothing"
     return GuardrailStep(
         actions=guarded.actions,
-        vetoed=guarded.vetoed,
+        vetoed=vetoed,
         empty_outcome=None,
         solo_nothing=solo_nothing,
     )

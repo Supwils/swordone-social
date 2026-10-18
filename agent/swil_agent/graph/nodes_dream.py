@@ -53,10 +53,14 @@ def make_dream_node(deps: CycleDeps) -> NodeFn:
             resources=deps.resources,
             backend=deps.backend,
             memory_text=cooldown.memory_text,
+            version=deps.settings.prompt_version,
+        )
+        chars: CycleState = (
+            {"dream_prompt_chars": dreamt.prompt_chars} if dreamt.prompt_chars is not None else {}
         )
         if dreamt.failure_reason is not None:
-            return {"proceeded": True, "dream_reason": dreamt.failure_reason}
-        return {"proceeded": True, "recent": dreamt.recent}
+            return {"proceeded": True, "dream_reason": dreamt.failure_reason, **chars}
+        return {"proceeded": True, "recent": dreamt.recent, **chars}
 
     return dream
 

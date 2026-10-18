@@ -5,7 +5,8 @@ Every round opens a NEW thread per account -- `thread_id` is
 `builtin:<account>:<round id>`, the round id `<UTC YYYYMMDDTHHMMSS>Z-r|m`
 (Era 2 keys had no suffix) -- so nothing ever reuses an old thread
 and nothing in the tree deleted them. Measured 2026-08-20: 70 MB for 56 threads,
-roughly 35 MB per round, in a gitignored file on one laptop. At the 48h cadence
+roughly 35 MB per round (Era 2; Era 3 measures ~6-7 MB, and
+`ActContext.sources` raises it to an estimated 35-55 MB), in a gitignored file on one laptop. At the 48h cadence
 that is ~500 MB/month and it only goes up.
 
 `swil-agent cycle --resume` needs the account's most recent thread, so keeping

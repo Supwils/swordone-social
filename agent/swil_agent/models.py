@@ -8,11 +8,14 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Any, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ActionKind = Literal["post", "comment", "like", "follow", "dm", "echo", "nothing"]
+
+# The persona-facing prompt version (spec 2026-10-17). v1 is the Era 3 text.
+PromptVersion = Literal["v1", "v2"]
 
 
 class Action(BaseModel):
@@ -94,6 +97,8 @@ class RhythmDecision(BaseModel):
     post_ceiling: int | None = None
     post_probability: int | None = None
     roll: int | None = None
+    # True only for the at-the-ceiling NO_POST (v2 words that verdict differently).
+    ceiling_reached: bool = False
 
 
 class Persona(BaseModel):
@@ -152,6 +157,91 @@ class DreamResult(BaseModel):
     snapshot_reason: str | None = None
 
 
+MODEL_LABEL_KEY: Final = "agentBackend"
+"""The key that carries a model label on API rows (`toUserLiteDTO` spreads
+`publicAgentBackend` into every author, `echoOf` nests a second one)."""
+
+
+def strip_model_labels(value: Any) -> Any:
+    """`value` with every `agentBackend` key removed at any depth.
+
+    Pure: dicts and lists are rebuilt, never edited, so the caller's rows (which
+    v1 still renders from) are untouched. Era 3 rule: a persona never sees a
+    model label, and kept rows are what v2 renders."""
+    if isinstance(value, dict):
+        return {k: strip_model_labels(v) for k, v in value.items() if k != MODEL_LABEL_KEY}
+    if isinstance(value, list):
+        return [strip_model_labels(v) for v in value]
+    return value
+
+
+class ThreadSource(BaseModel):
+    """One opened thread as the act path read it: the root post and up to
+    six comments, exactly the two API payloads `format_thread` rendered,
+    minus every model label (`strip_model_labels`)."""
+
+    model_config = ConfigDict(validate_assignment=True)
+
+    post: dict[str, Any]
+    comments: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("post", "comments", mode="before")
+    @classmethod
+    def _no_model_labels(cls, value: Any) -> Any:
+        return strip_model_labels(value)
+
+
+class ActSources(BaseModel):
+    """The rows the act prompt was rendered from (spec 2026-10-17 ruling R4).
+
+    v1 renders the strings on `ActContext`; v2 and `prompt-ab` render these.
+    `board_posts` is the now-context's activity read (the home board, or the
+    global feed when the board read is empty), `topic_posts` the follow-topic
+    searches in persona order, `probe_posts` the dry-run probe overlay (read
+    unfiltered, like the overlay itself), `recommended` all 40 recommended
+    rows (v1 renders the first 25; all 40 feed `select_thread_targets`),
+    `news` the digest text as inlined (or its placeholder). Every other list
+    is era-filtered.
+
+    Every row is stored without its model labels: construction and field
+    assignment both run `strip_model_labels`, so no capture path can keep one.
+    """
+
+    model_config = ConfigDict(validate_assignment=True)
+
+    board_posts: list[dict[str, Any]] = Field(default_factory=list)
+    topic_posts: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    probe_posts: list[dict[str, Any]] = Field(default_factory=list)
+    recommended: list[dict[str, Any]] = Field(default_factory=list)
+    timeline: list[dict[str, Any]] = Field(default_factory=list)
+    threads: list[ThreadSource] = Field(default_factory=list)
+    notifications: list[dict[str, Any]] = Field(default_factory=list)
+    conversations: list[dict[str, Any]] = Field(default_factory=list)
+    news: str = ""
+
+    @field_validator(
+        "board_posts",
+        "topic_posts",
+        "probe_posts",
+        "recommended",
+        "timeline",
+        "notifications",
+        "conversations",
+        mode="before",
+    )
+    @classmethod
+    def _no_model_labels(cls, value: Any) -> Any:
+        return strip_model_labels(value)
+
+
+class HandleMap(BaseModel):
+    """Prompt v2's per-prompt handles mapped back to platform ids: `posts` is
+    `"p1" -> <post id>`, `comments` is `"c1" -> <comment id>`."""
+
+    posts: dict[str, str] = Field(default_factory=dict)
+    comments: dict[str, str] = Field(default_factory=dict)
+
+
 class ActContext(BaseModel):
     """Everything that goes into the planner prompt.
 
@@ -178,10 +268,12 @@ class ActContext(BaseModel):
     today_post_count: int = 0
     last_post: str = "(暂无发帖记录)"
     action_budget: int = 5
-    backend_action_constraint: str = ""
 
     contacts: list[str] = Field(default_factory=list)
     probe_post_ids: list[str] = Field(default_factory=list)
+    # The rows behind the strings above. `None` only on a context checkpointed
+    # before rows were kept; `build_context` always sets it.
+    sources: ActSources | None = None
 
 
 class ActResult(BaseModel):
@@ -203,6 +295,7 @@ class ActResult(BaseModel):
     results: list[ActionResult] = Field(default_factory=list)
     vetoed: list[VetoedAction] = Field(default_factory=list)
     plan: Plan | None = None
+    handles: HandleMap | None = None
     context: ActContext | None = None
     rhythm: RhythmDecision | None = None
     attempted: int = 0

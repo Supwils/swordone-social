@@ -33,6 +33,7 @@ from swil_agent.graph.deps import CycleDeps
 from swil_agent.graph.nodes_tail import make_behavior_snapshot_node, make_logout_node
 from swil_agent.models import ActOutcome, Persona
 from swil_agent.persona.source import GitPersonaSource
+from swil_agent.prompts.types import ACT_PROMPT_PARTS
 
 from ._runners import FakeEmbedder, FakeResources, ScriptedBackend, SilentBackend, make_cycle_deps
 
@@ -77,6 +78,9 @@ def _card(**overrides: Any) -> dict[str, Any]:
         "model": "opus",
         "round_id": "20261014T091500Z-r",
         "missing_post_vector": False,
+        "prompt_version": "v1",
+        "act_prompt_chars": None,
+        "dream_prompt_chars": None,
     }
     kwargs.update(overrides)
     return build_cycle_run_event(**kwargs).to_wire()
@@ -114,6 +118,19 @@ def test_the_card_metrics_use_the_spec_keys_and_no_aliases() -> None:
         "model",
         "roundId",
         "missingPostVector",
+        "promptVersion",
+        "promptCharsSystem",
+        "promptCharsPreamble",
+        "promptCharsContext",
+        "promptCharsFeeds",
+        "promptCharsNews",
+        "promptCharsThreads",
+        "promptCharsMemory",
+        "promptCharsSocial",
+        "promptCharsTail",
+        "promptCharsTotal",
+        "dreamPromptCharsSystem",
+        "dreamPromptCharsUser",
     }
     assert metrics["roundId"] == "20261014T091500Z-r"
     assert metrics["missingPostVector"] is False
@@ -579,3 +596,43 @@ def test_a_backend_with_no_model_reports_an_empty_model(tmp_path: Path) -> None:
     assert card.metrics["model"] == ""
     assert "roundId" not in card.metrics
     assert card.metrics["missingPostVector"] is False
+
+
+def test_the_card_carries_the_version_and_flattened_scalar_sizes() -> None:
+    chars = {part: n for n, part in enumerate(ACT_PROMPT_PARTS, start=1)}
+    metrics = _card(act_prompt_chars=chars, dream_prompt_chars={"system": 7, "user": 9})["metrics"]
+    assert metrics["promptVersion"] == "v1"
+    assert metrics["promptCharsSystem"] == 1
+    assert metrics["promptCharsTotal"] == 10
+    assert metrics["dreamPromptCharsSystem"] == 7
+    assert metrics["dreamPromptCharsUser"] == 9
+    # The ingest contract takes scalar metric values only (ruling R2).
+    assert not any(isinstance(value, dict | list) for value in metrics.values())
+
+
+def test_a_phase_without_a_prompt_files_nulls_under_the_same_keys() -> None:
+    metrics = _card(act_prompt_chars=None, dream_prompt_chars=None)["metrics"]
+    assert metrics["promptCharsTotal"] is None
+    assert metrics["dreamPromptCharsUser"] is None
+    assert set(metrics) == CYCLE_RUN_METRIC_KEYS
+
+
+def test_a_real_cycle_card_carries_the_sizes_its_prompts_measured(tmp_path: Path) -> None:
+    root = tmp_path / "agent_root"
+    resources = FakeResources()
+    _run(root, _deps(root, resources=resources))
+    (card,) = _cycle_run_events(resources)
+    assert card.metrics["promptVersion"] == "v1"
+    assert isinstance(card.metrics["promptCharsTotal"], int)
+    assert card.metrics["promptCharsTotal"] > card.metrics["promptCharsSystem"] > 0
+    assert isinstance(card.metrics["dreamPromptCharsUser"], int)
+
+
+def test_an_offline_card_names_the_version_and_no_sizes(tmp_path: Path) -> None:
+    root = tmp_path / "agent_root"
+    resources = FakeResources()
+    _run(root, _deps(root, resources=resources, health_check=lambda: False))
+    (card,) = _cycle_run_events(resources)
+    assert card.metrics["promptVersion"] == "v1"
+    assert card.metrics["promptCharsTotal"] is None
+    assert card.metrics["dreamPromptCharsUser"] is None

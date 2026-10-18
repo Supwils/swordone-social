@@ -17,6 +17,7 @@ from swil_agent.api.client import ApiError
 from swil_agent.api.dto import LabEvent
 from swil_agent.api.resources import Resources
 from swil_agent.embedder.client import EmbedderUnavailable
+from swil_agent.embedder.vectors import clamped_cosine
 from swil_agent.models import Action, ActSimilarity, Persona, VetoedAction
 from swil_agent.persona.format import card_text
 
@@ -79,17 +80,6 @@ def prior_post_texts(items: Sequence[dict[str, Any]]) -> list[str]:
     return texts
 
 
-def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
-    """Dot product of two L2-normalised bge-m3 vectors, clamped to [-1, 1].
-
-    Callers check the vectors first. Unlike `dream/drift.py`'s `cosine_sim`
-    this has no fail-open-to-1.0 fallback: here a HIGH value drops a post, so
-    such a fallback would turn every broken embed into a veto.
-    """
-    dot = sum(x * y for x, y in zip(a, b, strict=True))
-    return max(-1.0, min(1.0, dot))
-
-
 def measure_act_similarity(
     *,
     candidate_text: str,
@@ -133,11 +123,13 @@ def measure_act_similarity(
 
     return ActSimilarity(
         max_sim=(
-            max(_cosine(candidate_vector, v) for v in prior_vectors) if prior_vectors else None
+            max(clamped_cosine(candidate_vector, v) for v in prior_vectors)
+            if prior_vectors
+            else None
         ),
         compared_against=len(corpus),
         embedder_ok=True,
-        card_sim=_cosine(candidate_vector, card_vectors[0]) if card_vectors else None,
+        card_sim=clamped_cosine(candidate_vector, card_vectors[0]) if card_vectors else None,
         vector=list(candidate_vector),
     )
 

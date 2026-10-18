@@ -17,9 +17,12 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Self
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from swil_agent.models import PromptVersion
 
 _AGENT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -78,6 +81,13 @@ class Settings(BaseSettings):
     # `--i-mean-production` (`policy.refuse_production_writes`). Empty, `0`,
     # `false`, `no` and `off` (any case) are off; any other value is ON.
     swil_require_non_prod: bool = False
+
+    # Persona-facing prompt version (spec 2026-10-17 A2). `v2` needs BOTH keys,
+    # so one stray export cannot switch an arm. Not on the round's caller-restore
+    # list: inside a round `.env` wins, so every account of a round reads the
+    # same version.
+    prompt_version: PromptVersion = "v1"
+    prompt_v2_enabled: bool = False
 
     # ── LLM backend selection ────────────────────────────────────────────
     #
@@ -158,6 +168,36 @@ class Settings(BaseSettings):
                 "/".join(sorted(w for w in _FLAG_OFF if w)),
             )
         return True
+
+    @field_validator("prompt_version", mode="before")
+    @classmethod
+    def _prompt_version_word(cls, v: object) -> object:
+        """`V2`, ` v2 ` read as `v2`; a blank value is the default, `v1`."""
+        if isinstance(v, str):
+            return v.strip().lower() or "v1"
+        return v
+
+    @field_validator("prompt_v2_enabled", mode="before")
+    @classmethod
+    def _enable_flag(cls, v: object) -> object:
+        """Fails CLOSED, the opposite of `SWIL_REQUIRE_NON_PROD`: only an
+        on-word enables prompt v2; any other spelling leaves it disabled, with
+        one WARNING when the spelling is not an off-word either."""
+        if not isinstance(v, str):
+            return v
+        word = v.strip().lower()
+        if word not in _FLAG_ON and word not in _FLAG_OFF:
+            logger.warning("PROMPT_V2_ENABLED=%r is not an on-word -- prompt v2 stays disabled", v)
+        return word in _FLAG_ON
+
+    @model_validator(mode="after")
+    def _v2_needs_both_keys(self) -> Self:
+        if self.prompt_version == "v2" and not self.prompt_v2_enabled:
+            raise ValueError(
+                "PROMPT_VERSION=v2 is refused without PROMPT_V2_ENABLED=1 "
+                "(two keys, so one stray export cannot switch an arm)"
+            )
+        return self
 
     @field_validator("swil_url", "embedder_url")
     @classmethod

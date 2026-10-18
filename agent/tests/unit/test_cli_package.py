@@ -26,7 +26,7 @@ PACKAGE = Path(__file__).resolve().parents[2] / "swil_agent"
 
 runner = CliRunner()
 
-# Exactly what `swil-agent --help` listed before the split, in that order.
+# What `swil-agent --help` lists, in order (`prompt-ab` added 2026-10-17).
 _COMMANDS = [
     "act",
     "dream",
@@ -40,6 +40,7 @@ _COMMANDS = [
     "doctor",
     "register",
     "measure-status",
+    "prompt-ab",
 ]
 
 

@@ -16,4 +16,8 @@ S3), so rows written after the port stay one series with the rows before it:
   * `judge.py`   -- the judge call, the exact Bash argv over the `Runner`;
   * `models.py`  -- which backend a `<model>` argument means;
   * `runner.py`  -- one persona x model run, and the sweep.
+
+`prompt_ab.py` is a separate lane on the same footing: `prompt-ab`'s offline
+v1/v2 runtime-prompt comparison (spec 2026-10-17 §5). It reads live contexts,
+posts nothing and files nothing on the platform.
 """

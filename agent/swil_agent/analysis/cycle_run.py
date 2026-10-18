@@ -13,18 +13,34 @@ S2 added `roundId` (the round the cycle ran under; omitted for a thread
 checkpointed before S2) and `missingPostVector` (a post landed but its vector
 was not filed). Neither changes the card's outcome.
 
+Spec 2026-10-17 A3 added `promptVersion` and the prompt size per part,
+flattened to scalar keys because event metrics are scalars
+(`promptChars<Part>` for act, `dreamPromptChars<Part>` for dream; `null` when
+that phase rendered no prompt). `/agents/arms` does not read them yet.
+
 This package must not import `graph/` (architecture test). The builder is
 pure: it takes scalars and returns a `LabEvent`.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Final
 
 from swil_agent.api.dto import LabEvent
 from swil_agent.models import ActOutcome, ActResult
+from swil_agent.prompts.types import ACT_PROMPT_PARTS, DREAM_PROMPT_PARTS
 
 CYCLE_RUN_KIND: Final = "cycle_run"
+
+
+def _act_key(part: str) -> str:
+    return f"promptChars{part.capitalize()}"
+
+
+def _dream_key(part: str) -> str:
+    return f"dreamPromptChars{part.capitalize()}"
+
 
 CYCLE_RUN_METRIC_KEYS: Final = frozenset(
     {
@@ -40,6 +56,9 @@ CYCLE_RUN_METRIC_KEYS: Final = frozenset(
         "model",
         "roundId",
         "missingPostVector",
+        "promptVersion",
+        *(_act_key(part) for part in ACT_PROMPT_PARTS),
+        *(_dream_key(part) for part in DREAM_PROMPT_PARTS),
     }
 )
 
@@ -91,6 +110,9 @@ def build_cycle_run_event(
     model: str,
     round_id: str | None,
     missing_post_vector: bool,
+    prompt_version: str,
+    act_prompt_chars: Mapping[str, int] | None,
+    dream_prompt_chars: Mapping[str, int] | None,
 ) -> LabEvent:
     """One cycle_run card. Metric keys match spec §4 exactly -- no aliases.
     `backend`/`model` are the values the cycle's LLM client was built from."""
@@ -108,6 +130,11 @@ def build_cycle_run_event(
         "model": model,
         "missingPostVector": missing_post_vector,
     }
+    metrics["promptVersion"] = prompt_version
+    for part in ACT_PROMPT_PARTS:
+        metrics[_act_key(part)] = act_prompt_chars.get(part) if act_prompt_chars else None
+    for part in DREAM_PROMPT_PARTS:
+        metrics[_dream_key(part)] = dream_prompt_chars.get(part) if dream_prompt_chars else None
     if round_id is not None:
         metrics["roundId"] = round_id
     return LabEvent(

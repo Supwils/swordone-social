@@ -35,7 +35,6 @@ from swil_agent.config import Settings
 from swil_agent.dream.candidate import (
     DREAM_MEMORY_NOTE,
     DreamState,
-    build_dream_prompt,
     check_cooldown,
     group_memory_digest,
     parse_recent,
@@ -44,9 +43,11 @@ from swil_agent.embedder.client import EmbedderUnavailable
 from swil_agent.llm.complete import complete_text
 from swil_agent.llm.errors import BackendUnavailableError
 from swil_agent.llm.protocol import Backend
-from swil_agent.models import Persona
+from swil_agent.llm.runner import CompletionRequest
+from swil_agent.models import Persona, PromptVersion
 from swil_agent.persona.format import PersonaDoc, PersonaFormatError, clamp_recent, prompt_text
 from swil_agent.persona.source import PersonaSource
+from swil_agent.prompts import dream_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,14 @@ def build_snapshot_payload(
     }
 
 
-def _group_memory(resources: Resources) -> str:
+def memory_tail(memory_text: str) -> str:
+    """The part of `memory.md` a dream reads: its last 30 lines."""
+    return "\n".join(memory_text.splitlines()[-_MEMORY_TAIL_LINES:])
+
+
+def read_group_memory(resources: Resources) -> str:
+    """The group-interaction digest a dream reads (one notifications read,
+    read and unread alike); an unreachable API reads as no interaction."""
     try:
         notifications = resources.notifications(limit=_GROUP_MEMORY_LIMIT, unread_only=False)
     except ApiError:
@@ -143,16 +151,47 @@ def cooldown_step(
 
 
 class DreamStep(NamedTuple):
-    """The new (clamped) 最近 list, or the reason there is none."""
+    """The new (clamped) 最近 list, or the reason there is none.
+
+    `prompt_chars` is the prompt's size, set whenever the call was made."""
+
+    recent: list[str] | None
+    failure_reason: str | None
+    prompt_chars: dict[str, int] | None = None
+
+
+class DreamReply(NamedTuple):
+    """One dream call's (clamped) 最近 list, or why there is none."""
 
     recent: list[str] | None
     failure_reason: str | None
 
 
-def _fail(resources: Resources, persona: Persona, reason: str) -> DreamStep:
+def dream_reply(backend: Backend, request: CompletionRequest) -> DreamReply:
+    """Make the one dream call and parse it; no other I/O, no event.
+
+    A silent backend or a blank reply is `LLM_EMPTY_REASON`; a reply with no
+    usable list, or one whose items are all blank, is `UNPARSEABLE_REASON`.
+    """
+    try:
+        raw = complete_text(backend, request)
+    except BackendUnavailableError:
+        raw = ""
+    if not raw.strip():
+        return DreamReply(recent=None, failure_reason=LLM_EMPTY_REASON)
+    parsed = parse_recent(raw)
+    recent = list(clamp_recent(parsed)) if parsed is not None else []
+    if not recent:  # a list of blanks clamps to nothing: still unparseable
+        return DreamReply(recent=None, failure_reason=UNPARSEABLE_REASON)
+    return DreamReply(recent=recent, failure_reason=None)
+
+
+def _fail(
+    resources: Resources, persona: Persona, reason: str, chars: dict[str, int] | None = None
+) -> DreamStep:
     logger.warning("FAIL %s — %s", persona.directory.name, reason)
     resources.lab_event(persona.username, _dream_event("fail", reason))
-    return DreamStep(recent=None, failure_reason=reason)
+    return DreamStep(recent=None, failure_reason=reason, prompt_chars=chars)
 
 
 def dream_step(
@@ -161,6 +200,7 @@ def dream_step(
     resources: Resources,
     backend: Backend,
     memory_text: str,
+    version: PromptVersion = "v1",
 ) -> DreamStep:
     """Announce the dream, make the one LLM call, parse the reply.
 
@@ -169,23 +209,16 @@ def dream_step(
     and no list.
     """
     resources.lab_event(persona.username, _dream_event("started", "dream started"))
-    memory_tail = "\n".join(memory_text.splitlines()[-_MEMORY_TAIL_LINES:])
-    request = build_dream_prompt(
-        persona, memory_tail=memory_tail, group_memory=_group_memory(resources)
+    prompt = dream_prompt(
+        version,
+        persona,
+        memory_tail=memory_tail(memory_text),
+        group_memory=read_group_memory(resources),
     )
-    try:
-        raw = complete_text(backend, request)
-    except BackendUnavailableError:
-        raw = ""
-    if not raw.strip():
-        return _fail(resources, persona, LLM_EMPTY_REASON)
-    parsed = parse_recent(raw)
-    if parsed is None:
-        return _fail(resources, persona, UNPARSEABLE_REASON)
-    recent = list(clamp_recent(parsed))
-    if not recent:  # a list of blanks clamps to nothing: still unparseable
-        return _fail(resources, persona, UNPARSEABLE_REASON)
-    return DreamStep(recent=recent, failure_reason=None)
+    reply = dream_reply(backend, prompt.request)
+    if reply.recent is None:
+        return _fail(resources, persona, reply.failure_reason or UNPARSEABLE_REASON, prompt.chars)
+    return DreamStep(recent=reply.recent, failure_reason=None, prompt_chars=prompt.chars)
 
 
 class WriteStep(NamedTuple):

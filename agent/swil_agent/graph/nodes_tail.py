@@ -286,5 +286,8 @@ def _emit_cycle_run_card(deps: CycleDeps, state: CycleState) -> None:
         model=deps.llm_model or "",
         round_id=state.get("round_id"),
         missing_post_vector=state.get("missing_post_vector", False),
+        prompt_version=state.get("prompt_version") or deps.settings.prompt_version,
+        act_prompt_chars=state.get("act_prompt_chars"),
+        dream_prompt_chars=state.get("dream_prompt_chars"),
     )
     deps.resources.lab_event(persona.username, event)

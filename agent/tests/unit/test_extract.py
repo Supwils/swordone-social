@@ -163,3 +163,30 @@ def test_normalize_returns_empty_plan_when_extracted_text_is_malformed() -> None
     the resulting json.JSONDecodeError escape."""
     raw = 'noise {"action": "like", } more noise'
     assert normalize_plan(raw).actions == []
+
+
+def test_handle_keys_are_read_only_when_asked() -> None:
+    raw = '{"plan":[{"action":"comment","post":"p1","reply":"c2","text":"好"}]}'
+    assert normalize_plan(raw).actions[0].post_id is None
+    action = normalize_plan(raw, handle_keys=True).actions[0]
+    assert (action.post_id, action.parent_id) == ("p1", "c2")
+
+
+def test_a_raw_post_id_key_wins_over_a_handle_key() -> None:
+    raw = '{"plan":[{"action":"like","postId":"' + "a" * 24 + '","post":"p1"}]}'
+    assert normalize_plan(raw, handle_keys=True).actions[0].post_id == "a" * 24
+
+
+def test_v2_strips_one_leading_at_from_a_follow_or_dm_username() -> None:
+    raw = (
+        '{"plan":[{"action":"follow","username":"@xiaoman"},'
+        '{"action":"dm","username":"@@laozhou","text":"在吗"},'
+        '{"action":"follow","username":"@"}]}'
+    )
+    actions = normalize_plan(raw, handle_keys=True).actions
+    assert [a.username for a in actions] == ["xiaoman", "@laozhou", None]
+
+
+def test_v1_keeps_the_username_exactly_as_written() -> None:
+    raw = '{"plan":[{"action":"follow","username":"@xiaoman"},{"action":"dm","username":"@b"}]}'
+    assert [a.username for a in normalize_plan(raw).actions] == ["@xiaoman", "@b"]

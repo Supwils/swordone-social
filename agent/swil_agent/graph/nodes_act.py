@@ -19,6 +19,7 @@ from swil_agent.act.round import (
 from swil_agent.graph.deps import CycleDeps, NodeFn, _require, agent_dir_name
 from swil_agent.graph.state import CycleState
 from swil_agent.models import ActOutcome
+from swil_agent.prompts import act_prompt
 
 
 def make_login_node(deps: CycleDeps) -> NodeFn:
@@ -54,6 +55,7 @@ def make_login_node(deps: CycleDeps) -> NodeFn:
             post_probability=deps.settings.post_probability,
             post_ceiling=deps.settings.post_ceiling_per_day,
             probe_board=deps.probe_board,
+            world=deps.world,
         )
         return {"agent": step.agent_name, "context": context, "rhythm": rhythm}
 
@@ -64,18 +66,28 @@ def make_plan_node(deps: CycleDeps) -> NodeFn:
     """`plan_step`. `None` back means the backend produced nothing at all,
     which is one of the only two outcomes that deny the account its dream --
     so the label is set here rather than inferred downstream from a missing
-    plan (an empty plan and an absent one are different rounds)."""
+    plan (an empty plan and an absent one are different rounds). It renders the
+    prompt through `prompts.act_prompt(deps.settings.prompt_version, ...)` and
+    keeps its version and size in the state."""
 
     def plan(state: CycleState) -> CycleState:
+        persona = state["persona"]
+        context = _require(state.get("context"), key="context", node="plan")
+        rhythm = _require(state.get("rhythm"), key="rhythm", node="plan")
+        prompt = act_prompt(deps.settings.prompt_version, persona, context, rhythm)
         planned = plan_step(
-            backend=deps.backend,
-            persona=state["persona"],
-            context=_require(state.get("context"), key="context", node="plan"),
-            rhythm=_require(state.get("rhythm"), key="rhythm", node="plan"),
+            backend=deps.backend, persona=persona, context=context, rhythm=rhythm, prompt=prompt
         )
+        update: CycleState = {
+            "plan": planned,
+            "prompt_version": prompt.version,
+            "act_prompt_chars": prompt.chars,
+        }
+        if prompt.handles is not None:
+            update["handles"] = prompt.handles
         if planned is None:
-            return {"plan": None, "outcome": ActOutcome.BACKEND_UNAVAILABLE}
-        return {"plan": planned}
+            update["outcome"] = ActOutcome.BACKEND_UNAVAILABLE
+        return update
 
     return plan
 
@@ -99,6 +111,7 @@ def make_guardrail_node(deps: CycleDeps) -> NodeFn:
             rhythm=_require(state.get("rhythm"), key="rhythm", node="guardrail"),
             context=_require(state.get("context"), key="context", node="guardrail"),
             budget=deps.budget,
+            handles=state.get("handles"),
         )
         update: CycleState = {
             "actions": guarded.actions,

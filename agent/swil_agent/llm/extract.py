@@ -45,6 +45,10 @@ _WIRE_TO_FIELD = {
     "username": "username",
 }
 
+# Prompt v2's short keys (spec 2026-10-17 B2). Read only for a v2 prompt, and
+# only when the long key is absent: a model that copies a raw id still works.
+_HANDLE_TO_FIELD = {"post": "post_id", "reply": "parent_id"}
+
 
 def collapse_doubled_text(text: str) -> str:
     """Collapse an exact full-length duplication (X+X, or X<sep>X) to one copy.
@@ -98,7 +102,7 @@ def extract_json_object(text: str) -> str | None:
     return None
 
 
-def _to_action(entry: dict[str, Any]) -> Action | None:
+def _to_action(entry: dict[str, Any], *, handle_keys: bool = False) -> Action | None:
     kind = entry.get("action")
     if not isinstance(kind, str) or kind not in _VALID_KINDS:
         return None
@@ -107,11 +111,25 @@ def _to_action(entry: dict[str, Any]) -> Action | None:
         value = entry.get(wire)
         if isinstance(value, str) and value:
             fields[field] = value
+    if handle_keys:
+        for wire, field in _HANDLE_TO_FIELD.items():
+            value = entry.get(wire)
+            if field not in fields and isinstance(value, str) and value:
+                fields[field] = value
+        # v2 shows people as `@name`; the API takes the bare name.
+        username = fields.get("username")
+        if kind in ("follow", "dm") and isinstance(username, str) and username.startswith("@"):
+            fields["username"] = username[1:]
+            if not fields["username"]:
+                del fields["username"]
     return Action(**fields)
 
 
-def normalize_plan(raw: str) -> Plan:
-    """Flatten the three shapes the planner may emit into a Plan."""
+def normalize_plan(raw: str, *, handle_keys: bool = False) -> Plan:
+    """Flatten the three shapes the planner may emit into a Plan.
+
+    `handle_keys` also reads v2's `post`/`reply` keys.
+    """
     truncated = raw.encode("utf-8")[:_MAX_PLAN_BYTES].decode("utf-8", errors="ignore")
     try:
         parsed: Any = json.loads(truncated)
@@ -138,7 +156,7 @@ def normalize_plan(raw: str) -> Plan:
         action
         for entry in entries
         if isinstance(entry, dict)
-        for action in (_to_action(entry),)
+        for action in (_to_action(entry, handle_keys=handle_keys),)
         if action is not None
     ]
     return Plan(actions=actions)

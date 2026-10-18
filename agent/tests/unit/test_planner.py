@@ -111,7 +111,6 @@ def test_codex_persona_context_has_empty_backend_action_constraint() -> None:
         now=datetime(2026, 8, 17, 10, 0, 0),
         budget=5,
     )
-    assert ctx.backend_action_constraint == ""
     prompt = render_planner_prompt(ctx, rhythm_guidance="g")
     assert "本轮后端限制" not in prompt
     assert "只能选择 post 或 nothing" not in prompt

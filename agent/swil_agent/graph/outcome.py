@@ -32,6 +32,7 @@ def act_result_of(state: CycleState) -> ActResult | None:
         results=state.get("results", []),
         vetoed=state.get("vetoed", []),
         plan=state.get("plan"),
+        handles=state.get("handles"),
         context=state.get("context"),
         rhythm=state.get("rhythm"),
         attempted=state.get("attempted", 0),

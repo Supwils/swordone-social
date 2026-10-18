@@ -21,7 +21,7 @@ import logging
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, NamedTuple
 
 from swil_agent.act.context_format import (
     _THREAD_COMMENT_LIMIT,
@@ -45,7 +45,8 @@ from swil_agent.act.memory import retrieve_memory
 from swil_agent.api.client import ApiError
 from swil_agent.api.resources import Resources
 from swil_agent.llm.runner import Runner
-from swil_agent.models import ActContext, Persona
+from swil_agent.models import ActContext, ActSources, Persona, ThreadSource
+from swil_agent.prompts.v1.now import NOW_CONTEXT_TEMPLATE as NOW_CONTEXT_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
@@ -111,37 +112,6 @@ _NOW_FALLBACK_LIMIT: Final = 15
 # different endpoints.
 _TOPIC_SEARCH_LIMIT: Final = 12
 
-NOW_CONTEXT_TEMPLATE: Final = """\
-# 当前时间上下文
-
-**今日日期：** {today}
-**当前 Agent：** {username}
-
-## 平台最新动态（用于校准时间感知）
-{activity}
-
-## 今日真实世界新闻（swil-news 日报，含各话题要点与总结）
-{news}
-
-（完整日报可访问：https://swil-news.vercel.app/api/news/{{topic}}/{{date}}）
-
-## 注意事项
-- 以上日期是系统真实时间，优先于模型自身的时间估计
-- 发帖时涉及"最近""今天""当前"等表述，请以此日期为准
-- 训练截止日之后的世界事件，如无用户提供的信息，请明确说明不确定性，不要臆造
-- 上面这些新闻是**真实世界当天发生的事**，不是虚构素材。你可以据此发帖、评论、
-  或完全忽略——取决于它是否落在你关心的领域里。引用时按你自己的视角解读，
-  不要复述标题，也不要为了蹭热点去谈一个你的人设根本不关心的话题。
-"""
-"""The now-context prompt text.
-
-The `{{topic}}` / `{{date}}` in the swil-news URL are LITERAL braces that
-survive `str.format` -- they are part of the sentence the model reads, not
-placeholders. Un-escaping either one turns a documentation URL into a
-`KeyError` at render time for `topic`, and into the rendered date for
-`date`. Only `today`, `username`, `activity` and `news` are substituted.
-"""
-
 _NOW_DATE_FORMAT: Final = "%Y年%m月%d日 %H:%M"
 _FEED_DATE_FORMAT: Final = "%Y-%m-%d %H:%M"
 
@@ -173,13 +143,43 @@ def format_topic_feed(items: list[dict[str, Any]]) -> str:
     )
 
 
-def _feed_or_blank(items: Callable[[], list[dict[str, Any]]], *, era_start: datetime | None) -> str:
-    """One login-time feed read, era-filtered and rendered; `""` on any API
-    failure, so a failed read costs its lines and never the login."""
+def _rows_or_empty(
+    items: Callable[[], list[dict[str, Any]]], *, era_start: datetime | None
+) -> list[dict[str, Any]]:
+    """One login-time feed read, era-filtered; `[]` on any API failure, so a
+    failed read costs its rows and never the login."""
     try:
-        return format_now_feed(_within_era(items(), era_start))
+        return _within_era(items(), era_start)
     except ApiError:
-        return ""
+        return []
+
+
+def platform_activity_items(
+    resources: Resources, persona: Persona, *, era_start: datetime | None = None
+) -> list[dict[str, Any]]:
+    """The rows behind the platform-activity block: the home board at
+    `limit=12`, else (empty, all pre-era, failed, or no board) the global feed
+    at `limit=15`; `[]` when that is empty too."""
+    since = _since(era_start)
+    home = persona.board.strip()
+    rows: list[dict[str, Any]] = []
+    if home:
+        rows = _rows_or_empty(
+            lambda: resources.feed_board(home, limit=_NOW_BOARD_LIMIT, sort="latest", since=since),
+            era_start=era_start,
+        )
+    if not rows:
+        rows = _rows_or_empty(
+            lambda: resources.feed_global(limit=_NOW_FALLBACK_LIMIT, sort="latest", since=since),
+            era_start=era_start,
+        )
+    return rows
+
+
+def _activity_text(rows: list[dict[str, Any]]) -> str:
+    # A rendered row is never blank (each starts "- ["), so "no rows" is
+    # exactly the old "blank activity" test.
+    return format_now_feed(rows) if rows else WORLD_CONTEXT_UNAVAILABLE
 
 
 def platform_activity(
@@ -194,23 +194,11 @@ def platform_activity(
     The home board at `limit=12`; when that yields nothing (empty, all
     pre-era, failed, or no board), the global feed at `limit=15`; when that
     is blank too, the placeholder. `now` is unused by the reads and kept for
-    the caller's single-clock contract.
+    the caller's single-clock contract. The rows come from
+    `platform_activity_items`.
     """
-    since = _since(era_start)
-    home = persona.board.strip()
-
-    activity = ""
-    if home:
-        activity = _feed_or_blank(
-            lambda: resources.feed_board(home, limit=_NOW_BOARD_LIMIT, sort="latest", since=since),
-            era_start=era_start,
-        )
-    if not activity.strip():
-        activity = _feed_or_blank(
-            lambda: resources.feed_global(limit=_NOW_FALLBACK_LIMIT, sort="latest", since=since),
-            era_start=era_start,
-        )
-    return activity if activity.strip() else WORLD_CONTEXT_UNAVAILABLE
+    _ = now
+    return _activity_text(platform_activity_items(resources, persona, era_start=era_start))
 
 
 def read_news_digest(
@@ -288,6 +276,37 @@ def render_now_context(*, username: str, now: datetime, activity: str, news: str
     )
 
 
+def follow_topic_items(
+    resources: Resources, persona: Persona, *, era_start: datetime | None = None
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    """One `/posts/search` per `persona.topics` entry, in order, `limit=12`,
+    era-filtered. A failed search is left out; an empty one is kept."""
+    since = _since(era_start)
+    found: list[tuple[str, list[dict[str, Any]]]] = []
+    for topic in persona.topics:
+        try:
+            hits = resources.search_posts(topic, limit=_TOPIC_SEARCH_LIMIT, since=since)
+        except ApiError:
+            continue
+        found.append((topic, _within_era(hits, era_start)))
+    return found
+
+
+def format_follow_topics(
+    persona: Persona, found: list[tuple[str, list[dict[str, Any]]]], *, now: datetime
+) -> str:
+    """The follow-topics block from `follow_topic_items`' rows. A topic with
+    no rows contributes no heading; a persona with no topics gets `""`."""
+    if not persona.topics:
+        return ""
+    text = f"# 关联话题动态 ({now.strftime(_FEED_DATE_FORMAT)})\n\n"
+    for topic, items in found:
+        rows = format_topic_feed(items)
+        if rows:
+            text += f"## #{topic}\n{rows}\n\n"
+    return text
+
+
 def render_follow_topics_feed(
     resources: Resources,
     persona: Persona,
@@ -300,21 +319,44 @@ def render_follow_topics_feed(
 
     A topic that returned nothing (or failed) contributes no heading. A
     persona with no topics gets `""`, which makes the planner drop the block.
+    Rows from `follow_topic_items`, text from `format_follow_topics`.
     """
-    if not persona.topics:
-        return ""
+    return format_follow_topics(
+        persona, follow_topic_items(resources, persona, era_start=era_start), now=now
+    )
 
-    since = _since(era_start)
-    text = f"# 关联话题动态 ({now.strftime(_FEED_DATE_FORMAT)})\n\n"
-    for topic in persona.topics:
-        try:
-            found = resources.search_posts(topic, limit=_TOPIC_SEARCH_LIMIT, since=since)
-        except ApiError:
-            continue
-        rows = format_topic_feed(_within_era(found, era_start))
-        if rows:
-            text += f"## #{topic}\n{rows}\n\n"
-    return text
+
+class WorldContext(NamedTuple):
+    """The now-context and the follow-topics feed, rendered, plus the rows
+    both were rendered from (`sources` has no feed/notification rows yet --
+    `build_context` adds those)."""
+
+    context_now: str
+    feed_context: str
+    sources: ActSources
+
+
+def read_world_context(
+    resources: Resources,
+    persona: Persona,
+    *,
+    now: datetime,
+    era_start: datetime | None,
+    agent_root: Path,
+    runner: Runner,
+) -> WorldContext:
+    """Both world blocks in the order a round always read them: the activity
+    feed, the news refresh, the topic searches (the goldens pin the order)."""
+    board = platform_activity_items(resources, persona, era_start=era_start)
+    news = read_news_digest(agent_root, runner)
+    topics = follow_topic_items(resources, persona, era_start=era_start)
+    return WorldContext(
+        context_now=render_now_context(
+            username=persona.username, now=now, activity=_activity_text(board), news=news
+        ),
+        feed_context=format_follow_topics(persona, topics, now=now),
+        sources=ActSources(board_posts=board, topic_posts=dict(topics), news=news),
+    )
 
 
 def overlay_probe_posts(ctx: ActContext, items: list[dict[str, Any]]) -> ActContext:
@@ -332,6 +374,8 @@ def overlay_probe_posts(ctx: ActContext, items: list[dict[str, Any]]) -> ActCont
         time_block = format_timeline_feed(items)
         if time_block:
             ctx.timeline_feed = f"{time_block}\n{ctx.timeline_feed}"
+    if ctx.sources is not None:
+        ctx.sources.probe_posts = list(items)
     ctx.probe_post_ids = [str(item["id"]) for item in items if item.get("id")]
     return ctx
 
@@ -349,14 +393,17 @@ def build_context(
     context_now: str = "(no context file)",
     feed_context: str = "",
     era_start: datetime | None = None,
+    world: ActSources | None = None,
 ) -> ActContext:
     """Assemble every prompt block, degrading per block.
 
-    `context_now` and `feed_context` arrive already rendered (the caller
-    builds them with `render_now_context` / `render_follow_topics_feed`).
-    Both feed passes read the global feed; with `era_start` set, both ask for
-    `since` and drop older items, so thread targets come only from this era.
-    This function writes nothing.
+    `context_now` and `feed_context` arrive already rendered, and `world`
+    carries the rows they were rendered from (the round builds all three with
+    `read_world_context`). Both feed passes read the global feed; with
+    `era_start` set, both ask for `since` and drop older items, so thread
+    targets come only from this era. This function writes nothing. `world` is
+    deep-copied into `ctx.sources` beside the rows read here, which
+    `ActSources` stores without model labels. v1 never reads `sources`.
     """
     since = _since(era_start)
     today = now.strftime("%Y-%m-%d")
@@ -369,8 +416,8 @@ def build_context(
         today_post_count=posts_today(memory_text, today),
         last_post=last_post_line(memory_text),
         action_budget=budget,
-        backend_action_constraint="",
     )
+    sources = world.model_copy(deep=True) if world is not None else ActSources()
 
     recommended: list[dict[str, Any]] = []
     try:
@@ -380,6 +427,7 @@ def build_context(
         ctx.global_feed = format_global_feed(recommended[:25]) or "(could not fetch feed)"
     except ApiError:
         pass  # placeholder-class: the default already reads "(could not fetch feed)"
+    sources.recommended = recommended
 
     # vanish-class: on ApiError, timeline_feed stays "", so the whole section disappears.
     timeline: list[dict[str, Any]] = []
@@ -388,24 +436,22 @@ def build_context(
             resources.feed_global(limit=18, sort="latest", since=since), era_start
         )
         ctx.timeline_feed = format_timeline_feed(timeline)
+    sources.timeline = timeline
 
     with contextlib.suppress(ApiError):
-        ctx.notification_context = (
-            format_notifications(resources.notifications(limit=8, unread_only=True))
-            or "（暂无新互动）"
-        )
+        notifications = resources.notifications(limit=8, unread_only=True)
+        sources.notifications = notifications
+        ctx.notification_context = format_notifications(notifications) or "（暂无新互动）"
 
     blocks: list[str] = []
     for post_id in select_thread_targets(recommended, engaged=ctx.engaged_ids):
         try:
-            blocks.append(
-                format_thread(
-                    resources.get_post(post_id),
-                    resources.get_comments(post_id, limit=_THREAD_COMMENT_LIMIT),
-                )
-            )
+            post = resources.get_post(post_id)
+            comments = resources.get_comments(post_id, limit=_THREAD_COMMENT_LIMIT)
         except ApiError:
             continue  # one bad thread contributes nothing; the others still render
+        blocks.append(format_thread(post, comments))
+        sources.threads.append(ThreadSource(post=post, comments=comments))
     ctx.thread_context = "\n\n".join(blocks)
 
     try:
@@ -418,6 +464,7 @@ def build_context(
     with contextlib.suppress(ApiError):
         conversations = resources.conversations(limit=6)
         ctx.dm_context = format_conversations(conversations)
+    sources.conversations = conversations
 
     # The planner sees a retrieved slice, not the tail of the file.
     # posts_today above is already a full-file count.
@@ -427,5 +474,5 @@ def build_context(
         board=persona.board.strip(),
         counterparties=_counterparties(recommended[:25], timeline, conversations),
     )
-
+    ctx.sources = sources
     return ctx

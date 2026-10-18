@@ -14,7 +14,7 @@ class BackendBinaryMissingError(RuntimeError):
 
     DELIBERATELY NOT a subclass of `BackendUnavailableError`, and that is the
     whole point of it existing. Every "the LLM said nothing" call site --
-    `act/planner.py`'s `plan_round`, `dream/round.py`'s `dream_step` -- catches
+    `act/planner.py`'s `plan_request`, `dream/round.py`'s `dream_step` -- catches
     `BackendUnavailableError` and degrades to `None`/`""`, exactly as Bash's
     `llm_text` returns empty for a dead model. That degradation is right for
     a model that answered with nothing and WRONG for a binary that does not

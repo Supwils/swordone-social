@@ -27,6 +27,10 @@ EXIT_NO_ACTION = 75
 # 128 + SIGTERM, what a shell reports for a process the signal killed.
 EXIT_SIGTERM = 143
 
+# The act path's action budget when `--budget` is not given (`act`, `cycle`;
+# `prompt-ab` samples under the same one).
+DEFAULT_ACT_BUDGET = 5
+
 app = typer.Typer(add_completion=False, help="Swil Social agent runtime")
 
 

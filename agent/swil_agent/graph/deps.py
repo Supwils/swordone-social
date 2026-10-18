@@ -75,7 +75,7 @@ from swil_agent.dream.candidate import DreamState
 from swil_agent.dream.round import Embedder
 from swil_agent.graph.state import CycleState
 from swil_agent.llm.protocol import Backend
-from swil_agent.models import Persona
+from swil_agent.models import ActSources, Persona
 from swil_agent.persona.source import PersonaSource
 
 NodeFn = Callable[[CycleState], CycleState]
@@ -126,6 +126,7 @@ class CycleDeps:
     cycle_run card reports. Required, so a composition root cannot fall back
     to the persona file's declaration by forgetting them. `probe_board` is
     `act --dry-run --probe-board`'s overlay board (S3 §12.8); `None` otherwise.
+    `world` holds the rows the world context was rendered from (spec 2026-10-17 R4).
     """
 
     resources: Resources
@@ -141,6 +142,7 @@ class CycleDeps:
     llm_model: str | None
     context_now: str = "(no context file)"
     feed_context: str = ""
+    world: ActSources | None = None
     budget: int = 5
     access_key: str | None = None
     dry_run: bool = False

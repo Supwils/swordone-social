@@ -454,3 +454,17 @@ def test_the_patch_target_guard_can_actually_fail(tmp_path: Path, monkeypatch) -
         encoding="utf-8",
     )
     assert _vacuous_patch_sites(tests) == (["test_x.py:6 patches swil_agent.act.reexport.step"], 2)
+
+
+def test_prompts_import_only_models_the_request_type_and_themselves() -> None:
+    """The prompt text is a leaf (spec 2026-10-17 A1): act, dream and persona
+    import it, so it may not import them, nor any I/O layer."""
+    allowed = ("swil_agent.models", "swil_agent.llm.runner", "swil_agent.prompts")
+    offenders: list[str] = []
+    for path in (PACKAGE / "prompts").rglob("*.py"):
+        for module in _imported_modules(path):
+            if module.startswith("swil_agent") and not any(
+                module == p or module.startswith(p + ".") for p in allowed
+            ):
+                offenders.append(f"{path.relative_to(PACKAGE)} imports {module}")
+    assert offenders == [], offenders

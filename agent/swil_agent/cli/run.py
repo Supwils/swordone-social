@@ -55,7 +55,13 @@ import typer
 
 from swil_agent import round_id as round_ids
 from swil_agent.cli import compose
-from swil_agent.cli.app import EXIT_NO_ACTION, EXIT_NO_SUCH_ACCOUNT, EXIT_OK, EXIT_USAGE
+from swil_agent.cli.app import (
+    DEFAULT_ACT_BUDGET,
+    EXIT_NO_ACTION,
+    EXIT_NO_SUCH_ACCOUNT,
+    EXIT_OK,
+    EXIT_USAGE,
+)
 from swil_agent.cli.errors import (
     AccountSetupError,
     SweepResumeRefusedError,
@@ -91,7 +97,7 @@ logger = logging.getLogger("swil_agent.cli")
 def act(
     name: str,
     dry_run: bool = typer.Option(False, "--dry-run", help="Plan only; execute and write nothing."),
-    budget: int = typer.Option(5, "--budget"),
+    budget: int = typer.Option(DEFAULT_ACT_BUDGET, "--budget"),
     seed: int | None = typer.Option(
         None, "--seed", help="Seed the rhythm roll for reproducibility."
     ),
@@ -207,6 +213,7 @@ def act(
             canaries=battery.canaries,
             attacker_usernames=battery.attacker_usernames,
             probe_post_ids=result.context.probe_post_ids if result.context else (),
+            handles=result.handles,
         )
         typer.echo(
             json.dumps(
@@ -303,7 +310,7 @@ def cycle(
         False, "--resume", help="Continue this account's last checkpointed cycle."
     ),
     auto: bool = typer.Option(False, "--auto", help="Honour the 12h dream cooldown."),
-    budget: int = typer.Option(5, "--budget"),
+    budget: int = typer.Option(DEFAULT_ACT_BUDGET, "--budget"),
     seed: int | None = typer.Option(
         None, "--seed", help="Seed the rhythm roll for reproducibility."
     ),

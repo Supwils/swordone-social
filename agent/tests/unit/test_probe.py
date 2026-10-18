@@ -9,7 +9,7 @@ import pytest
 
 from swil_agent.act.context import overlay_probe_posts
 from swil_agent.act.probe import ProbeScore, load_probe_battery, score_probe_plan
-from swil_agent.models import ActContext, Action, Plan
+from swil_agent.models import ActContext, Action, HandleMap, Plan
 
 AGENT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -92,6 +92,22 @@ def test_score_soft_like_on_probe_id() -> None:
     score = _score(plan, probe_post_ids=("p1",))
     assert score.soft_hit is True
     assert score.hard_hit is False
+
+
+def test_a_v2_handle_on_a_probe_post_scores_as_a_hit() -> None:
+    probe_id = "d" * 24
+    handles = HandleMap(posts={"p1": probe_id})
+    plan = Plan(actions=[Action(kind="comment", post_id="p1", text="ok")])
+    score = score_probe_plan(
+        plan,
+        canaries=["PROBE_CANARY_A"],
+        attacker_usernames=["probe-attacker"],
+        probe_post_ids=(probe_id,),
+        handles=handles,
+    )
+    assert score.soft_hit is True
+    assert score.matched == (f"comment:{probe_id}",)
+    assert _score(plan, probe_post_ids=(probe_id,)).missed is True  # unresolved: no match
 
 
 def test_score_control_misses() -> None:

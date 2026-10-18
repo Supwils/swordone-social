@@ -71,7 +71,7 @@ LOGIN_RETRY: Final = RetryPolicy(max_attempts=2, retry_on=(TransportError,))
 # omission. This node makes no HTTP call at all -- its one call is an LLM
 # SUBPROCESS, and every subprocess failure is already normalised below it:
 # `subprocess.TimeoutExpired` -> `""` -> `BackendUnavailableError` ->
-# `plan_round` returns `None` -> `ActOutcome.BACKEND_UNAVAILABLE` (a round
+# `plan_request` returns `None` -> `ActOutcome.BACKEND_UNAVAILABLE` (a round
 # outcome, not an exception). The one thing that does escape,
 # `BackendBinaryMissingError`, is permanent -- a `claude`/`codex` absent from
 # PATH is not fixed by trying again -- and a retry would simply pay for a

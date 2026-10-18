@@ -17,7 +17,7 @@ from swil_agent.act.context_format import (
     select_thread_targets,
 )
 from swil_agent.api.client import ApiError
-from swil_agent.models import Persona
+from swil_agent.models import ActContext, Persona
 
 from ._runners import make_persona
 
@@ -531,15 +531,10 @@ def test_build_context_derives_rhythm_fields_from_memory(fake_resources: FakeRes
     assert ctx.action_budget == 5
 
 
-def test_build_context_leaves_backend_action_constraint_empty_for_every_backend(
-    fake_resources: FakeResources,
-) -> None:
-    """Loop-engine spec §7: the Codex post-only prompt is gone. Write-verification
-    is the real fix; `ActContext.backend_action_constraint` is always `""`.
-    """
-    for backend in ("codex", "claude", "deepseek"):
-        ctx = build_context(fake_resources, _persona(backend), memory_text="", now=NOW, budget=5)
-        assert ctx.backend_action_constraint == ""
+def test_act_context_no_longer_carries_a_backend_action_constraint() -> None:
+    """Loop-engine spec §7 removed the Codex post-only prompt; the field that
+    carried it (always empty since) is gone (spec 2026-10-17 A4)."""
+    assert "backend_action_constraint" not in ActContext.model_fields
 
 
 # ── read scope: home board (now-context) + global feed, for everyone ─────

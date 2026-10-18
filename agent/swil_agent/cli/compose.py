@@ -39,12 +39,7 @@ from typing import NamedTuple, Protocol
 
 import httpx
 
-from swil_agent.act.context import (
-    platform_activity,
-    read_news_digest,
-    render_follow_topics_feed,
-    render_now_context,
-)
+from swil_agent.act.context import WorldContext, read_world_context
 from swil_agent.analysis.population_metric import API_KEY_FILENAME
 from swil_agent.api.auth import ApiKeyAuth, PasswordAuth, resolve_auth
 from swil_agent.api.client import ApiClient
@@ -312,43 +307,28 @@ def health_check(settings: Settings, *, transport: httpx.BaseTransport | None = 
     return response.status_code == 200
 
 
-def context_now_for(
+def world_context_for(
     resources: Resources,
     persona: Persona,
     settings: Settings,
     *,
     now: datetime,
     runner: Runner,
-) -> str:
-    """The world-context block, RENDERED for this account (rulings R25/R26).
-
-    Nothing is written back (R26): there is no shared `context/now.md`, so
-    the per-account `当前 Agent` line is not something five parallel rounds
-    race on.
-
-    `now` is threaded in rather than taken here so the whole round -- this
-    block, the context's `today`, the memory line it writes -- agrees on one
-    clock; `cycle_deps_for` and `act_deps_for` freeze one for exactly that
-    reason.
-    """
-    return render_now_context(
-        username=persona.username,
+) -> WorldContext:
+    """The now-context and the follow-topics feed, RENDERED for this account
+    (rulings R25/R26), plus the rows both came from (`read_world_context`: the
+    activity read, the `news-fetch.sh` refresh, the topic searches). No
+    `context/now.md` is written, so the per-account `当前 Agent` line is not
+    something five parallel rounds race on. `now` is the builder's frozen clock,
+    so this block, the context's `today` and the memory line agree."""
+    return read_world_context(
+        resources,
+        persona,
         now=now,
-        activity=platform_activity(resources, persona, now=now, era_start=settings.era_start),
-        news=read_news_digest(settings.agent_root, runner),
+        era_start=settings.era_start,
+        agent_root=settings.agent_root,
+        runner=runner,
     )
-
-
-def feed_context_for(
-    resources: Resources,
-    persona: Persona,
-    *,
-    now: datetime,
-    era_start: datetime | None = None,
-) -> str:
-    """The follow-topics feed, RENDERED for this account from `persona.topics`
-    (never read from a stale `context/feed_for_*.md`), era-filtered."""
-    return render_follow_topics_feed(resources, persona, now=now, era_start=era_start)
 
 
 def probe_embedder(embedder: EmbedderClient, settings: Settings) -> None:
@@ -509,13 +489,14 @@ def _world_context_finish(
     and frozen `now`: the prompt bytes depend on all three."""
 
     def finish(base: CycleDeps) -> CycleDeps:
+        memory_text = persona_source.read_memory(agent_dir_name(persona))
+        world = world_context_for(resources, persona, settings, now=round_now, runner=runner)
         return replace(
             base,
-            memory_text=persona_source.read_memory(agent_dir_name(persona)),
-            context_now=context_now_for(resources, persona, settings, now=round_now, runner=runner),
-            feed_context=feed_context_for(
-                resources, persona, now=round_now, era_start=settings.era_start
-            ),
+            memory_text=memory_text,
+            context_now=world.context_now,
+            feed_context=world.feed_context,
+            world=world.sources,
         )
 
     return finish

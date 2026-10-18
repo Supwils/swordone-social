@@ -8,7 +8,7 @@ import random
 
 import pytest
 
-from swil_agent.models import RhythmPolicy
+from swil_agent.models import RhythmDecision, RhythmPolicy
 from swil_agent.persona.rhythm import decide_rhythm
 
 
@@ -102,3 +102,28 @@ def test_a_seeded_rng_reproduces_the_same_decision() -> None:
     first = decide_rhythm(0, random.Random(7), probability=60, ceiling=1)
     second = decide_rhythm(0, random.Random(7), probability=60, ceiling=1)
     assert first == second
+
+
+def test_only_the_ceiling_branch_reports_ceiling_reached() -> None:
+    assert decide_rhythm(1, FixedRoll(1), probability=60, ceiling=1).ceiling_reached is True
+    assert decide_rhythm(0, FixedRoll(1), probability=60, ceiling=1).ceiling_reached is False
+    assert decide_rhythm(0, FixedRoll(99), probability=60, ceiling=1).ceiling_reached is False
+
+
+def test_the_guidance_text_comes_from_the_v1_prompt_module() -> None:
+    from swil_agent.prompts.v1 import rhythm as v1
+
+    assert decide_rhythm(1, FixedRoll(1), probability=60, ceiling=1).guidance == (
+        v1.ceiling_guidance(1, 1)
+    )
+    assert decide_rhythm(0, FixedRoll(42), probability=60, ceiling=1).guidance == (
+        v1.must_post_guidance(42, 60)
+    )
+    assert decide_rhythm(0, FixedRoll(77), probability=60, ceiling=1).guidance == (
+        v1.no_post_guidance(77, 60)
+    )
+
+
+def test_a_decision_checkpointed_before_the_flag_loads_with_it_false() -> None:
+    old = {"policy": "no_post", "prefer_non_post": "comment", "guidance": "g", "roll": None}
+    assert RhythmDecision.model_validate(old).ceiling_reached is False

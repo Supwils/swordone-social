@@ -26,14 +26,15 @@ injected so tests never sleep.
 
 Fail-soft per batch and per post: an embedder outage or a rejected ingest is
 counted, never raised. This package must not import `act/`, `dream/` or
-`graph/` (architecture test), hence the local `Embedder` and cosine.
+`graph/` (architecture test), hence the local `Embedder`; the cosine is
+`embedder/vectors.py`'s, shared with the act path.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final, Protocol
@@ -49,6 +50,7 @@ from swil_agent.api.ingest_throttle import (
 )
 from swil_agent.api.resources import Resources, VectorFiling
 from swil_agent.embedder.client import MAX_BATCH, EmbedderUnavailable
+from swil_agent.embedder.vectors import clamped_cosine
 
 logger = logging.getLogger(__name__)
 
@@ -144,11 +146,6 @@ def list_era_posts(resources: Resources, username: str, *, era_start: datetime) 
     return posts
 
 
-def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
-    """Dot product of two L2-normalised bge-m3 vectors, clamped to [-1, 1]."""
-    return max(-1.0, min(1.0, sum(x * y for x, y in zip(a, b, strict=True))))
-
-
 def _embed_batch(embedder: Embedder, batch: list[str]) -> list[list[float]] | None:
     """The batch's vectors, or `None` on any outage or malformed answer."""
     try:
@@ -212,7 +209,7 @@ def run_backfill_post_vectors(
                 username=username,
                 post_id=post.post_id,
                 embedding=vector,
-                card_sim=_cosine(vector, card_vector) if card_vector is not None else None,
+                card_sim=clamped_cosine(vector, card_vector) if card_vector is not None else None,
             )
             if outcome == "filed":
                 filed += 1

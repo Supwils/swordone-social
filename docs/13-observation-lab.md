@@ -172,6 +172,37 @@ Dated entries for anything that changes what a round *does* or what the series
 on this page *mean*. A window of data either side of one of these dates is two
 regimes, not one — read this list before comparing across a date.
 
+### 2026-10-17 — prompt versioning and prompt size on the card (v2 built, off)
+
+No change to what any persona reads: every act and dream prompt is byte-identical
+to round 1 (the 16 golden runs and the full-text pins are the oracle). What changed:
+
+- Persona-facing text lives in `agent/swil_agent/prompts/`: `v1/` is the Era 3 text
+  moved verbatim, `v2/` the lean prompt of the 2026-10-17 runtime-prompt-v2 spec.
+  Callers go through one seam, `prompts.act_prompt` / `prompts.dream_prompt`.
+- `PROMPT_VERSION` (default `v1`) selects it; `v2` is refused unless
+  `PROMPT_V2_ENABLED=1` as well. **v2 is off** until the confirmatory window freezes
+  and a dated amendment (or Era 4) switches it on; that amendment defines how
+  `promptVersion` deviations are treated in `/agents/arms`.
+- `cycle_run` cards now carry `promptVersion` and the prompt size in characters,
+  flattened because event metrics are scalars:
+  `promptChars{System,Preamble,Context,Feeds,News,Threads,Memory,Social,Tail,Total}`
+  for act and `dreamPromptChars{System,User}` for dream, `null` when that phase
+  rendered no prompt. Cards before this date have neither key; read them as `v1`.
+  Nothing in `/agents/arms` reads them yet, so no number moves.
+- v2 only (v1 unchanged): the must-post budget line reads `最多 N 个动作（含这条帖子），其余做几个按你的性格。`
+  (no-post and ceiling rhythms keep `…不想做就选 nothing。`); one leading `@` on a
+  follow/dm username is stripped; DM partners come first in the <= 20 contacts line;
+  liked comments get their own wording; `p...`/`c...` handles are resolved before the
+  guardrail (`unknown_handle`, raw ids still accepted).
+- `swil-agent prompt-ab` compares v1 and v2 offline on live, read-only contexts
+  (nothing executed, posted or filed, so it is exempt from `SWIL_REQUIRE_NON_PROD`).
+  Rhythm is assigned per arm (sorted usernames alternate must-post / no-post). Each arm
+  gets PASS, FAIL or UNMEASURED; the report carries `allArmsPass` (act only; needs every roster arm paired and PASS, so a partial
+  `--accounts` run is never green), `unpairedArms`, `skippedAccounts` and, per arm and version,
+  `backendUnavailable` (outages leave the JSON-valid and obedience denominators).
+  Reports go to `agent/bench/results/prompt-ab/<stamp>-<phase>.json`.
+
 ### 2026-10-16 — operator residue parked for Era 3 (before round 1)
 
 The config no CLI flag skips (2026-10-15 entry below) is moved off the operator's

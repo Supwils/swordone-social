@@ -17,8 +17,9 @@ from pathlib import Path
 from typing import Any, Final, Protocol
 
 from swil_agent.atomic_write import atomic_write
-from swil_agent.llm.runner import CompletionRequest
-from swil_agent.models import CooldownDecision, Persona
+from swil_agent.models import CooldownDecision
+from swil_agent.prompts.v1.dream import DREAM_INSTRUCTION as DREAM_INSTRUCTION
+from swil_agent.prompts.v1.dream import build_dream_prompt as build_dream_prompt
 
 # ── cooldown ────────────────────────────────────────────────────────────────
 
@@ -170,31 +171,6 @@ def group_memory_digest(notifications: list[dict[str, Any]]) -> str:
             parts.append("关注了你")
         lines.append(f"- @{user}（{data['name']}）：" + " / ".join(parts))
     return "\n".join(lines)
-
-
-# ── the dream prompt ────────────────────────────────────────────────────────
-
-DREAM_INSTRUCTION: Final = (
-    "你刚过完一段时间。根据下面的近期记忆，写出你现在的「最近」：最多 5 条，"
-    "每条一句话（不超过 60 字），可以是最近在意的事、心情、对某个人的看法。"
-    "旧的不重要了就换掉。"
-    '只输出 JSON：{"recent": ["…", "…"]}。不要改写你的人设，不要写方法论。'
-)
-
-_MEMORY_HEADING: Final = "# 近期记忆"
-_GROUP_HEADING: Final = "# 最近和你有过互动的人"
-_EMPTY: Final = "（暂无）"
-
-
-def build_dream_prompt(
-    persona: Persona, *, memory_tail: str, group_memory: str
-) -> CompletionRequest:
-    """System = the persona prompt (card + current 最近); user = the instruction,
-    the memory tail and, when there is one, the group-interaction digest."""
-    user = f"{DREAM_INSTRUCTION}\n\n{_MEMORY_HEADING}\n\n{memory_tail.strip() or _EMPTY}"
-    if group_memory:
-        user += f"\n\n{_GROUP_HEADING}\n\n{group_memory}"
-    return CompletionRequest(system=persona.prompt, user=user, model=persona.model)
 
 
 # ── parsing the reply ───────────────────────────────────────────────────────

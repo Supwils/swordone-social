@@ -344,7 +344,7 @@ echo "$now_epoch" > "$STAMP"
 log "round start — ${#ACCOUNTS[@]} accounts, ${PARALLEL}-way, timeout ${ACCOUNT_TIMEOUT}s/account"
 
 # Housekeeping BEFORE the round, not after: it then runs even when the previous
-# round died, and it prunes before this round adds another ~35 MB. Keeping 2
+# round died, and it prunes before this round adds another ~6-55 MB (estimate). Keeping 2
 # rounds means the peak is 2 and `--resume` always has something to resume.
 # `|| true` on purpose -- a failure to tidy must never be why a round does not
 # happen. CHECKPOINT_KEEP=0 disables.

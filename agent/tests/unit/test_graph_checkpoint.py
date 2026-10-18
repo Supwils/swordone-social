@@ -33,11 +33,14 @@ from swil_agent.models import (
     Action,
     ActionResult,
     ActOutcome,
+    ActSources,
     CooldownDecision,
+    HandleMap,
     Persona,
     Plan,
     RhythmDecision,
     RhythmPolicy,
+    ThreadSource,
     VetoedAction,
 )
 
@@ -69,6 +72,7 @@ def _full_state(tmp_path: Path) -> CycleState:
         "rhythm": RhythmDecision(
             policy=RhythmPolicy.NO_POST, prefer_non_post="yes", guidance="今天少发帖"
         ),
+        "handles": HandleMap(posts={"p1": "a" * 24}, comments={"c1": "b" * 24}),
         "actions": [Action(kind="like", text=None, post_id="a" * 24)],
         "vetoed": [VetoedAction(action=Action(kind="comment", text="no"), reason="rhythm")],
         "results": [
@@ -221,6 +225,9 @@ def test_the_derived_registration_covers_every_model_reachable_from_cycle_state(
         RhythmDecision,
         ActOutcome,
         RhythmPolicy,
+        ActSources,
+        ThreadSource,
+        HandleMap,
     }
     assert expected == REGISTERED_TYPES
 

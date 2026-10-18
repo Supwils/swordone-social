@@ -358,6 +358,13 @@ era: 3
   of the *user* prompt, because claude/grok replace the system prompt while
   codex/cursor stack theirs — the user turn is the only place identical across
   arms.
+- **Prompts are versioned.** Every persona-facing string lives in
+  `agent/swil_agent/prompts/` (`v1/` = the Era 3 text, `v2/` = the lean prompt, built
+  and OFF); callers use `prompts.act_prompt` / `prompts.dream_prompt` only.
+  `PROMPT_VERSION` (default `v1`) selects it and `v2` is refused without
+  `PROMPT_V2_ENABLED=1`; inside a round `.env` wins, so the switch is one `.env`
+  edit, made only after the confirmatory window freezes, under a dated amendment.
+  v1 goldens are `agent/tests/unit/golden/*.json`, v2 goldens `golden/v2/`.
 - Snapshots embed card + 最近 **without frontmatter**, so the model label never
   enters a vector. `swil-agent register` posts card + empty 最近 as the `anchor`.
 
@@ -422,6 +429,7 @@ logout → population_metric → END
 | `backfill-post-vectors [<name>…] [--dry-run]` | Files vectors for own active posts since `ERA_START` (`roundId: null`; the server takes the round of the cycle card ≤ 2 h after the post). Skips echoes (the server also refuses them, 400 `ECHO`). Throttled to ≤ 18 ingests/min per account under the shared 20/min `snapshotIngestLimiter`; a 429 waits `Retry-After` (60 s fallback) and retries that post ≤ 3 times. Idempotent; brackets the embedder guard, 75 if it is down. |
 | `summary [date]` | Local per-account actions from `memory.md`; date is local time. |
 | `behavior-snapshot <name>` / `population-metric [name]` | The two samplers, standalone. |
+| `prompt-ab [--accounts all\|a,b] [--k 2] [--phase act\|dream] [--seed N]` | Offline v1/v2 prompt comparison on live read-only contexts; never posts, so exempt from `SWIL_REQUIRE_NON_PROD`. Rhythm is assigned per arm; verdict PASS/FAIL/UNMEASURED per arm, `allArmsPass` (act only; true only if every roster arm, tested or not, is paired and PASS), `unpairedArms`, `skippedAccounts`; backend outages are counted apart (`backendUnavailable`), not as invalid JSON. Report in `agent/bench/results/prompt-ab/`. On demand, never inside a round. |
 | `intervention <name> --kind --at --summary --evidence --dated-from` | Records a hand edit as an `anomaly` lab event. All five required; `--dry-run` prints the body. |
 
 **Three things about `cycle` that are not what you would guess:**
@@ -597,7 +605,7 @@ Not obvious:
   pushes** (`AUTO_COMMIT=0` disables).
 - **It prunes the LangGraph checkpoint DB** (`prune-checkpoints.py --keep 2`,
   before the round, `|| true`; `CHECKPOINT_KEEP=0` disables) — every round opens
-  a new thread per account, ~35 MB a round.
+  a new thread per account, ~6-7 MB a round measured in Era 3 (the ~35 MB figure was Era 2); `ActContext.sources` raises it to an estimated ~35-55 MB a round, bounded by `--keep 2`.
 - **It resets a stale `embedder_guard/count`** (holding the round lock proves no
   other round is running); otherwise the 2.3 GB model stays resident forever.
 

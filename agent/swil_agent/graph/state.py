@@ -9,6 +9,7 @@ from swil_agent.models import (
     Action,
     ActionResult,
     ActOutcome,
+    HandleMap,
     Persona,
     Plan,
     RhythmDecision,
@@ -100,6 +101,13 @@ class CycleState(TypedDict, total=False):
       * `missing_post_vector` -- `execute` produces True when a post landed
         but its vector was not filed (S2 §4); `logout` copies it onto the
         cycle_run card. Unset is False, like `missing_behavior_snapshot`.
+      * `prompt_version` / `act_prompt_chars` -- `plan` produces (the version
+        the act prompt was rendered in, and its size per part), `logout`
+        copies both onto the cycle_run card (spec 2026-10-17 A3).
+      * `handles` -- `plan` produces (v2's handle map; absent under v1),
+        `guardrail` consumes.
+      * `dream_prompt_chars` -- `dream` produces (the dream prompt's size),
+        `logout` copies it onto the card.
       * `round_id` -- `run_cycle` seeds it (the id the thread is keyed on;
         S2 §3, `round_id.py`). Every node may read it; Task 2 stamps it on
         lab events. It is STATE and not a `CycleDeps` field so a resumed
@@ -126,6 +134,9 @@ class CycleState(TypedDict, total=False):
     context: ActContext | None
     plan: Plan | None
     rhythm: RhythmDecision | None
+    prompt_version: str
+    act_prompt_chars: dict[str, int]
+    handles: HandleMap | None
     actions: list[Action]
     solo_nothing: bool
     vetoed: list[VetoedAction]
@@ -139,6 +150,7 @@ class CycleState(TypedDict, total=False):
     # dream
     proceeded: bool
     dream_reason: str
+    dream_prompt_chars: dict[str, int]
     recent: list[str] | None
     written: bool
     snapshot_ok: bool

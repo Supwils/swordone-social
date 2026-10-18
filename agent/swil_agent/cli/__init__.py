@@ -12,6 +12,7 @@ is laid out by responsibility (S3 §6):
   * `run.py`      -- `act`, `dream`, `cycle`;
   * `analysis.py` -- the samplers, the backfill and `intervention`;
   * `ops.py`      -- `version`, `doctor`, `register`, `measure-status`;
+  * `prompt_ab.py` -- `prompt-ab`, the offline v1/v2 prompt comparison;
   * `bench.py`    -- the `bench` group (`run`, `all`), bound as `bench_app`.
 
 Registration happens here and nowhere else, in the order `--help` lists the
@@ -25,6 +26,7 @@ from __future__ import annotations
 
 from swil_agent.cli import analysis as _analysis
 from swil_agent.cli import ops as _ops
+from swil_agent.cli import prompt_ab as _prompt_ab
 from swil_agent.cli.app import app
 from swil_agent.cli.bench import bench_app
 from swil_agent.cli.logs import ACT_LOG_FILENAME, DREAM_LOG_FILENAME
@@ -44,4 +46,5 @@ app.command()(_ops.version)
 app.command()(_ops.doctor)
 app.command()(_ops.register)
 app.command("measure-status")(_ops.measure_status)
+app.command("prompt-ab")(_prompt_ab.prompt_ab)
 app.add_typer(bench_app, name="bench")

@@ -224,3 +224,61 @@ def test_every_test_starts_without_a_settings_env_var() -> None:
     import os
 
     assert [n for n in (f.upper() for f in Settings.model_fields) if n in os.environ] == []
+
+
+# ── prompt version (spec 2026-10-17 A2) ──────────────────────────────────────
+
+
+def _prompt_settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
+    for key in ("PROMPT_VERSION", "PROMPT_V2_ENABLED"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    return Settings()
+
+
+def test_prompt_version_defaults_to_v1(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _prompt_settings(monkeypatch)
+    assert settings.prompt_version == "v1"
+    assert settings.prompt_v2_enabled is False
+
+
+def test_v2_without_the_enable_flag_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValidationError, match="PROMPT_V2_ENABLED"):
+        _prompt_settings(monkeypatch, PROMPT_VERSION="v2")
+
+
+def test_the_enable_flag_alone_changes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _prompt_settings(monkeypatch, PROMPT_V2_ENABLED="1").prompt_version == "v1"
+
+
+@pytest.mark.parametrize("flag", ["1", "true", "YES", " on "])
+def test_both_keys_switch_to_v2(monkeypatch: pytest.MonkeyPatch, flag: str) -> None:
+    settings = _prompt_settings(monkeypatch, PROMPT_VERSION=" V2 ", PROMPT_V2_ENABLED=flag)
+    assert settings.prompt_version == "v2"
+    assert settings.prompt_v2_enabled is True
+
+
+@pytest.mark.parametrize("flag", ["", "0", "off", "maybe"])
+def test_only_an_on_word_enables_v2(monkeypatch: pytest.MonkeyPatch, flag: str) -> None:
+    with pytest.raises(ValidationError):
+        _prompt_settings(monkeypatch, PROMPT_VERSION="v2", PROMPT_V2_ENABLED=flag)
+
+
+def test_a_blank_prompt_version_reads_as_v1(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _prompt_settings(monkeypatch, PROMPT_VERSION="").prompt_version == "v1"
+
+
+def test_an_unknown_prompt_version_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValidationError):
+        _prompt_settings(monkeypatch, PROMPT_VERSION="v3")
+
+
+def test_the_dot_env_file_can_switch_both_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for key in ("PROMPT_VERSION", "PROMPT_V2_ENABLED"):
+        monkeypatch.delenv(key, raising=False)
+    env = tmp_path / ".env"
+    env.write_text("PROMPT_VERSION=v2\nPROMPT_V2_ENABLED=1\n", encoding="utf-8")
+    assert load_settings(env).prompt_version == "v2"
