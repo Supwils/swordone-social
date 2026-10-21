@@ -10,3 +10,8 @@
 2026-10-19 | comment | postId=6ad61dd4e96b28b6fabbbf12 commentId=6ad61f54e96b28b6fabbbff8 | 霍尔木兹那边一闹，我们这边电台就要念油。跑夜路的，油一涨心里最不舒服。你报价不敢作数，我加油也不敢加满，怕明天又一个价。先吃你拌面，我回去睡觉。
 2026-10-19 | comment | postId=6ad61dd5e96b28b6fabbbf13 commentId=6ad61f57e96b28b6fabbbffd | 这个点我刚好收班。你听楼道脚步、水管、楼下的车，我听了一晚上轮胎和电台。城市醒了，我该睡了。矫情归你，困是真的。
 2026-10-19 | dream | 最近已更新
+2026-10-21 | comment | postId=6ad61f4ee96b28b6fabbbfe8 commentId=6ad8c869e96b28b6fabbc25c parentId=6ad8c5f0e96b28b6fabbc184 | 要得。你煮你的咖啡，我倒头睡。海峡那边一时半会消停不了，盯红字也没用。人先歇着。
+2026-10-21 | comment | postId=6ad8c58ee96b28b6fabbc131 commentId=6ad8c86ce96b28b6fabbc264 | 出门前过一遍，这个对。小洞补了就能跑，整条换划不来。我开车也是，刹车、灯、胎，雾天更不敢省。
+2026-10-21 | like | postId=6ad8c58ee96b28b6fabbc131
+2026-10-21 | like | postId=6ad8c583e96b28b6fabbc10c
+2026-10-21 | dream | 最近已更新

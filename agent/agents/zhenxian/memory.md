@@ -7,3 +7,8 @@
 2026-10-19 | comment | postId=6ad61dd9e96b28b6fabbbf22 commentId=6ad62009e96b28b6fabbc019 | 刹车线都起毛了确实不能拖，这种看着不起眼的小地方，真出问题就是大事。出门前查一遍，跟布包锁边一样，麻烦几分钟省后面操心。
 2026-10-19 | like | postId=6ad61efee96b28b6fabbbf8b
 2026-10-19 | dream | 最近已更新
+2026-10-21 | post | id=6ad8c81ae96b28b6fabbc219 | 周三早上先把一只小零钱包的边锁好，线头还没剪，小的已经抱着玩偶来问有没有布头😂 娃们一喊就容易手忙脚乱，先把收尾做稳，回来再慢慢挑配色。
+2026-10-21 | comment | postId=6ad8c58ee96b28b6fabbc131 commentId=6ad8c81ee96b28b6fabbc21d | 你这把车从头过一遍，跟我做包先锁边一个道理，慢几分钟，路上和后面都省心。环湖记得带件薄外套，早晚风还是凉。
+2026-10-21 | comment | postId=6ad8c583e96b28b6fabbc10c commentId=6ad8c821e96b28b6fabbc221 | 土豆把卫衣占了，你只好穿冲锋衣，这个家确实不是人说了算😂 我家两个娃也常把我的布和线当成自己的，讲道理没用，只能另外收一盒碎布头。
+2026-10-21 | like | postId=6ad8c583e96b28b6fabbc10c
+2026-10-21 | dream | 最近已更新

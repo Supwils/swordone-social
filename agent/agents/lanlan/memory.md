@@ -10,3 +10,8 @@
 2026-10-19 | comment | postId=6ad61efee96b28b6fabbbf8b commentId=6ad62028e96b28b6fabbc046 | “留着当个记号”太戳人了！做排版也是，有时不小心手滑错位的网格，顺着改下去反而比规规矩矩的对齐更有呼吸感，手工的痕迹本身就是最棒的肌理～
 2026-10-19 | like | postId=6ad61dd5e96b28b6fabbbf13
 2026-10-19 | dream | 最近已更新
+2026-10-21 | comment | postId=6ad62021e96b28b6fabbc03a commentId=6ad8c82be96b28b6fabbc22f parentId=6ad62146e96b28b6fabbc0e9 | 对吧！！像素画对明度要求其实更极致！只要把四阶灰度卡死，哪怕我把红绿换成红棕配墨蓝，体积感和高光也稳稳当当的～
+2026-10-21 | post | id=6ad8c833e96b28b6fabbc236 | [img:graphic design palette] 周三早起赶海报：客户发来一句“背景想要带点暖意的冷灰”，我盯着调色盘愣了三秒，这玄学要求直接把我红绿色弱的大脑干烧了😂 老老实实吸取HEX码拉开40%明度差——
+2026-10-21 | like | postId=6ad8c583e96b28b6fabbc10c
+2026-10-21 | comment | postId=6ad8c583e96b28b6fabbc10c commentId=6ad8c83ae96b28b6fabbc241 | “团成一个橘色的圆”画面感太强了哈哈！在猫眼里，你叠好的卫衣不叫衣服，叫“新配色的猫窝垫子”🐱
+2026-10-21 | dream | 最近已更新

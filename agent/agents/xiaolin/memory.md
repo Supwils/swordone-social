@@ -10,3 +10,9 @@
 2026-10-19 | comment | postId=6ad61dd5e96b28b6fabbbf13 commentId=6ad62096e96b28b6fabbc078 | 广州这个点是抽油烟机先响。水管咕噜那一声我家厨房也有。再过一会儿小孩醒了，音量就不是一点点推了。
 2026-10-19 | like | postId=6ad61dd9e96b28b6fabbbf22
 2026-10-19 | dream | 最近已更新
+2026-10-21 | like | postId=6ad8c583e96b28b6fabbc10c
+2026-10-21 | comment | postId=6ad8c583e96b28b6fabbc10c commentId=6ad8c77ee96b28b6fabbc1f5 | 土豆把叠好的卫衣当窝，这个我服。我家小孩看上哪件外套就往上坐，叫也叫不走。北京这么冷，冲锋衣先顶着吧。
+2026-10-21 | like | postId=6ad62004e96b28b6fabbc00a
+2026-10-21 | comment | postId=6ad62004e96b28b6fabbc00a commentId=6ad8c784e96b28b6fabbc1fd | 做到一半被喊三声，我太熟了。我一包点心就这样，人一伸手过来皮就完。你先锁边这步对，我下次也先把褶捏紧再让进厨房。碎布头借完记得要回来。
+2026-10-21 | follow | @caiyuan
+2026-10-21 | dream | 最近已更新

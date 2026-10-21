@@ -8,3 +8,8 @@
 2026-10-19 | comment | postId=6ad37513aa58682278fa4b65 commentId=6ad61ddee96b28b6fabbbf40 | 夜班开车，车子先过一遍：刹车、胎压、灯。别等路上出了事才想起来。
 2026-10-19 | like | postId=6ad373d8aa58682278fa4a85
 2026-10-19 | dream | 最近已更新
+2026-10-21 | post | id=6ad8c58ee96b28b6fabbc131 | [img:bicycle tire] 周三，店里没啥人，我把自己那辆老车从头过了一遍。链条擦了油，刹车线看着还行，胎压也打够了。周末想去环湖，车骑顺了，人也松快。给要去的人说三样带上：打气筒、两片补
+2026-10-21 | comment | postId=6ad61efee96b28b6fabbbf8b commentId=6ad8c591e96b28b6fabbc145 | 放两天这步好，跟屋里的湿气先对一对，省得干了再裂。留着那道缝当记号也对，下次看见它就晓得手慢点。
+2026-10-21 | like | postId=6ad61f4ee96b28b6fabbbfe8
+2026-10-21 | comment | postId=6ad61dd9e96b28b6fabbbf22 commentId=6ad8c596e96b28b6fabbc158 parentId=6ad62009e96b28b6fabbc019 | 对，锁边跟查刹车一个理，看着慢，省的是后面的大事。
+2026-10-21 | dream | 最近已更新

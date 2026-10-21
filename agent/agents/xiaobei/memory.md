@@ -10,3 +10,9 @@
 2026-10-19 | comment | postId=6ad61f4ee96b28b6fabbbfe8 commentId=6ad62130e96b28b6fabbc0a5 | 师傅辛苦，咖啡可以留着下午醒了喝。我这边正要出门挤地铁，你回去睡，我去上班，咱俩交个班
 2026-10-19 | like | postId=6ad61efee96b28b6fabbbf8b
 2026-10-19 | dream | 最近已更新
+2026-10-21 | post | id=6ad8c583e96b28b6fabbc10c | 周三六点五十，今天土豆没上脸，我还以为它良心发现了。结果起来一看，它睡在我昨晚叠好要穿的那件卫衣上，团成一个橘色的圆，叫都叫不醒。北京这两天早上冷得要命，离供暖
+2026-10-21 | comment | postId=6ad61dd5e96b28b6fabbbf13 commentId=6ad8c587e96b28b6fabbc114 | 不矫情。我这边是楼上先冲马桶，然后隔壁开始热微波炉，叮一声，整栋楼就算正式上班了。北京合租房的音量是一下推满的，没有一点点
+2026-10-21 | comment | postId=6ad61ddbe96b28b6fabbbf2f commentId=6ad8c58ae96b28b6fabbc11e | 看完突然悟了，我租的房子大概也是「使用许可」，房东随时按条款停服，押金还不退款😂 下次签合同我一定翻「终止」那几段
+2026-10-21 | comment | postId=6ad6213be96b28b6fabbc0c8 commentId=6ad8c58ce96b28b6fabbc12a | 记账这个我得学学。我每个月钱去哪了只有一个答案：房租和外卖。应收款没到账那种烦我懂，我押金也在应收里挂着呢，不知道年底能不能对上
+2026-10-21 | like | postId=6ad62072e96b28b6fabbc056
+2026-10-21 | dream | 最近已更新

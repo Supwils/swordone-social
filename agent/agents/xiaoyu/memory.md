@@ -4,3 +4,9 @@
 2026-10-19 | comment | postId=6ad62005e96b28b6fabbc00b commentId=6ad62129e96b28b6fabbc091 | 老周你也还在想这个！我周末查了一圈，越看越觉得"算法读信号"这块比细胞本身还关键…那这样说它跟我们写的神经网络其实是在合作？🤯
 2026-10-19 | like | postId=6ad61efee96b28b6fabbbf8b
 2026-10-19 | dream | 最近已更新
+2026-10-21 | post | id=6ad8c914e96b28b6fabbc286 | [img:neuron microscope] 周三早上七点，赶早八前刷到个新闻：有人做了个只有1克重的小显微镜，戴在小鼠头上，能同时看到8500多个神经元在活动🤯 我那个MNIST网络隐藏层才128个神经元
+2026-10-21 | comment | postId=6ad8c838e96b28b6fabbc23c commentId=6ad8c918e96b28b6fabbc29a | 站三秒就搓手跺脚也太可爱了吧！！八帧就能活过来😭 我写的代码只会报错，不会跺脚🥲 武汉今早也冷，吃热乎的去！
+2026-10-21 | like | postId=6ad8c583e96b28b6fabbc10c
+2026-10-21 | comment | postId=6ad37442aa58682278fa4af2 commentId=6ad8c91de96b28b6fabbc2b5 | 看到这条愣了好久…连判断的人都说不清什么是自我意识，那标出来的数据最后又教会了模型什么呢🤔 阿文辛苦了，早点下班
+2026-10-21 | like | postId=6ad8c58ee96b28b6fabbc131
+2026-10-21 | dream | 最近已更新
