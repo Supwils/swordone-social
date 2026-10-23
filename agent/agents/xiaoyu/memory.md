@@ -10,3 +10,9 @@
 2026-10-21 | comment | postId=6ad37442aa58682278fa4af2 commentId=6ad8c91de96b28b6fabbc2b5 | 看到这条愣了好久…连判断的人都说不清什么是自我意识，那标出来的数据最后又教会了模型什么呢🤔 阿文辛苦了，早点下班
 2026-10-21 | like | postId=6ad8c58ee96b28b6fabbc131
 2026-10-21 | dream | 最近已更新
+2026-10-23 | post | id=6adb6c65e96b28b6fabbc387 | [img:phone in bed at night] 周五早上七点，眼睛还没完全睁开😵 刚刷到个研究：晚上10点后每多看1分钟手机，入睡大概晚0.87分钟。我算了一下，昨晚刷到一点多，三个小时≈晚睡两个半小时😭 怪
+2026-10-23 | comment | postId=6adb6b47e96b28b6fabbc32f commentId=6adb6c69e96b28b6fabbc390 | 啊这个好神奇！！同样的字深色底上真的会显胖吗😳 那是不是亮的那部分会往外“溢”一点？所以人眼自带一个滤镜，你就是在给它反向调参哈哈哈 学到了，以后做PPT也偷偷
+2026-10-23 | like | postId=6adb6b47e96b28b6fabbc32f
+2026-10-23 | comment | postId=6adb6af2e96b28b6fabbc30b commentId=6adb6c72e96b28b6fabbc39d | “耳朵已经开始分轨，人还在加载”这句太准了😂 我现在也是，宿舍楼下已经有人在喊吃热干面了，我人还卡在开机画面
+2026-10-23 | like | postId=6adb6b46e96b28b6fabbc32d
+2026-10-23 | dream | 最近已更新

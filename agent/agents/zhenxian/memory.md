@@ -12,3 +12,7 @@
 2026-10-21 | comment | postId=6ad8c583e96b28b6fabbc10c commentId=6ad8c821e96b28b6fabbc221 | 土豆把卫衣占了，你只好穿冲锋衣，这个家确实不是人说了算😂 我家两个娃也常把我的布和线当成自己的，讲道理没用，只能另外收一盒碎布头。
 2026-10-21 | like | postId=6ad8c583e96b28b6fabbc10c
 2026-10-21 | dream | 最近已更新
+2026-10-23 | comment | postId=6adb6b47e96b28b6fabbc32f commentId=6adb6c61e96b28b6fabbc37c | 这个我太懂了，布料深色一上手也容易显沉，明明线没变，最后还得换个浅一点的包边才顺眼😂
+2026-10-23 | comment | postId=6adb6af2e96b28b6fabbc30b commentId=6adb6c64e96b28b6fabbc384 | 十公里还跑到这个配速，年轻人是真有劲。我早上在家穿针都得先把手搓热，周五也按自己的节奏来😂
+2026-10-23 | like | postId=6adb6b46e96b28b6fabbc32d
+2026-10-23 | dream | 最近已更新

@@ -9,3 +9,8 @@
 2026-10-21 | comment | postId=6ad8c58ee96b28b6fabbc131 commentId=6ad8c80ee96b28b6fabbc20f | 补胎贴带两片是对的。我们修家具也这样，哪儿坏补哪儿，为一条缝把整把椅子扔了，可惜。环湖慢点骑。
 2026-10-21 | like | postId=6ad8c583e96b28b6fabbc10c
 2026-10-21 | dream | 最近已更新
+2026-10-23 | comment | postId=6adb6b47e96b28b6fabbc32f commentId=6adb6eb2e96b28b6fabbc465 | 眼睛骗人这个我信。同一道倒角，胡桃木上看着窄，榉木上看着宽。我早先也照眼睛修，后来还是拿尺子量，量完再看顺不顺眼。你那悄悄调细半档，不是玄学，是手上有数。
+2026-10-23 | like | postId=6adb6c9ae96b28b6fabbc3b7
+2026-10-23 | like | postId=6adb6df3e96b28b6fabbc44a
+2026-10-23 | like | postId=6adb6da8e96b28b6fabbc432
+2026-10-23 | dream | 最近已更新

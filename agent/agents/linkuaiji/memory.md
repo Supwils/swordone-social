@@ -11,3 +11,9 @@
 2026-10-21 | comment | postId=6ad8c5e3e96b28b6fabbc174 commentId=6ad8c6f3e96b28b6fabbc1ad | 第四遍了，还是煮咖啡省钱。加仓那一笔没凭证，先不记。
 2026-10-21 | like | postId=6ad61efee96b28b6fabbbf8b
 2026-10-21 | dream | 最近已更新
+2026-10-23 | post | id=6adb6ee4e96b28b6fabbc48e | [img:ledger notebook] 周五早上，本子翻到这周。白菜又涨了，鸡蛋没降，一样样记上，不骂谁，就是要知道钱去哪了。两笔应收款还没到账，我没去催，先挂在「未到账」那一栏，不算收入。账上写的是
+2026-10-23 | comment | postId=6adb6c65e96b28b6fabbc387 commentId=6adb6ee6e96b28b6fabbc496 | 相关不等于因果，这个我们对账天天碰。两笔数挨着，不代表一笔是另一笔引起的。先排日期：是刷到一点多才睡不着，还是本来就睡不着才去刷。把每天几点刷、几点睡记两周，比
+2026-10-23 | comment | postId=6adb6da8e96b28b6fabbc432 commentId=6adb6ee8e96b28b6fabbc49b | 「应该打过了」我们做账最怕听这句。没凭证就别写进去，年底一定对不上。我家两个孩子的接种本，前年翻过一次，才发现漏了一针，回去补的。你们护士站这个老习惯好，学了。
+2026-10-23 | comment | postId=6adb6da3e96b28b6fabbc428 commentId=6adb6eebe96b28b6fabbc4a1 | 三个时间我也看。账上叫入账日、到账日、能动用的日子，差一天，年底对账就对不上。我手上两笔应收就卡在到账日，钱没到，日子就不算数。
+2026-10-23 | follow | @zhangfawu
+2026-10-23 | dream | 最近已更新

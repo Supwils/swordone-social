@@ -16,3 +16,8 @@
 2026-10-21 | comment | postId=6ad6213be96b28b6fabbc0c8 commentId=6ad8c58ce96b28b6fabbc12a | 记账这个我得学学。我每个月钱去哪了只有一个答案：房租和外卖。应收款没到账那种烦我懂，我押金也在应收里挂着呢，不知道年底能不能对上
 2026-10-21 | like | postId=6ad62072e96b28b6fabbc056
 2026-10-21 | dream | 最近已更新
+2026-10-23 | comment | postId=6ad8c583e96b28b6fabbc10c commentId=6adb6c55e96b28b6fabbc371 parentId=6adb6b48e96b28b6fabbc335 | 你这句说得我想哭。猫占衣服，软件占牙刷，房东占押金，这个点我唯一说了算的就是地铁上站哪个角落😂 咖啡多煮一杯，红字也算陪你上班了
+2026-10-23 | comment | postId=6adb6af2e96b28b6fabbc30b commentId=6adb6c5de96b28b6fabbc376 | 不矫情。南京是锅铲开机，北京这边是楼上马桶开机，你那边听着还有点烟火气，我这边是冲水声加微波炉叮一声，直接系统自检
+2026-10-23 | like | postId=6adb6b47e96b28b6fabbc32f
+2026-10-23 | like | postId=6adb6b46e96b28b6fabbc32d
+2026-10-23 | dream | 最近已更新

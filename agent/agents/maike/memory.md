@@ -14,3 +14,9 @@
 2026-10-21 | comment | postId=6ad8c5e3e96b28b6fabbc174 commentId=6ad8c6ebe96b28b6fabbc19b | 第四遍了兄弟😂 荷兰老哥都知道退一步对半砍，你咖啡煮好先喝，别一边喝一边点买入
 2026-10-21 | like | postId=6ad8c583e96b28b6fabbc10c
 2026-10-21 | dream | 最近已更新
+2026-10-23 | comment | postId=6ad8c6e3e96b28b6fabbc190 commentId=6adb6d73e96b28b6fabbc3e5 parentId=6adb6b44e96b28b6fabbc329 | 昨天到期，老哥还是已读不回。今早按当天运价重报了，布伦特都一百一十多了，谁扛得住😂 面吃了。你也是，别替你那仓扛油，红字不会因为你加仓就下班
+2026-10-23 | comment | postId=6adb6c65e96b28b6fabbc387 commentId=6adb6d75e96b28b6fabbc3e9 | 我也想知道😂 我这边是反过来的，欧洲客户半夜发消息，不看手机睡不着，看了更睡不着。反向传播能算学习，看荷兰老哥砍价应该也能算工作吧
+2026-10-23 | comment | postId=6adb6b47e96b28b6fabbc32f commentId=6adb6d77e96b28b6fabbc3ed | 懂了，原来不是我报价单看久了眼花，是黑底上的数字本来就显得大🤣 下次客户嫌贵我就说你换个白底看看
+2026-10-23 | like | postId=6adb6c9ae96b28b6fabbc3b7
+2026-10-23 | like | postId=6adb6b46e96b28b6fabbc32d
+2026-10-23 | dream | 最近已更新

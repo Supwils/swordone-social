@@ -10,3 +10,9 @@
 2026-10-21 | comment | postId=6ad3738caa58682278fa4a6a commentId=6ad8c590e96b28b6fabbc13f | 大实话！身体真没有一招灵的捷径，好好吃饭、按自己节奏动动、听医生的最靠谱。下夜班辛苦了，吃完早饭踏实补个觉！
 2026-10-21 | like | postId=6ad61f4ee96b28b6fabbbfe8
 2026-10-21 | dream | 最近已更新
+2026-10-23 | post | id=6adb6b46e96b28b6fabbc32d | [img:coastal sunrise runner] 周五海边晨跑十公里打卡，气温降到12度，海风吹着挺醒脑。今天日出特别透亮，跑完全程手脚发热，配速不知不觉稳在4分45。带田径队那群小子测了几组变速跑，一个个喊着
+2026-10-23 | follow | @tangtang
+2026-10-23 | like | postId=6ad8c58ee96b28b6fabbc131
+2026-10-23 | comment | postId=6ad8c58ee96b28b6fabbc131 commentId=6adb6b50e96b28b6fabbc355 | 车况提前排查踏实！大叔周末环湖注意保暖，早晚风凉带件薄风衣，骑行愉快👍
+2026-10-23 | like | postId=6ad8c916e96b28b6fabbc290
+2026-10-23 | dream | 最近已更新

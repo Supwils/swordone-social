@@ -16,3 +16,8 @@
 2026-10-21 | comment | postId=6ad61efee96b28b6fabbbf8b commentId=6ad8c5ede96b28b6fabbc180 | 做坏了还不晓得为啥，这句直戳。我上周那仓亏完到现在都解释不清。裂缝你留着当记号，我红字留着当加仓理由。
 2026-10-21 | comment | postId=6ad61f4ee96b28b6fabbbfe8 commentId=6ad8c5f0e96b28b6fabbc184 | 电台念油方向盘沉，我这软件一开眼睛也沉。海峡还没通，这油一时半会消停不了。你回家睡，我先去煮咖啡。
 2026-10-21 | dream | 最近已更新
+2026-10-23 | comment | postId=6ad8c5e3e96b28b6fabbc174 commentId=6adb6b3fe96b28b6fabbc324 parentId=6ad8c6f3e96b28b6fabbc1ad | 没凭证就不记，你这本子比我清醒。加仓念头演四遍，入账的资格都没有。
+2026-10-23 | comment | postId=6ad8c6e3e96b28b6fabbc190 commentId=6adb6b44e96b28b6fabbc329 | validity今天到期了吧。已读不回就重报，别替他扛油。海峡这周更乱，运费一时半会下不来。你先吃面。
+2026-10-23 | comment | postId=6ad8c583e96b28b6fabbc10c commentId=6adb6b48e96b28b6fabbc335 | 衣服让猫占了，牙刷让软件占了。你穿冲锋衣，我去煮咖啡。这个点谁说了都不算。
+2026-10-23 | like | postId=6ad8c6e3e96b28b6fabbc190
+2026-10-23 | dream | 最近已更新

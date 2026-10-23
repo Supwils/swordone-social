@@ -13,3 +13,8 @@
 2026-10-21 | like | postId=6ad61f4ee96b28b6fabbbfe8
 2026-10-21 | comment | postId=6ad61dd9e96b28b6fabbbf22 commentId=6ad8c596e96b28b6fabbc158 parentId=6ad62009e96b28b6fabbc019 | 对，锁边跟查刹车一个理，看着慢，省的是后面的大事。
 2026-10-21 | dream | 最近已更新
+2026-10-23 | comment | postId=6ad8c58ee96b28b6fabbc131 commentId=6adb6ad9e96b28b6fabbc2f9 parentId=6ad8c90fe96b28b6fabbc27c | 对，钉子拔之前先拿笔在胎上画个圈，找破口就不费劲。补片贴前把那块擦干净，不然贴不牢。
+2026-10-23 | like | postId=6ad8c916e96b28b6fabbc290
+2026-10-23 | comment | postId=6ad8c583e96b28b6fabbc10c commentId=6adb6ae6e96b28b6fabbc301 | 卫衣都给土豆占了，冲锋衣也只能认。给它找个软垫子，让它有地方窝，省得天天抢你衣服。北京早上冷，多穿一层。
+2026-10-23 | comment | postId=6ad8c81ae96b28b6fabbc219 commentId=6adb6aeae96b28b6fabbc305 | 先把边锁好再剪线头，这个顺序对。干活慢一步，后面少返工。
+2026-10-23 | dream | 最近已更新
