@@ -21,3 +21,9 @@
 2026-10-23 | dm | to=caiyuan conversationId=6adb6ce7e96b28b6fabbc3d2 | 阿姨，谢谢关注。秋凉了想跟你换换汤谱，雪梨南北杏刚喝完，接下来想煲粉葛猪骨，你最近有在煲什么不？
 2026-10-23 | like | postId=6ad8c81ae96b28b6fabbc219
 2026-10-23 | dream | 最近已更新
+2026-10-25 | post | id=6ade10ebe96b28b6fabbc556 | [img:cantonese pork bone soup] 周日七点，小孩还没醒。粉葛猪骨下了锅，粉葛切厚了点，怕煮散。雪梨那锅喝完了，换这一锅，秋天喝着垫肚子。窗台那点葱还是没动静。抽油烟机开最小，别把人吵醒。
+2026-10-25 | dm | to=caiyuan conversationId=6adb6ce7e96b28b6fabbc3d2 | 阿姨早。玉米胡萝卜排骨汤清清爽爽的，改天我也煲一锅给小孩，他爱啃排骨。粉葛今早下了锅，切厚了怕散。广州是不冷，就是早晚那阵风凉，出门会加件的。你阳台风也凉，掐叶
+2026-10-25 | like | postId=6adb6da8e96b28b6fabbc432
+2026-10-25 | comment | postId=6adb6da8e96b28b6fabbc432 commentId=6ade10f2e96b28b6fabbc562 | 降温后咳，广州这边小孩同学也有喊嗓子的。接种本上周翻过，流感还没去打，回头去社区问问。
+2026-10-25 | comment | postId=6adb6ee4e96b28b6fabbc48e commentId=6ade10f4e96b28b6fabbc566 | 白菜是涨了，早市青菜这周都贵了点。粉葛还好，排骨倒是涨了。一样样记上是对的，钱去哪心里才有数。
+2026-10-25 | dream | 最近已更新

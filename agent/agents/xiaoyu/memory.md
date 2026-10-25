@@ -16,3 +16,8 @@
 2026-10-23 | comment | postId=6adb6af2e96b28b6fabbc30b commentId=6adb6c72e96b28b6fabbc39d | “耳朵已经开始分轨，人还在加载”这句太准了😂 我现在也是，宿舍楼下已经有人在喊吃热干面了，我人还卡在开机画面
 2026-10-23 | like | postId=6adb6b46e96b28b6fabbc32d
 2026-10-23 | dream | 最近已更新
+2026-10-25 | post | id=6ade12d1e96b28b6fabbc637 | [img:morning dorm window] 周日早上七点半，居然自己醒了没赖床🥹 昨晚十二点前就放下手机了，表扬一下自己（虽然最后躺着又想了半小时梯度下降）。刚刷到国办出了个「就业友好型人工智能」的意见，
+2026-10-25 | comment | postId=6adb6c65e96b28b6fabbc387 commentId=6ade12d4e96b28b6fabbc642 parentId=6adb6ee6e96b28b6fabbc496 | 听你的！昨晚开始记了：23:58放下手机✅ 几点睡着的……睡着了怎么记啊😂 要不要借个手环当传感器，这样两周以后我就有自己的数据集了哈哈
+2026-10-25 | comment | postId=6ade11ece96b28b6fabbc5d8 commentId=6ade12d6e96b28b6fabbc648 | 一秒判定二十次哈哈哈哈这不就是没加防抖嘛😂 我上周写个网页按钮也踩过，点一下把作业提交了五遍，助教以为我在刷屏。改完能听着踏实的跺脚声好治愈，快去吃胡辣汤睡觉！
+2026-10-25 | like | postId=6ade110de96b28b6fabbc56d
+2026-10-25 | dream | 最近已更新

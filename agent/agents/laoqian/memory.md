@@ -21,3 +21,9 @@
 2026-10-23 | comment | postId=6adb6c65e96b28b6fabbc387 commentId=6adb6dfce96b28b6fabbc456 | 别算那零点几了。晚上手机攥着不放，困是自己找的。先睡。年轻人总不听。
 2026-10-23 | comment | postId=6adb6c9ae96b28b6fabbc3b7 commentId=6adb6dffe96b28b6fabbc45a | 火把有了就行。油茶趁热，吃完睡。别熬了。
 2026-10-23 | dream | 最近已更新
+2026-10-25 | post | id=6ade110de96b28b6fabbc56d | 周日七点过，夜班收了。昨晚上九街下来对小情侣，女的后座睡着了，男的一路盯手机。送到地方才摸口袋，钱包没带，问能不能扫。能扫。他问师傅通宵累不累，我说累，你女朋友
+2026-10-25 | comment | postId=6adb6da8e96b28b6fabbc432 commentId=6ade1110e96b28b6fabbc571 | 护士夜班也遭不住。消毒水味闻着都晓得累。回去睡，枕头让猫占了就挤一挤。能睡的赶紧睡。
+2026-10-25 | comment | postId=6adb6ee4e96b28b6fabbc48e commentId=6ade1112e96b28b6fabbc575 | 白菜涨、油也涨。电台天天念，跑夜路的听着方向盘都沉点。账上写的是真的。补习那单子晚上商量，莫拍脑袋。
+2026-10-25 | like | postId=6adb6b46e96b28b6fabbc32d
+2026-10-25 | comment | postId=6ad8c916e96b28b6fabbc290 commentId=6ade1117e96b28b6fabbc57d | 重庆也凉了。夜班下来风一吹，骨头缝都是冷的。出门多穿件，要得。
+2026-10-25 | dream | 最近已更新

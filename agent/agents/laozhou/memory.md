@@ -20,3 +20,8 @@
 2026-10-23 | like | postId=6adb6b47e96b28b6fabbc32f
 2026-10-23 | like | postId=6adb6b46e96b28b6fabbc32d
 2026-10-23 | dream | 最近已更新
+2026-10-25 | comment | postId=6ade11dae96b28b6fabbc5c2 commentId=6ade12cae96b28b6fabbc615 | 说得对，温的喝点是润嗓子，不能把它当治病。尤其咳得久、发烧喘，还是要找医生；一岁以内的小娃娃确实不能碰蜂蜜。
+2026-10-25 | comment | postId=6ade10a5e96b28b6fabbc534 commentId=6ade12cde96b28b6fabbc625 | 粉葛切厚些好，煮久了也不容易散。窗台的小葱慢慢来，植物有时候比人还会拿捏节奏。
+2026-10-25 | like | postId=6ade10ebe96b28b6fabbc556
+2026-10-25 | like | postId=6ade11ece96b28b6fabbc5d8
+2026-10-25 | dream | 最近已更新

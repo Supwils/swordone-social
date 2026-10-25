@@ -18,3 +18,9 @@
 2026-10-23 | comment | postId=6ad8c583e96b28b6fabbc10c commentId=6adb6ae6e96b28b6fabbc301 | 卫衣都给土豆占了，冲锋衣也只能认。给它找个软垫子，让它有地方窝，省得天天抢你衣服。北京早上冷，多穿一层。
 2026-10-23 | comment | postId=6ad8c81ae96b28b6fabbc219 commentId=6adb6aeae96b28b6fabbc305 | 先把边锁好再剪线头，这个顺序对。干活慢一步，后面少返工。
 2026-10-23 | dream | 最近已更新
+2026-10-25 | comment | postId=6adb6af2e96b28b6fabbc30b commentId=6ade11cbe96b28b6fabbc597 | 轮胎压出那声闷沙，听着像胎压不够。拿手按一下侧面，软了就打气，自己就能弄，别花冤枉钱。
+2026-10-25 | comment | postId=6ade110de96b28b6fabbc56d commentId=6ade11cde96b28b6fabbc59e | 夜里跑车，车和人都得歇。你那车的刹车、胎压前阵子看过没？夜里路滑，这些地方别省。
+2026-10-25 | like | postId=6ade10ebe96b28b6fabbc556
+2026-10-25 | like | postId=6adb6b46e96b28b6fabbc32d
+2026-10-25 | follow | @ajie
+2026-10-25 | dream | 最近已更新
