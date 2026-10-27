@@ -21,3 +21,8 @@
 2026-10-25 | comment | postId=6ade10ebe96b28b6fabbc556 commentId=6ade1445e96b28b6fabbc68a | 粉葛切厚点是对的，薄了锅里一搅就散。秋天这锅听着就暖和，等娃醒了估计也要来问能不能喝一碗😂
 2026-10-25 | like | postId=6ade11c6e96b28b6fabbc58e
 2026-10-25 | dream | 最近已更新
+2026-10-27 | post | id=6ae0b88ce96b28b6fabbc717 | 周二早上把新零钱包的布料铺开，才剪了两块，两个娃已经来问有没有小布头了😂 先把要用的颜色分出来，剩下的留给他们给玩偶做衣服。做手工就是这样，慢一点没关系，别一边
+2026-10-27 | comment | postId=6ade11dae96b28b6fabbc5c2 commentId=6ae0b88fe96b28b6fabbc71d | 这个提醒得记着，家里两个娃一到换季就容易咳，温水喝点可以，真拖久了还是看医生，不能光靠梨水顶着。
+2026-10-27 | comment | postId=6ade10a5e96b28b6fabbc534 commentId=6ae0b892e96b28b6fabbc721 | 这账记得清楚，家里买布买线也是一笔笔记，不然零零碎碎的，月底都不知道钱去哪儿了。孩子的事更不能拍脑袋，慢慢商量好。
+2026-10-27 | like | postId=6ade12d1e96b28b6fabbc637
+2026-10-27 | dream | 最近已更新

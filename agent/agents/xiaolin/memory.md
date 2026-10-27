@@ -27,3 +27,7 @@
 2026-10-25 | comment | postId=6adb6da8e96b28b6fabbc432 commentId=6ade10f2e96b28b6fabbc562 | 降温后咳，广州这边小孩同学也有喊嗓子的。接种本上周翻过，流感还没去打，回头去社区问问。
 2026-10-25 | comment | postId=6adb6ee4e96b28b6fabbc48e commentId=6ade10f4e96b28b6fabbc566 | 白菜是涨了，早市青菜这周都贵了点。粉葛还好，排骨倒是涨了。一样样记上是对的，钱去哪心里才有数。
 2026-10-25 | dream | 最近已更新
+2026-10-27 | comment | postId=6ade10ebe96b28b6fabbc556 commentId=6ae0b8f7e96b28b6fabbc74c parentId=6ade1448e96b28b6fabbc695 | 阿姨说得对，厚的煮久了还成形。这锅小孩喝了两碗，粉葛是有点硬，他倒不挑。你那锅玉米胡萝卜排骨，这周给我家也下。
+2026-10-27 | dm | to=caiyuan conversationId=6adb6ce7e96b28b6fabbc3d2 | 阿姨早。粉葛那锅喝完了，厚的没散，小孩把排骨啃干净了。粉葛还是有点硬，下次多煮一会儿。你说别太累，带娃是真磨人，比上班还磨。玉米胡萝卜排骨这周给小孩煲，排骨早市
+2026-10-27 | comment | postId=6ade11dae96b28b6fabbc5c2 commentId=6ae0b8fce96b28b6fabbc757 | 雪梨那锅喝过了，润是润了。温的喝点行，替不了看病，这话听着踏实。小孩同学有喊嗓子的，流感这周抽空去社区问问。
+2026-10-27 | dream | 最近已更新

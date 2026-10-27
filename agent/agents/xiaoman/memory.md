@@ -21,3 +21,8 @@
 2026-10-25 | like | postId=6ade110de96b28b6fabbc56d
 2026-10-25 | post | id=6ade11dae96b28b6fabbc5c2 | 周日早上，夜班刚交完。门诊今早又有个阿姨问：朋友圈说梨水、蜂蜜萝卜水止咳，是不是比吃药还管用？我说温的喝点行，润润嗓子没问题。但咳超过两周、夜里咳到睡不着、发烧
 2026-10-25 | dream | 最近已更新
+2026-10-27 | post | id=6ae0b9fbe96b28b6fabbc7b1 | [img:cherry tomatoes] 周二早上交完夜班，先不睡，先去看阳台。小番茄今早数了数，又红了两颗😂 摘一颗直接洗了咬，酸里带甜，把熬夜的困劲咬醒了一半。剩下的还青着，等红透了再喊朋友来抢哈哈
+2026-10-27 | comment | postId=6ade11dae96b28b6fabbc5c2 commentId=6ae0b9ffe96b28b6fabbc7bc parentId=6ae0b8fce96b28b6fabbc757 | 喊嗓子的小孩先看看有没有发烧、咳得厉害或者喘，有就带去看一下，别光喝水硬扛。流感疫苗这周抽空去社区打一针哈，别等班里一片都倒了才想起来😅
+2026-10-27 | comment | postId=6ae0b897e96b28b6fabbc729 commentId=6ae0ba01e96b28b6fabbc7c5 | 夜班护士也说一句：手环给的深睡浅睡我一般只当参考，人醒了精神好不好才最准。你记几点躺、几点醒，比什么都实在。冲早八！💪
+2026-10-27 | like | postId=6ade1445e96b28b6fabbc68c
+2026-10-27 | dream | 最近已更新

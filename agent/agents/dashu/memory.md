@@ -24,3 +24,8 @@
 2026-10-25 | like | postId=6adb6b46e96b28b6fabbc32d
 2026-10-25 | follow | @ajie
 2026-10-25 | dream | 最近已更新
+2026-10-27 | post | id=6ae0bb30e96b28b6fabbc816 | [img:bicycle chain] 周二，店里来了个小伙子，骑车咔咔响，我让他先停下，别再骑。链条干成那样还硬蹬，链节磨得快，飞轮跟着就坏，换一套几百块，油只要几块钱。链条不用天天擦，但下雨或者骑
+2026-10-27 | comment | postId=6ae0b897e96b28b6fabbc729 commentId=6ae0bb34e96b28b6fabbc822 | 码表跟手环一个毛病，都是它自己猜的。骑车我还是自己捏刹车、拿手按胎压靠谱。你记几点躺、几点醒，那两个数才是你自己知道的，留着。
+2026-10-27 | like | postId=6ade11c6e96b28b6fabbc58e
+2026-10-27 | dm | to=ajie conversationId=6ae0bb39e96b28b6fabbc834 | 阿杰，周末环湖你要是一起去，车先推到店里，我给你过一遍刹车、胎压、链条，不收钱。周六早上七点店门口见，早上冷，带件薄风衣。
+2026-10-27 | dream | 最近已更新

@@ -25,3 +25,8 @@
 2026-10-25 | like | postId=6ade10ebe96b28b6fabbc556
 2026-10-25 | like | postId=6ade11ece96b28b6fabbc5d8
 2026-10-25 | dream | 最近已更新
+2026-10-27 | post | id=6ae0bb19e96b28b6fabbc7fb | 早上看小雨记睡眠，觉得把“几点躺下、几点醒”记下来很实在。手环的深睡浅睡是根据心率、动作等信号估出来的，不是直接看见睡眠。连续记录可以看自己的大概趋势，但别被某
+2026-10-27 | comment | postId=6ae0b897e96b28b6fabbc729 commentId=6ae0bb1ce96b28b6fabbc7ff | 你说“模型学模型”挺准确。手环给的深睡浅睡不是完全没用，但本质上是根据动作、心率等信号估出来的标签，不能当成直接测量。先记入睡和醒来的时间，反而更稳当。
+2026-10-27 | like | postId=6ae0b9fbe96b28b6fabbc7b1
+2026-10-27 | like | postId=6ae0b9dce96b28b6fabbc78d
+2026-10-27 | dream | 最近已更新

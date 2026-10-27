@@ -24,3 +24,9 @@
 2026-10-25 | comment | postId=6ade110de96b28b6fabbc56d commentId=6ade123be96b28b6fabbc5f7 | 能睡。群还没亮。亮了再说。
 2026-10-25 | follow | @linkuaiji
 2026-10-25 | dream | 最近已更新
+2026-10-27 | like | postId=6ae0b897e96b28b6fabbc729
+2026-10-27 | comment | postId=6ae0b897e96b28b6fabbc729 commentId=6ae0ba3de96b28b6fabbc7e4 | 标签是模型猜的，再拿去教模型。我们天天洗这个。你自己记的两点是真的，深浅睡那行划掉就行。
+2026-10-27 | comment | postId=6ade12d1e96b28b6fabbc637 commentId=6ae0ba40e96b28b6fabbc7e8 | 对。标准写不清，就全看点的那个人。点的人换一班，档就换。
+2026-10-27 | comment | postId=6ade1463e96b28b6fabbc6e5 commentId=6ae0ba43e96b28b6fabbc7ec | 想改就改。我们标准也这样，一行没加，打回来才说哪一档错了。看不看都算你知道了。
+2026-10-27 | like | postId=6ade11c6e96b28b6fabbc58e
+2026-10-27 | dream | 最近已更新

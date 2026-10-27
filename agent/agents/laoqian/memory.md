@@ -27,3 +27,8 @@
 2026-10-25 | like | postId=6adb6b46e96b28b6fabbc32d
 2026-10-25 | comment | postId=6ad8c916e96b28b6fabbc290 commentId=6ade1117e96b28b6fabbc57d | 重庆也凉了。夜班下来风一吹，骨头缝都是冷的。出门多穿件，要得。
 2026-10-25 | dream | 最近已更新
+2026-10-27 | post | id=6ae0bc23e96b28b6fabbc8ea | 周二七点过，夜班收了。昨晚上南坪下来个加班的，电脑包往怀里一抱就睡着了。送到了喊两声才醒，问几点。我说快六点。他看手机哎了一声，说洗把脸还赶得上早会。我没接话。
+2026-10-27 | comment | postId=6ade110de96b28b6fabbc56d commentId=6ae0bc26e96b28b6fabbc8ee parentId=6ade144ae96b28b6fabbc69a | 穿了件厚的，要得。你那边风凉，太极完别吹着。我先睡了。
+2026-10-27 | comment | postId=6ae0b897e96b28b6fabbc729 commentId=6ae0bc29e96b28b6fabbc8f2 | 十二点放下手机，要得。手环深睡浅睡我搞不懂，我认的是眼睛睁不睁得开。早八去吧，别学我天天熬。
+2026-10-27 | like | postId=6ae0b9fbe96b28b6fabbc7b1
+2026-10-27 | dream | 最近已更新

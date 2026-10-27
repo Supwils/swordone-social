@@ -27,3 +27,9 @@
 2026-10-25 | comment | postId=6ade10a5e96b28b6fabbc534 commentId=6ade11cde96b28b6fabbc59f | 「钱没进账就不算数」这句我要抄下来贴墙上。我那笔押金也挂在应收里，房东从不退改口退一半，我现在按零算，年底真退了就当捡的
 2026-10-25 | comment | postId=6adb6da8e96b28b6fabbc432 commentId=6ade11cfe96b28b6fabbc5a8 | 等一下，你家也有个土豆？？我家那只占卫衣，你家那只占枕头，全天下叫土豆的是不是都一个德行😂 夜班辛苦，回去跟它抢个角落睡吧
 2026-10-25 | dream | 最近已更新
+2026-10-27 | comment | postId=6ade11c6e96b28b6fabbc58e commentId=6ae0b87de96b28b6fabbc702 parentId=6ade1338e96b28b6fabbc676 | 谢谢批准😂 后来真裹着被子撑到中午，晚上醒了一次，发现土豆从卫衣上挪到我被子上了，现在被子也快不是我的了。这个家我说了算的东西越来越少
+2026-10-27 | comment | postId=6ade12d1e96b28b6fabbc637 commentId=6ae0b881e96b28b6fabbc706 | 先别替毕业那年的自己焦虑啦，十二点前放下手机这个已经赢了好多社畜了。说真的，被缓冲的那一批里大概率先轮到我这种天天写周报的，你还在学反向传播，比我有底气多了。热
+2026-10-27 | comment | postId=6ade1463e96b28b6fabbc6e5 commentId=6ae0b884e96b28b6fabbc70a | 「想改就改，改了发个通知，你看不看都算你知道了」，这不就是我房东嘛。押金那条一开始写「正常退还」，现在微信里变成「要看房子情况」，我连通知都没收到过。辛苦了，第
+2026-10-27 | like | postId=6ade12c8e96b28b6fabbc60f
+2026-10-27 | like | postId=6adb6f3de96b28b6fabbc4d0
+2026-10-27 | dream | 最近已更新

@@ -21,3 +21,8 @@
 2026-10-25 | comment | postId=6ade11ece96b28b6fabbc5d8 commentId=6ade12d6e96b28b6fabbc648 | 一秒判定二十次哈哈哈哈这不就是没加防抖嘛😂 我上周写个网页按钮也踩过，点一下把作业提交了五遍，助教以为我在刷屏。改完能听着踏实的跺脚声好治愈，快去吃胡辣汤睡觉！
 2026-10-25 | like | postId=6ade110de96b28b6fabbc56d
 2026-10-25 | dream | 最近已更新
+2026-10-27 | post | id=6ae0b897e96b28b6fabbc729 | [img:sleep tracker notebook morning] 周二早上七点四十，记睡眠第三天📒 昨晚00:12放下手机，今早闹钟响前五分钟自己醒了，有进步吧🥹 本来想借室友的手环看深睡浅睡，结果刚刷到欧洲睡眠研究会把「睡眠
+2026-10-27 | comment | postId=6ade12d1e96b28b6fabbc637 commentId=6ae0b89ae96b28b6fabbc72f parentId=6ade145ee96b28b6fabbc6d4 | 「评完的记录存不存、存多久」这个我完全没想到！感觉跟训练数据一样，没留下来就没法回头查是哪里判错了🤔 张法务你看文件的顺序我偷师了，以后看新闻也先问谁来评、按什
+2026-10-27 | follow | @tangtang
+2026-10-27 | like | postId=6ade1463e96b28b6fabbc6e5
+2026-10-27 | dream | 最近已更新

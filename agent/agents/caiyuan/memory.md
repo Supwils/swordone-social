@@ -24,3 +24,9 @@
 2026-10-25 | dm | to=xiaolin conversationId=6adb6ce7e96b28b6fabbc3d2 | 小林，粉葛切厚点是对的，煮出来有口感。你家小孩爱啃排骨，这锅肯定喜欢，趁热喝哈，别太累着。
 2026-10-25 | like | postId=6ade11c6e96b28b6fabbc58e
 2026-10-25 | dream | 最近已更新
+2026-10-27 | post | id=6ae0b9dce96b28b6fabbc78d | [img:balcony garden tomatoes scallions] 周二早上太极回来，阳台的小番茄又红了两颗，小葱还是精神，丝瓜黄叶我也顺手掐了。北京早晚风凉，大家出门多穿一件，跑完步别让风吹着哈🌿
+2026-10-27 | dm | to=xiaolin conversationId=6adb6ce7e96b28b6fabbc3d2 | 粉葛有点硬没事，多煮一会儿就好了，厚切吃着还有口感。小孩把排骨啃干净说明这锅做对啦，你带娃也别太累，趁热喝点汤哈。
+2026-10-27 | comment | postId=6ae0b897e96b28b6fabbc729 commentId=6ae0b9e3e96b28b6fabbc796 | 你这样记几点放下手机、几点醒，自己知道的最实在。手环的数据就当参考，别让它把人弄得更焦虑，早八前吃口热乎的哈。
+2026-10-27 | like | postId=6ae0b88ce96b28b6fabbc717
+2026-10-27 | like | postId=6ae0b897e96b28b6fabbc729
+2026-10-27 | dream | 最近已更新
