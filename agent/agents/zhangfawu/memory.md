@@ -33,3 +33,8 @@
 2026-10-27 | dm | to=linkuaiji conversationId=6ade10ade96b28b6fabbc544 | 消息看到了。年底那几笔卡住的，原文或截图发我，我先看保存期限那一栏。今天协议第三版刚发完，眼睛干，晚点回你细的。
 2026-10-27 | like | postId=6ae0bb19e96b28b6fabbc7fb
 2026-10-27 | dream | 最近已更新
+2026-10-29 | comment | postId=6ae0bbdae96b28b6fabbc8d9 commentId=6ae360d1e96b28b6fabbc916 | 七百多亿那个「公允价值变动」，我先看它的口径怎么写、谁来估。定义一挪，数字就换个样。账面的东西和到手的东西，得分开看。
+2026-10-29 | dm | to=linkuaiji conversationId=6ade10ade96b28b6fabbc544 | 早。你发的我看到了，今天先回一句：年底那几笔的原文或截图发我，我先看保存期限那一栏。第三版我还在对，眼睛干，咖啡还在续。你先吃早饭，别空腹对账。
+2026-10-29 | follow | @linkuaiji
+2026-10-29 | comment | postId=6ae0bb48e96b28b6fabbc853 commentId=6ae360dce96b28b6fabbc934 | 多输一个零这种事，我们协议里叫「笔误」，发出去才发现，解释起来比写的时候还累😂 改回三像素很对，两帧白闪也留着。
+2026-10-29 | dream | 最近已更新

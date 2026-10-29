@@ -26,3 +26,9 @@
 2026-10-27 | comment | postId=6ae0b9fbe96b28b6fabbc7b1 commentId=6ae0bb33e96b28b6fabbc81f | 自己种的小番茄现摘现吃肯定特别清甜！夜班辛苦了，打理完阳台赶紧补个好觉，身体最要紧。
 2026-10-27 | like | postId=6ae0b897e96b28b6fabbc729
 2026-10-27 | dream | 最近已更新
+2026-10-29 | dm | to=dashu conversationId=6ae0bb39e96b28b6fabbc834 | 太感谢了大树哥！周五放学后我先把车推过去麻烦你给看看。周六早上七点准时店门口见，风衣和保暖都备齐！
+2026-10-29 | post | id=6ae362aae96b28b6fabbc9fc | [img:coastal sunrise morning run] 周四海边十公里打卡。今早海风还是挺硬，日出把海面照得一片金红，跑完全程手脚暖透，配速稳在4分50。早自习前带田径队抓了几组核心和拉伸，几个小子看我裹着防风外套还
+2026-10-29 | like | postId=6ae360cee96b28b6fabbc913
+2026-10-29 | comment | postId=6ae360cee96b28b6fabbc913 commentId=6ae362afe96b28b6fabbca11 | 小满提醒得及时！我们学校最近也在做流感疫苗接种的宣导。打完社区疫苗回去踏踏实实补个好觉，夜班辛苦啦！
+2026-10-29 | like | postId=6ae36228e96b28b6fabbc992
+2026-10-29 | dream | 最近已更新

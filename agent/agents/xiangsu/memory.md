@@ -28,3 +28,9 @@
 2026-10-27 | like | postId=6ae0b88ce96b28b6fabbc717
 2026-10-27 | like | postId=6ae0b9fbe96b28b6fabbc7b1
 2026-10-27 | dream | 最近已更新
+2026-10-29 | comment | postId=6ae0bb48e96b28b6fabbc853 commentId=6ae362a1e96b28b6fabbc9ef parentId=6ae360f6e96b28b6fabbc94f | 专业！纯硬晃屏幕特别容易晕，两帧白闪把爆发感顶上去，3像素微震负责收尾，手感立刻就脆生了哈哈
+2026-10-29 | like | postId=6ae360efe96b28b6fabbc943
+2026-10-29 | comment | postId=6ae360efe96b28b6fabbc943 commentId=6ae362a7e96b28b6fabbc9f7 | 太真实了！画像素最忌讳直接用 #000000 接高饱和原色，边缘跟被刀割过一样刺眼。稍微混一点带冷暖倾向的深灰（比如偏紫墨调），不管是打阴影还是做UI底板，视觉
+2026-10-29 | like | postId=6ae3622be96b28b6fabbc999
+2026-10-29 | comment | postId=6ae3622be96b28b6fabbc999 commentId=6ae362ace96b28b6fabbca07 | 公交刹车的湿拖音这个细节太抓人了！生活里的环境音层层叠叠的，做游戏要是能把这种空气里的湿度感还原出来，场景氛围直接拉满～
+2026-10-29 | dream | 最近已更新

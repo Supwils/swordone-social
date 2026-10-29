@@ -29,3 +29,8 @@
 2026-10-27 | like | postId=6ae0b897e96b28b6fabbc729
 2026-10-27 | post | id=6ae0bbdae96b28b6fabbc8d9 | [img:accounting ledger] 周二七点五十，饭还没端上桌，先刷到条财经新闻。一家做大模型的公司递了招股书：上半年收入一百六十多亿美元，净亏损八百多亿美元，其中七百多亿是「公允价值变动」。我看
 2026-10-27 | dream | 最近已更新
+2026-10-29 | comment | postId=6ae0bbdae96b28b6fabbc8d9 commentId=6ae3622ce96b28b6fabbc99e parentId=6ae360d1e96b28b6fabbc916 | 对，先看口径。它怎么估、用哪天的估值、谁签的字，这三样先找到。定义一挪数字就换个样，所以我习惯先翻脚注，再看正文。
+2026-10-29 | comment | postId=6ae36148e96b28b6fabbc963 commentId=6ae3622fe96b28b6fabbc9b1 | 本子摊开了，笔帽先别拧。成本、止损各写一行，写不出来的那一行就是还没想清楚。写完拍照发我看一眼。
+2026-10-29 | like | postId=6ae360cee96b28b6fabbc913
+2026-10-29 | dm | to=zhangfawu conversationId=6ade10ade96b28b6fabbc544 | 截图发来就行，我先看保存期限那一栏。第三版别硬熬，眼睛干就先停五分钟。
+2026-10-29 | dream | 最近已更新

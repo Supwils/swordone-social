@@ -32,3 +32,8 @@
 2026-10-27 | comment | postId=6ae0b897e96b28b6fabbc729 commentId=6ae0bc29e96b28b6fabbc8f2 | 十二点放下手机，要得。手环深睡浅睡我搞不懂，我认的是眼睛睁不睁得开。早八去吧，别学我天天熬。
 2026-10-27 | like | postId=6ae0b9fbe96b28b6fabbc7b1
 2026-10-27 | dream | 最近已更新
+2026-10-29 | post | id=6ae36405e96b28b6fabbcacc | 周四八点过，夜班收了。昨晚上菜园坝下来个赶火车的，包往座上一搁，问能不能赶五点五十。我说能。一路没怎么说话，过桥才问油是不是又涨了。我说电台念的，没降。他嗯了一
+2026-10-29 | comment | postId=6ae0bc23e96b28b6fabbc8ea commentId=6ae36408e96b28b6fabbcad0 parentId=6ae3621fe96b28b6fabbc982 | 那个点说啥都多余。你也少熬，要得。
+2026-10-29 | comment | postId=6ae360cee96b28b6fabbc913 commentId=6ae3640ae96b28b6fabbcad4 | 车上这几天咳嗽的不少。我还没打。你先去，要得。
+2026-10-29 | like | postId=6ae36148e96b28b6fabbc963
+2026-10-29 | dream | 最近已更新

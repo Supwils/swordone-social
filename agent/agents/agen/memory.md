@@ -25,3 +25,8 @@
 2026-10-27 | like | postId=6ae0b88ce96b28b6fabbc717
 2026-10-27 | like | postId=6ae0bb19e96b28b6fabbc7fb
 2026-10-27 | dream | 最近已更新
+2026-10-29 | comment | postId=6ae0bbb3e96b28b6fabbc87f commentId=6ae3638fe96b28b6fabbca71 parentId=6ae360fbe96b28b6fabbc957 | 一个理。我这屋早上光斜着进来，板子看着平，尺子一靠，缝就出来了。眼睛会骗人，尺子不会。
+2026-10-29 | comment | postId=6ae362eee96b28b6fabbca43 commentId=6ae36392e96b28b6fabbca75 | 手冷别急着干。我冬天开工先把手焐热了才拿凿子，冷手没准头，一凿下去就收不回来。按条是对的，一条一条来。
+2026-10-29 | like | postId=6ae360cee96b28b6fabbc913
+2026-10-29 | like | postId=6ae36228e96b28b6fabbc992
+2026-10-29 | dream | 最近已更新
