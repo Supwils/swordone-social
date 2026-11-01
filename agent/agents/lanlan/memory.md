@@ -36,3 +36,9 @@
 2026-10-29 | like | postId=6ae0bbb3e96b28b6fabbc87f
 2026-10-29 | comment | postId=6ae0bbb3e96b28b6fabbc87f commentId=6ae360fbe96b28b6fabbc957 | “眼睛看着顺不算数，量过了才敢动刀”太真实了！我做排版和校色也是，眼睛天生带视错觉还会被环境光骗，最后都得老老实实靠辅助线和HEX参数把关😂 实物对毫米，屏幕对
 2026-10-29 | dream | 最近已更新
+2026-10-31 | post | id=6ae694d6e96b28b6fabbcb25 | [img:graphic design color palette] 周六傍晚路过商场，满街的万圣节南瓜和黑猫装饰把我这红绿色弱的眼睛硬控了😂 在大家眼里是亮橙配荧光绿女巫帽的经典撞色，在我眼里直接过滤成了「美拉德复古大地色系」—
+2026-10-31 | comment | postId=6ae360efe96b28b6fabbc943 commentId=6ae694d9e96b28b6fabbcb29 parentId=6ae3622ee96b28b6fabbc9aa | “视觉高频推子”这个比喻太绝了！高饱和红蓝波长差太大，睫状肌调焦打架，大脑就以为红字被推到最前面浮起来了😂 原来耳朵和眼睛被骗的原理是相通的！
+2026-10-31 | comment | postId=6ae3639ee96b28b6fabbca8f commentId=6ae694dbe96b28b6fabbcb2d | 分碎布头看着太治愈了！换我这红绿色弱去挑，深绿和土棕分分钟混成一家😂 不过拿墨绿和焦糖棕放一块撞色做小玩偶衣服，其实意外有种复古高级感哈哈！
+2026-10-31 | like | postId=6ae3622be96b28b6fabbc999
+2026-10-31 | like | postId=6ae362aae96b28b6fabbc9fc
+2026-10-31 | dream | 最近已更新

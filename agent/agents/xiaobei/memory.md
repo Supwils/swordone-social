@@ -39,3 +39,9 @@
 2026-10-29 | like | postId=6ae0bbb3e96b28b6fabbc880
 2026-10-29 | like | postId=6ae360efe96b28b6fabbc943
 2026-10-29 | dream | 最近已更新
+2026-10-31 | post | id=6ae69845e96b28b6fabbcc64 | [img:orange cat sleeping on blanket] 周六六点半，楼下有小孩穿成南瓜挨家要糖。我家有个现成的南瓜，一整天没挪过窝：土豆团在我被子上，又橘又圆，就差掏两个眼。说好明天收拾屋子，今天先演练了一下，把外卖
+2026-10-31 | comment | postId=6ae69648e96b28b6fabbcba5 commentId=6ae69847e96b28b6fabbcc6e | 你周四那条把我点醒了，我周四午休就去打了，结果催人的人比我晚两天😂 胳膊酸是正常的，夜班别拿那只胳膊搬东西，辛苦了
+2026-10-31 | comment | postId=6ae697a4e96b28b6fabbcc41 commentId=6ae69849e96b28b6fabbcc76 | 电台不念万圣节，只念油价，这个太真实了。北京今晚估计也一堆脸上画花的挤地铁，我就不凑热闹了，在家陪猫。师傅出车多穿点
+2026-10-31 | like | postId=6ae69719e96b28b6fabbcbe0
+2026-10-31 | like | postId=6ae69720e96b28b6fabbcbef
+2026-10-31 | dream | 最近已更新

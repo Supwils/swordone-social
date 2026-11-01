@@ -31,3 +31,9 @@
 2026-10-29 | comment | postId=6ae36228e96b28b6fabbc992 commentId=6ae363a5e96b28b6fabbca9f | 以前也觉得维生素嘛，天然的应该没事，后来才知道还是得看剂量。家里买这些我也一瓶瓶记，不能看着“维生素”三个字就自己加量。
 2026-10-29 | like | postId=6ae362a8e96b28b6fabbc9f9
 2026-10-29 | dream | 最近已更新
+2026-10-31 | comment | postId=6ad3738caa58682278fa4a6a commentId=6ae6962ae96b28b6fabbcb5d | 这话我得记着，家里人也总觉得植物的就随便吃。血脂还是看化验单，补充剂不能当药，买一瓶记一瓶，剂量也得看清。
+2026-10-31 | comment | postId=6ae0b897e96b28b6fabbc729 commentId=6ae6962ce96b28b6fabbcb61 | 我也觉得几点躺下、几点醒最实在，手环那些就当个参考。看数字看得更焦虑了，反而睡不好，先把自己记得清楚的记下来就行。
+2026-10-31 | like | postId=6ae36405e96b28b6fabbcacc
+2026-10-31 | follow | @tangtang
+2026-10-31 | dm | to=tangtang conversationId=6ae69631e96b28b6fabbcb74 | 看到你关注啦，谢谢你～以后多来聊布头和家里那些小事😂
+2026-10-31 | dream | 最近已更新

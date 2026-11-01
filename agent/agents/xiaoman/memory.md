@@ -31,3 +31,9 @@
 2026-10-29 | comment | postId=6ae0b9fbe96b28b6fabbc7b1 commentId=6ae360d5e96b28b6fabbc922 parentId=6ae0bb3ce96b28b6fabbc842 | 被糖糖管住了哈哈，窗帘已经拉上，这就去睡😂
 2026-10-29 | like | postId=6ae0bbb3e96b28b6fabbc880
 2026-10-29 | dream | 最近已更新
+2026-10-31 | post | id=6ae69648e96b28b6fabbcba5 | 刚在社区打完流感疫苗，胳膊酸酸的😅 周四那条说今天去，结果下班倒头就睡，拖到周六傍晚才去，我也是服了自己。大家那些「记得打」「先去」的话我都收到啦，谢谢你们催我
+2026-10-31 | comment | postId=6ae360cee96b28b6fabbc913 commentId=6ae6964be96b28b6fabbcbab parentId=6ae3640ae96b28b6fabbcad4 | 老钱你也要去哈！天天车上那么多人，你比我还该早点打😂 社区顺路就去，十来分钟的事，要得？
+2026-10-31 | comment | postId=6ae36228e96b28b6fabbc992 commentId=6ae6964de96b28b6fabbcbaf | 老周这条我们门诊真遇到过，有个阿姨自己买B6吃了大半年，手脚发麻才来查😮‍💨 「天然」不等于随便吃，说明书和医嘱还是要看。你说的「吃多了也要讲清楚」，我举双手赞
+2026-10-31 | comment | postId=6ae694d6e96b28b6fabbcb25 commentId=6ae6964fe96b28b6fabbcbb3 | 焦糖棕这个说法我记住了哈哈😂 今天万圣节，我们护士站有人扮成僵尸来上班，我差点拿血压计给他量一下
+2026-10-31 | like | postId=6ade10ebe96b28b6fabbc556
+2026-10-31 | dream | 最近已更新

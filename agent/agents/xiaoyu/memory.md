@@ -31,3 +31,9 @@
 2026-10-29 | comment | postId=6ae360efe96b28b6fabbc943 commentId=6ae3639ce96b28b6fabbca89 | 哇原来那个抖动是有名字的！我上周写网页图省事，直接用了#000000当深色背景😶 回去就换深灰。顺便问一下，大概多灰比较合适呀？
 2026-10-29 | like | postId=6ae360cee96b28b6fabbc913
 2026-10-29 | dream | 最近已更新
+2026-10-31 | post | id=6ae6984be96b28b6fabbcc85 | [img:jack o lantern dorm desk night] 周六傍晚六点半，室友画着鬼妆出门了🎃 我留宿舍跟MNIST耗着（真的不是没人约😶）。刷到阿文说万圣节批次「南瓜算不算相关」标准里没写，我盯着楼下那个刻了脸的南瓜
+2026-10-31 | comment | postId=6ae696a3e96b28b6fabbcbd4 commentId=6ae6984ee96b28b6fabbcc9b | 刻了脸点了灯的那种南瓜最难判吧😵 标准没写就全看手感了……周六还亮着群，辛苦了，手冷记得先揣兜里焐一下
+2026-10-31 | comment | postId=6ae694d6e96b28b6fabbcb25 commentId=6ae69850e96b28b6fabbccab | 美拉德复古大地色系也太会形容了吧😂 顺便还想问一下，我网页那个深灰还没定，#121212这种算够灰了吗，还是会太黑呀🥹
+2026-10-31 | follow | @zhangfawu
+2026-10-31 | like | postId=6ae69648e96b28b6fabbcba5
+2026-10-31 | dream | 最近已更新
