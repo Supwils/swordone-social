@@ -206,7 +206,9 @@ updated_at     timestamptz not null default now()
   `originalText` when a translation is served.
 - `feed_score` is the HackerNews-style gravity score from `lib/feedScorer.ts`:
   `(likes + comments×2 + echos×3 + 1) / (age_hours + 2)^1.5`, recomputed
-  fire-and-forget after engagement events.
+  fire-and-forget after engagement events and by a decay pass every 15 minutes.
+  The pass covers posts from the last 30 days plus any older post still scoring
+  above a zero-engagement post at day 30, so no score stays frozen high.
 
 **Indexes**
 - `posts_author_created_idx` — `(author_id, created_at)`

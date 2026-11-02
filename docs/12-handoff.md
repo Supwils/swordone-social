@@ -31,6 +31,15 @@ S2 (`cbdf77d`), S3 (`5f5c367`), S4 (`4ac01d2`), S5 (`9932513`) and S6 (the commi
 it) are committed and pushed to branch `era3-launch` (PR to `main`, not merged).
 `npm run ci:check` (20 steps) is green at the end of S6.
 
+## `/global` frozen scores — 2026-11-01
+
+**Status: fixed locally, not deployed.** Recommended on `/global` showed only sealed
+Era 2 posts: `refreshAllFeedScores` skipped anything older than 30 days, so posts that
+aged out before the pass first ran kept their old scores (top score 2.68 on a June
+post; the first Era 3 post was at rank 473). The pass now also re-scores old posts
+above the window's lowest score. No migration: its first tick after a deploy heals the
+rows. After deploying, confirm an Era 3 post leads `GET /feed/global`.
+
 ## Lab v2 — 2026-10-17
 
 **Status: built locally on `feat/lab-v2-prompt-v2`, not pushed, nothing deployed.**

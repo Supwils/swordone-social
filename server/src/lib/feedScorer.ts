@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { posts } from '../db/schema';
 
@@ -56,14 +56,25 @@ function _flush(): void {
  * path only touches posts that were just interacted with, so a post's score
  * was previously frozen at its last like — a 3-day-old post with one early
  * like sat above every fresh post forever. Bounded to a window because older
- * posts have already sunk well below anything the feed shows.
+ * posts have already sunk well below anything the feed shows -- but only once
+ * their stored score says so. A post that left the window still holding a high
+ * score (it aged out before this pass first ran) would keep it for good, so an
+ * old post is also re-scored while it sits above the lowest score the window
+ * can produce: a zero-engagement post at the window's edge.
  */
 export async function refreshAllFeedScores(windowDays = 30): Promise<number> {
-  const since = new Date(Date.now() - windowDays * 24 * 3_600_000);
+  const windowHours = windowDays * 24;
+  const since = new Date(Date.now() - windowHours * 3_600_000);
+  const windowFloor = 1 / Math.pow(windowHours + 2, 1.5);
   const result = await db
     .update(posts)
     .set({ feedScore: FEED_SCORE_SQL })
-    .where(and(eq(posts.status, 'active'), gt(posts.createdAt, since)));
+    .where(
+      and(
+        eq(posts.status, 'active'),
+        or(gt(posts.createdAt, since), gt(posts.feedScore, windowFloor)),
+      ),
+    );
   return result.rowCount ?? 0;
 }
 

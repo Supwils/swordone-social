@@ -214,4 +214,89 @@ describe('refreshFeedScore batching', () => {
     const [row] = await db.select().from(posts).where(eq(posts.id, fresh.id));
     expect(row.feedScore).toBeCloseTo(calcFeedScore(row), 2);
   });
+
+  it('a post past the window with a frozen score still decays and stops leading the feed', async () => {
+    const { db } = await import('../db/client');
+    const { posts, users } = await import('../db/schema');
+    const { resetDb } = await import('../test/db-reset');
+    const { eq } = await import('drizzle-orm');
+    const { refreshAllFeedScores, calcFeedScore } = await import('./feedScorer');
+    const feed = await import('../modules/feed/feed.service');
+
+    await resetDb();
+    const [author] = await db
+      .insert(users)
+      .values({
+        username: 'scorer3',
+        usernameDisplay: 'scorer3',
+        email: 'scorer3@example.com',
+        displayName: 'Scorer',
+      })
+      .returning();
+    // 0.3535... is 1 / 2^1.5: the score a post gets at insert. Production held
+    // June posts at this value and above, ahead of every post from this month.
+    const [frozen] = await db
+      .insert(posts)
+      .values({
+        authorId: author.id,
+        text: 'frozen',
+        likeCount: 3,
+        commentCount: 2,
+        feedScore: 0.3535533905932738,
+        createdAt: new Date(Date.now() - 150 * 24 * 3_600_000),
+      })
+      .returning();
+    const [fresh] = await db
+      .insert(posts)
+      .values({ authorId: author.id, text: 'fresh', feedScore: 0 })
+      .returning();
+
+    expect(await refreshAllFeedScores(30)).toBe(2);
+
+    const [row] = await db.select().from(posts).where(eq(posts.id, frozen.id));
+    expect(row.feedScore).toBeCloseTo(calcFeedScore(row), 6);
+    const page = await feed.global(null, null, 10);
+    expect(page.items.map((p) => p.id)).toEqual([fresh.id, frozen.id]);
+  });
+
+  it('the pass leaves sunk old posts alone, so it stays bounded as the table grows', async () => {
+    const { db } = await import('../db/client');
+    const { posts, users } = await import('../db/schema');
+    const { resetDb } = await import('../test/db-reset');
+    const { eq } = await import('drizzle-orm');
+    const { refreshAllFeedScores } = await import('./feedScorer');
+
+    await resetDb();
+    const [author] = await db
+      .insert(users)
+      .values({
+        username: 'scorer4',
+        usernameDisplay: 'scorer4',
+        email: 'scorer4@example.com',
+        displayName: 'Scorer',
+      })
+      .returning();
+    const longAgo = new Date(Date.now() - 150 * 24 * 3_600_000);
+    const [sunk] = await db
+      .insert(posts)
+      .values({ authorId: author.id, text: 'sunk', feedScore: 0.000001, createdAt: longAgo })
+      .returning();
+    const [removed] = await db
+      .insert(posts)
+      .values({
+        authorId: author.id,
+        text: 'removed',
+        status: 'deleted',
+        feedScore: 0.35,
+        createdAt: longAgo,
+      })
+      .returning();
+
+    expect(await refreshAllFeedScores(30)).toBe(0);
+
+    const [sunkRow] = await db.select().from(posts).where(eq(posts.id, sunk.id));
+    const [removedRow] = await db.select().from(posts).where(eq(posts.id, removed.id));
+    expect(sunkRow.feedScore).toBe(0.000001);
+    expect(removedRow.feedScore).toBe(0.35);
+  });
 });
