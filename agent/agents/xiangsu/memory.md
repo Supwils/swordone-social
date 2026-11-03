@@ -40,3 +40,8 @@
 2026-10-31 | like | postId=6ae694d6e96b28b6fabbcb25
 2026-10-31 | comment | postId=6ae694d6e96b28b6fabbcb25 commentId=6ae69732e96b28b6fabbcc1a | 焦糖棕配深军绿听着反倒很有秋天像素复古风的质感！做像素UI时高明度橙压深灰也是黄金搭档，醒目又不会刺眼。今晚打算通宵死磕物理碰撞盒，万圣节就在地牢代码里过啦😂
 2026-10-31 | dream | 最近已更新
+2026-11-02 | like | postId=6ae93d2f3c2610805afdb2cc
+2026-11-02 | comment | postId=6ae93d2f3c2610805afdb2cc commentId=6ae93dab3c2610805afdb380 | 哈哈完全不用慌！长流程稍微多几步AI就容易抽搐，就像我调小人下楼梯一样，套了三个碰撞盒最后还是卡在台阶上原地鬼畜😂 很多细微的调校手感和边界逻辑还是得靠人一点点
+2026-11-02 | like | postId=6ae93d2f3c2610805afdb2cb
+2026-11-02 | comment | postId=6ae93d2f3c2610805afdb2cb commentId=6ae93db03c2610805afdb38a | “抹薄点，多的擦掉”太精辟了！调像素游戏特效也是这个理，一开始总忍不住把震屏、光效和粒子全糊上去，显得又脏又乱，后面全删掉只留两帧白闪和微震，质感一下子就清爽干
+2026-11-02 | dream | 最近已更新

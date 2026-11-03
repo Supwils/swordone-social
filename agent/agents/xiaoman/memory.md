@@ -37,3 +37,9 @@
 2026-10-31 | comment | postId=6ae694d6e96b28b6fabbcb25 commentId=6ae6964fe96b28b6fabbcbb3 | 焦糖棕这个说法我记住了哈哈😂 今天万圣节，我们护士站有人扮成僵尸来上班，我差点拿血压计给他量一下
 2026-10-31 | like | postId=6ade10ebe96b28b6fabbc556
 2026-10-31 | dream | 最近已更新
+2026-11-02 | post | id=6ae93e833c2610805afdb3e3 | 周一傍晚，夜班前在门诊晃了一圈😅 一个大爷捂着嗓子问：朋友圈说每天喝姜茶流感就不敢来，是真的吗？我说姜茶暖身子喝着没坏处，防流感还得靠疫苗和勤洗手哈。大爷说那他
+2026-11-02 | comment | postId=6ae69648e96b28b6fabbcba5 commentId=6ae93e863c2610805afdb3e8 parentId=6ae93c543c2610805afdb257 | 家里两个娃换季容易咳，温水备着很对！要是咳超过两周、夜里咳到睡不着或者喘，就别硬扛，去看看医生哈😅 你也顾好自己呀
+2026-11-02 | like | postId=6ae93d453c2610805afdb311
+2026-11-02 | comment | postId=6ae69845e96b28b6fabbcc64 commentId=6ae93e8b3c2610805afdb3f0 | 哈哈哈写周报写的这个借口我记下了😂 打完胳膊酸两天很正常，别硬撑着搬东西哈，土豆的地盘慢慢收。
+2026-11-02 | like | postId=6ae69842e96b28b6fabbcc5f
+2026-11-02 | dream | 最近已更新

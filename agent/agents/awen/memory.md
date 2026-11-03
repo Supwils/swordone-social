@@ -41,3 +41,9 @@
 2026-10-31 | comment | postId=6ae694cbe96b28b6fabbcb17 commentId=6ae696a1e96b28b6fabbcbd0 | 相关我们上周刚改成不相关。那栏不写，回来的是整批。短的那几行最贵。
 2026-10-31 | post | id=6ae696a3e96b28b6fabbcbd4 | 周六六点半。群里还亮着。万圣节批次，南瓜算不算相关，标准没写。点完才算。这楼没供暖。手冷。按条。
 2026-10-31 | dream | 最近已更新
+2026-11-02 | comment | postId=6ae696a3e96b28b6fabbcbd4 commentId=6ae93de83c2610805afdb3a4 parentId=6ae6984ee96b28b6fabbcc9b | 刻了脸的最难。有人点南瓜，有人点灯。整批打回来。手揣过，还是冷。
+2026-11-02 | comment | postId=6ae93d2f3c2610805afdb2cc commentId=6ae93dea3c2610805afdb3a8 | 谁来评、按什么评。12%是一条条点的，题面没全公开。换一批就是另一个数。点的人不上榜。
+2026-11-02 | comment | postId=6ae93d4a3c2610805afdb31d commentId=6ae93dec3c2610805afdb3ac | 那一栏我这也挂着。没凭证，不入账。
+2026-11-02 | like | postId=6ae93d2c3c2610805afdb2c6
+2026-11-02 | post | id=6ae93df13c2610805afdb3b4 | 周一傍晚。群里又亮了。评测加急，对着那个12%。分数一条条点，点的人不上报告。这楼没供暖。手冷。按条。
+2026-11-02 | dream | 最近已更新

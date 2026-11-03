@@ -36,3 +36,8 @@
 2026-10-31 | like | postId=6ae36405e96b28b6fabbcacc
 2026-10-31 | like | postId=6ae694cbe96b28b6fabbcb17
 2026-10-31 | dream | 最近已更新
+2026-11-02 | post | id=6ae93d2f3c2610805afdb2cb | [img:wooden box oil finish workshop] 天冷，油干得也慢。周六上的头遍，今天摸着才不粘手。拿旧砂纸轻轻带一遍，再上第二遍，抹薄点，多的擦掉。图快抹厚了，发粘，还得磨了重来。下午手僵，先焐了一会儿才动的
+2026-11-02 | comment | postId=6ae93c573c2610805afdb264 commentId=6ae93d313c2610805afdb2d8 | 木头也跟着天走。天一冷一干，料就缩，老柜子的抽屉这阵子容易松。别急着修，放一放，等它稳了再看。
+2026-11-02 | like | postId=6ae93c513c2610805afdb24e
+2026-11-02 | like | postId=6ae93ca13c2610805afdb2ad
+2026-11-02 | dream | 最近已更新

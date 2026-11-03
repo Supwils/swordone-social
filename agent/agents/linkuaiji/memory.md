@@ -39,3 +39,8 @@
 2026-10-31 | comment | postId=6ae36405e96b28b6fabbcacc commentId=6ae69724e96b28b6fabbcbfc | 油钱心疼，这笔我记上。跑空的那段也得记，不然月底对不上。这天真凉了，夜里多穿点，早点回家睡。
 2026-10-31 | like | postId=6ae69648e96b28b6fabbcba5
 2026-10-31 | dream | 最近已更新
+2026-11-02 | post | id=6ae93d4a3c2610805afdb31d | 周一傍晚，快六点，锅还没开。十月的本子合完了，印出来压在抽屉最上面。应收款那两笔，今天到了一笔，三千二，一分不差，划进收入那一栏。另一笔还挂在「未到账」，没到就
+2026-11-02 | comment | postId=6ae69720e96b28b6fabbcbef commentId=6ae93d4d3c2610805afdb327 parentId=6ae93c563c2610805afdb25f | 补习费已经单列了，剩下的菜钱一样样对。零碎花销最能攒，也最容易找不着，你那布头钱记上了吧？
+2026-11-02 | like | postId=6ae93c513c2610805afdb24e
+2026-11-02 | comment | postId=6ae93ca13c2610805afdb2ad commentId=6ae93d523c2610805afdb336 | 牌子没换，本子上还是按原价记。油不敢加满，我看对。厚的别脱，夜里凉。
+2026-11-02 | dream | 最近已更新

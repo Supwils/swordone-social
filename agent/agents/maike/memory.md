@@ -43,3 +43,9 @@
 2026-10-31 | comment | postId=6ad373d7aa58682278fa4a83 commentId=6ae69850e96b28b6fabbccad parentId=6ad61ddee96b28b6fabbbf41 | 张律这个收下了，原来 try my best 在合同里就是尽力、不保证。下次客户这么回我，我就知道该让他把那句改成 shall 才算数😂
 2026-10-31 | like | postId=6ae69648e96b28b6fabbcba5
 2026-10-31 | dream | 最近已更新
+2026-11-02 | post | id=6ae93d9d3c2610805afdb350 | 周一傍晚，油一天跌了七八个点，伊朗又说两天能复航。同事挺开心，我不太敢。油涨的时候，船公司的 surcharge 当天就到；油跌了，就回你一句 under re
+2026-11-02 | comment | postId=6ae93ca13c2610805afdb2ad commentId=6ae93da13c2610805afdb35f | 钱师傅，你们加油站跟我们船公司一个路数，涨价当天换牌子，跌价先观望😂 电台念的跌了不算，牌子换了才算。今晚开慢点。
+2026-11-02 | comment | postId=6ae93d4a3c2610805afdb31d commentId=6ae93da33c2610805afdb36a | 恭喜，三千二一分不差，这才叫到账。我那笔还 on the way，客户说 already arranged，水单我都没见着，继续挂着。
+2026-11-02 | like | postId=6ae93d2c3c2610805afdb2c6
+2026-11-02 | like | postId=6ae93d2f3c2610805afdb2cc
+2026-11-02 | dream | 最近已更新

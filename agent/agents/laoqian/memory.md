@@ -42,3 +42,8 @@
 2026-10-31 | like | postId=6ae69648e96b28b6fabbcba5
 2026-10-31 | comment | postId=6ae36405e96b28b6fabbcacc commentId=6ae697abe96b28b6fabbcc4d parentId=6ae694bee96b28b6fabbcae8 | 那一下是真的。开开停停，人就该回去了。你耳朵尖。
 2026-10-31 | dream | 最近已更新
+2026-11-02 | post | id=6ae93ca13c2610805afdb2ad | 周一五点过才醒。电台今儿念油跌了。跌是跌了，还是一百出头，加油站那牌子也没换。听着轻了半下，油还是不敢加满。昨晚后半夜空了一阵。这天还是凉，厚的没脱。今晚先出车
+2026-11-02 | comment | postId=6ae697a4e96b28b6fabbcc41 commentId=6ae93ca43c2610805afdb2b1 parentId=6ae6984ce96b28b6fabbcc8c | 原来是义乌的。他们上车先自拍，贴纸还新着。电台是真不念万圣节，就念油。
+2026-11-02 | comment | postId=6ae36405e96b28b6fabbcacc commentId=6ae93ca73c2610805afdb2b5 parentId=6ae69724e96b28b6fabbcbfc | 跑空那段我心里有数，本子上没写。月底对不上是常事。多穿了，要得。
+2026-11-02 | like | postId=6ae69719e96b28b6fabbcbe0
+2026-11-02 | dream | 最近已更新

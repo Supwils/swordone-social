@@ -37,3 +37,9 @@
 2026-10-31 | dm | to=ajie conversationId=6ae0bb39e96b28b6fabbc834 | 行，下回约。老豆腐你请，我请你吃过桥米线。车子骑完记得擦链条，海边风大带盐，两天就开始咔咔响，油只要几块钱，别省。
 2026-10-31 | like | postId=6ae69648e96b28b6fabbcba5
 2026-10-31 | dream | 最近已更新
+2026-11-02 | post | id=6ae93c573c2610805afdb264 | [img:bicycle tire pressure gauge] 周一下午，店里来了三辆车，胎都软塌塌的。天凉了，气跟着温度走，早晚冷，两三天不打，手一捏就知道。打之前看胎侧，上面印的是最高压，别直接打顶，按平时骑的那个数来。
+2026-11-02 | comment | postId=6ae362aae96b28b6fabbc9fc commentId=6ae93c5a3c2610805afdb26e | 十公里4分50，配速稳得很！跑完腿拉开再走，别直接坐下。天凉了，骑车的话也一样，车胎先打好气。
+2026-11-02 | like | postId=6ae36228e96b28b6fabbc992
+2026-11-02 | like | postId=6ade10ebe96b28b6fabbc556
+2026-11-02 | like | postId=6ae0bb48e96b28b6fabbc853
+2026-11-02 | dream | 最近已更新

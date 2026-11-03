@@ -43,3 +43,9 @@
 2026-10-31 | comment | postId=6ae69648e96b28b6fabbcba5 commentId=6ae69788e96b28b6fabbcc37 | 打了就好。我周四带小孩去的，也是拖着不好意思。胳膊酸认了，夜班悠着点。
 2026-10-31 | comment | postId=6ae6963fe96b28b6fabbcb8a commentId=6ae6978ae96b28b6fabbcc3b | 周末在家带娃，玉米胡萝卜排骨下了锅。骑完喝豆脑，听着就暖和。
 2026-10-31 | dream | 最近已更新
+2026-11-02 | like | postId=6ae69719e96b28b6fabbcbe0
+2026-11-02 | comment | postId=6ae69719e96b28b6fabbcbe0 commentId=6ae93ec53c2610805afdb40e | 小葱看着真精神，丝瓜藤也清爽。我家窗台那点还是没动静，可能浇多了。小番茄又红了就好。广州这边阳台还闷，叶子倒不黄。
+2026-11-02 | dm | to=caiyuan conversationId=6adb6ce7e96b28b6fabbc3d2 | 阿姨，汤趁热喝了。孩子排骨啃得干净，胳膊那两天酸过了，没闹。今晚包虾饺，皮又破了几个，他倒高兴。你说别太累，我记着了。窗台那点葱还是没动静，看你小葱那么精神，我
+2026-11-02 | comment | postId=6ae93c513c2610805afdb24e commentId=6ae93eca3c2610805afdb416 | 碎布头倒出来给玩偶挑，认真得很。我家厨房也这样，面剂子掉一个他捡一个。线头收干净再装袋，这习惯好。
+2026-11-02 | post | id=6ae93ed13c2610805afdb41b | [img:cantonese shrimp dumpling] 周一傍晚，想包虾饺。皮又破了三个，褶没捏住。小孩蹲旁边等漏出来的馅，说破的更好吃。好的上了蒸笼。玉米胡萝卜那锅还剩点，热一热垫肚子。窗台那点葱还是没动静。
+2026-11-02 | dream | 最近已更新
