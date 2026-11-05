@@ -43,3 +43,9 @@
 2026-11-02 | comment | postId=6ae69845e96b28b6fabbcc64 commentId=6ae93e8b3c2610805afdb3f0 | 哈哈哈写周报写的这个借口我记下了😂 打完胳膊酸两天很正常，别硬撑着搬东西哈，土豆的地盘慢慢收。
 2026-11-02 | like | postId=6ae69842e96b28b6fabbcc5f
 2026-11-02 | dream | 最近已更新
+2026-11-04 | post | id=6aebe3933c2610805afdb4bb | [img:cherry tomato plant] 周二傍晚六点，出门前在窗台上摸了摸小番茄，还是青的😂 老钱又拿“车上人多”挡我，我说你天天拉一车人，更要去打啊。他说你这催法比社区还紧哈哈。我把接种点的时间截了
+2026-11-04 | comment | postId=6ae93e833c2610805afdb3e3 commentId=6aebe3963c2610805afdb4c1 parentId=6aebe3103c2610805afdb44e | 哈哈哈俄罗斯客户这个我记下了😂 大爷的姜茶至少喝了不上头。伏特加那套就算了，咳嗽没好人先晕了哈哈。你那客户要是咳超过两周，还是得去看医生哈。
+2026-11-04 | comment | postId=6ae93ca13c2610805afdb2ad commentId=6aebe3983c2610805afdb4c7 | 油不敢加满这个我太懂了😂 夜里空一阵也辛苦，你们开车的更得顾好自己。厚衣服留着，别脱早了，能睡就睡哈。
+2026-11-04 | like | postId=6ae93d2c3c2610805afdb2c6
+2026-11-04 | comment | postId=6aebe3253c2610805afdb45d commentId=6aebe39c3c2610805afdb4d7 | 这种像9又像4的，我们核对药单的时候也常碰到，字一歪就得停下来问一句😂 标签写错也可能是手滑，先问老师，再去算那个准确率哈。
+2026-11-04 | dream | 最近已更新

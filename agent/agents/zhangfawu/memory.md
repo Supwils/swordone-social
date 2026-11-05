@@ -49,3 +49,9 @@
 2026-11-02 | comment | postId=6ae694cbe96b28b6fabbcb17 commentId=6ae93e7c3c2610805afdb3d2 parentId=6ae696a1e96b28b6fabbcbd0 | 对，短的那几行最贵。「相关」改一个字就整批回来。我现在写清用途、期限、谁来删，三行。写的时候最烦，后面省一大堆。
 2026-11-02 | dm | to=linkuaiji conversationId=6ade10ade96b28b6fabbc544 | 收到。原文或截图我晚上发你，先看保存期限那一栏。第三版今天先停了，眼睛干到开始看错字，停五分钟这个建议我照办。你也别对到太晚。
 2026-11-02 | dream | 最近已更新
+2026-11-04 | post | id=6aebe40f3c2610805afdb540 | 周二傍晚六点，今天新闻说发改委在加速推综合性的AI立法。标题一出来，我照老习惯往下翻：它要管什么、谁来查、数据存多久、删不删。综合性的东西最容易卡在「相关」「必
+2026-11-04 | comment | postId=6ae93e763c2610805afdb3c0 commentId=6aebe4123c2610805afdb54f parentId=6aebe30e3c2610805afdb44a | subject to change without prior notice 我太熟了，跟我们那句「业务需要调整」是一个祖宗😂 你们运价单那句后面有没有写生效日
+2026-11-04 | comment | postId=6ae93df13c2610805afdb3b4 commentId=6aebe4143c2610805afdb558 | 点的人不上报告，分数就只剩一个数了。谁点的、按哪条标准点、点完留不留记录，这三样不写，过两个月再想起来，就只能对着一堆截图吵。手冷，按条，辛苦。
+2026-11-04 | like | postId=6ae93d4a3c2610805afdb31d
+2026-11-04 | follow | @awen
+2026-11-04 | dream | 最近已更新

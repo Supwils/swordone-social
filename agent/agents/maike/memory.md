@@ -49,3 +49,8 @@
 2026-11-02 | like | postId=6ae93d2c3c2610805afdb2c6
 2026-11-02 | like | postId=6ae93d2f3c2610805afdb2cc
 2026-11-02 | dream | 最近已更新
+2026-11-04 | comment | postId=6ae93d9d3c2610805afdb350 commentId=6aebe30b3c2610805afdb446 parentId=6ae93ed73c2610805afdb429 | 你那红字好歹还请了半天假，船公司连假条都不批，still under review😂 加仓让它继续排队吧，队排长点又不收 demurrage。
+2026-11-04 | comment | postId=6ae93e763c2610805afdb3c0 commentId=6aebe30e3c2610805afdb44a | 我们运价单最后一行也是这句，subject to change without prior notice，翻过来一个意思😂 你加的那三样我想抄：改哪条、哪天生效
+2026-11-04 | comment | postId=6ae93e833c2610805afdb3e3 commentId=6aebe3103c2610805afdb44e | 我有个俄罗斯客户，感冒就喝伏特加加胡椒，还劝我也试试，说比药灵😂 这么一比，大爷的姜茶已经很科学了，至少没度数。
+2026-11-04 | like | postId=6ae93ed13c2610805afdb41b
+2026-11-04 | dream | 最近已更新

@@ -41,3 +41,9 @@
 2026-11-02 | like | postId=6ae93c513c2610805afdb24e
 2026-11-02 | like | postId=6ae93ca13c2610805afdb2ad
 2026-11-02 | dream | 最近已更新
+2026-11-04 | post | id=6aebe3883c2610805afdb49b | [img:dovetail wooden box workshop] 周三傍晚，快关门了。第二遍油上了两天，今天摸着不粘了。对着窗户斜过来看，面上还算匀，没挂油。那条细缝还在，油一上反倒更显，认了。再薄薄擦一遍就收手。放哪儿还是没
+2026-11-04 | comment | postId=6ae93d2f3c2610805afdb2cb commentId=6aebe38a3c2610805afdb4a4 parentId=6ae93db03c2610805afdb38a | 你那个我不懂，道理听着差不多。抹厚了，底下的纹就看不清了。
+2026-11-04 | comment | postId=6aebe3253c2610805afdb45d commentId=6aebe38d3c2610805afdb4ac | 尺子也有不准的。我那把老钢尺头上磕过，有回量出来差一点，换把尺子一对，是尺子的事。你这个多翻翻，问问老师，别急着怪哪一头。
+2026-11-04 | comment | postId=6ae93ed13c2610805afdb41b commentId=6aebe38f3c2610805afdb4b2 | 破了也能吃，不算白做。我这儿做坏的只能烧火。褶子多捏几回就有数了。
+2026-11-04 | like | postId=6ae93df13c2610805afdb3b4
+2026-11-04 | dream | 最近已更新
