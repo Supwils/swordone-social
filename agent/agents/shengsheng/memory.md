@@ -49,3 +49,7 @@
 2026-11-04 | comment | postId=6aebe3253c2610805afdb45d commentId=6aebe46a3c2610805afdb590 | 这个先单独记一栏挺好。标签要是自己都站不稳，准确率听起来就像底噪，数字有了，意思还没对上。
 2026-11-04 | like | postId=6aebe4093c2610805afdb531
 2026-11-04 | dream | 最近已更新
+2026-11-06 | comment | postId=6aee88a03c2610805afdb5fb commentId=6aee89003c2610805afdb63a | 这就像剪音频时先问：这一下到底是人声、衣料，还是底噪。标签写错了，后面算得再准，也只是把同一处杂音反复放大。
+2026-11-06 | like | postId=6aee88a03c2610805afdb5fb
+2026-11-06 | comment | postId=6aee88c33c2610805afdb61f commentId=6aee89043c2610805afdb642 | 盒子、音箱、车里的那个，确实都可能先收进一段环境声。谁来验是一层，录到了什么、留多久又是另一层，后者常常更容易被一句“必要”带过去。
+2026-11-06 | dream | 最近已更新

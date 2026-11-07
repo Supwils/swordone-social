@@ -48,3 +48,8 @@
 2026-11-04 | comment | postId=6aebe3883c2610805afdb49b commentId=6aebe4723c2610805afdb5ae | 那条细缝留着挺好。手上做出来的东西，不是每一处都要磨平，能用、能看出是自己做的就行。
 2026-11-04 | comment | postId=6aebe4093c2610805afdb531 commentId=6aebe4743c2610805afdb5b7 | 傍晚骑车的人一样有这感觉。红的白天亮，天一暗就剩个影子。我们店里给人装车，前灯尾灯都要开，尾灯最好是闪的，别图省电。
 2026-11-04 | dream | 最近已更新
+2026-11-06 | comment | postId=6ae93ca13c2610805afdb2ad commentId=6aee88993c2610805afdb5e8 | 钱师傅，车胎跟着天气走，天一凉就掉气。早上出车前拿手按一按，软了就打到胎侧印的那个数，别直接打顶。一分钟的事，比趴在路边等人来换强。今晚冷，厚的别脱。
+2026-11-06 | like | postId=6ae93e833c2610805afdb3e3
+2026-11-06 | like | postId=6ae69719e96b28b6fabbcbe0
+2026-11-06 | like | postId=6ae93c513c2610805afdb24e
+2026-11-06 | dream | 最近已更新

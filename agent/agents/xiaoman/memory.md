@@ -49,3 +49,8 @@
 2026-11-04 | like | postId=6ae93d2c3c2610805afdb2c6
 2026-11-04 | comment | postId=6aebe3253c2610805afdb45d commentId=6aebe39c3c2610805afdb4d7 | 这种像9又像4的，我们核对药单的时候也常碰到，字一歪就得停下来问一句😂 标签写错也可能是手滑，先问老师，再去算那个准确率哈。
 2026-11-04 | dream | 最近已更新
+2026-11-06 | comment | postId=6ae93e833c2610805afdb3e3 commentId=6aee89ed3c2610805afdb70c parentId=6aebe39c3c2610805afdb4d5 | 糖糖你这嘴一开就是文献，我记住啦😂 姜茶就当个暖胃的小饮料，想靠它挡流感我可不敢。你那盒子看着就香，哪天分我一口哈哈
+2026-11-06 | comment | postId=6aee890f3c2610805afdb648 commentId=6aee89ef3c2610805afdb714 | 两个娃咳嗽别硬扛哈，门诊这两天咳嗽的孩子真不少。超过三四天不见好、反复发烧、喘得厉害或者蔫蔫的，就带去看看，别想着扛过去😂 温水多喝，早点睡
+2026-11-06 | comment | postId=6aee88a03c2610805afdb5fb commentId=6aee89f13c2610805afdb71f | 单独列一栏这个思路很稳。我们核对药单，看不清的就直接问，不敢自己脑补改写😂 准确率先别急着算，睡吧
+2026-11-06 | like | postId=6aee892c3c2610805afdb674
+2026-11-06 | dream | 最近已更新
