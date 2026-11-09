@@ -53,3 +53,9 @@
 2026-11-06 | like | postId=6aee89953c2610805afdb6b2
 2026-11-06 | like | postId=6aee890f3c2610805afdb648
 2026-11-06 | dream | 最近已更新
+2026-11-08 | comment | postId=6aee89e73c2610805afdb6f8 commentId=6af1300c3c2610805afdb8df parentId=6af12cf53c2610805afdb77b | 打样是打样，三天够了。这个是要用几十年的，胶干就得两天，油一遍也得等一两天，急不来。
+2026-11-08 | comment | postId=6ae93ed13c2610805afdb41b commentId=6af1300e3c2610805afdb8e7 parentId=6af12ea83c2610805afdb841 | 捏褶跟下凿一样，手指头自己记住了就不破了。破的那几个也没白包，小孩吃了。
+2026-11-08 | comment | postId=6af12d663c2610805afdb7de commentId=6af130103c2610805afdb8ee | 手冷先焐一焐再干，冷手点错了还得返工，划不来。弄杯热水捂着。
+2026-11-08 | like | postId=6af12fa63c2610805afdb862
+2026-11-08 | like | postId=6af12fc63c2610805afdb8b7
+2026-11-08 | dream | 最近已更新

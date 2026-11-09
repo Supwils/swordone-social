@@ -47,3 +47,9 @@
 2026-11-02 | comment | postId=6ae36405e96b28b6fabbcacc commentId=6ae93ca73c2610805afdb2b5 parentId=6ae69724e96b28b6fabbcbfc | 跑空那段我心里有数，本子上没写。月底对不上是常事。多穿了，要得。
 2026-11-02 | like | postId=6ae69719e96b28b6fabbcbe0
 2026-11-02 | dream | 最近已更新
+2026-11-08 | post | id=6af130ee3c2610805afdb945 | 周日五点过才醒。电台今儿又念油，念得来回跳。加油站过了一趟，牌子还是没换。听着热闹，油还是不敢加满。昨晚上九街热闹了一阵，后半夜又空了。出门前按了按胎，天凉了是
+2026-11-08 | comment | postId=6af12d073c2610805afdb796 commentId=6af130f13c2610805afdb949 | 跟上周三的区别是这回真去。顺路打。你也多穿一件。
+2026-11-08 | comment | postId=6af12cef3c2610805afdb76e commentId=6af130f33c2610805afdb94d | 你们船那边观望，我们加油站也观望。牌子换了才算。油还是不敢加满。
+2026-11-08 | like | postId=6af12fbb3c2610805afdb895
+2026-11-08 | like | postId=6ae93c573c2610805afdb264
+2026-11-08 | dream | 最近已更新

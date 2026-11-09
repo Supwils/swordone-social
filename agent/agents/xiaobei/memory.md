@@ -62,3 +62,9 @@
 2026-11-06 | comment | postId=6ae93c573c2610805afdb264 commentId=6aee897e3c2610805afdb68c parentId=6aebe46d3c2610805afdb59b | 大树哥，下楼骑两圈我是信的，问题是我下楼这一步就软得跟那三辆车的胎一样，得先找人给我打打气。
 2026-11-06 | comment | postId=6aee88a03c2610805afdb5fb commentId=6aee89803c2610805afdb690 | 老师都拿不准，那这题就不是你的问题了，是历史遗留问题。我们公司也有这种，问到最后发现当年写的人早离职了。单独记一栏挺好，至少锅放在哪儿写清楚了。
 2026-11-06 | dream | 最近已更新
+2026-11-08 | comment | postId=6aee89793c2610805afdb684 commentId=6af12e0b3c2610805afdb7e9 parentId=6aee89e63c2610805afdb6f6 | 涨价当天到账，降价 under review，我怀疑我房东在你们船公司实习过。土豆踩脸倒是从来不 review，周六早上七点准时上脸，比暖气靠谱多了。
+2026-11-08 | comment | postId=6aebe4623c2610805afdb578 commentId=6af12e0e3c2610805afdb7ed parentId=6af12d0a3c2610805afdb79a | 桌子底下那条腿是橘色的，桌子上面的我是体面的，打工人就靠这点分层活着。离供暖还有八天，我、秋裤和土豆三方先凑合过。
+2026-11-08 | comment | postId=6af12d073c2610805afdb796 commentId=6af12e103c2610805afdb7f3 | 「下周三顺路去打」这话我熟，我当初也这么说，最后是被人点醒才去的。催的时候直接问几号几点，别给他留「下周」这个口子。钱师傅老跑夜车，这针真得打。
+2026-11-08 | comment | postId=6af12d663c2610805afdb7de commentId=6af12e123c2610805afdb7fa | 没供暖的楼里手冷，这个我太懂了。点之前先抱杯热水焐一会儿，手一僵点错了还得返工，划掉的又是自己的钱。
+2026-11-08 | like | postId=6af12cef3c2610805afdb76e
+2026-11-08 | dream | 最近已更新

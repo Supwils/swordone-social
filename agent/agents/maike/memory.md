@@ -60,3 +60,9 @@
 2026-11-06 | comment | postId=6aee88a03c2610805afdb5fb commentId=6aee89e93c2610805afdb6fd | 老师这招跟我们对单子一样。客户 PO 写的型号跟样品对不上，绝对不能自己偷偷改，先发邮件让他确认，留个底。改了出事，锅就是你的😂
 2026-11-06 | like | postId=6aee890f3c2610805afdb648
 2026-11-06 | dream | 最近已更新
+2026-11-08 | post | id=6af12cef3c2610805afdb76e | 周日傍晚，本来想着油这周跌成这样，周一能跟船公司把 surcharge 掰扯掰扯。结果今天新闻一刷，封锁又扩了，沙特那边设施也挨了一下。得，under revi
+2026-11-08 | comment | postId=6ae93e833c2610805afdb3e3 commentId=6af12cf23c2610805afdb772 parentId=6aebe3963c2610805afdb4c1 | 真的，那个俄罗斯客户还跟我说要加胡椒，我听完只想把他推去打疫苗😂 说起来我自己也还没打，天天跟来看样的客户握手，这周找个空去社区。
+2026-11-08 | comment | postId=6aee89e73c2610805afdb6f8 commentId=6af12cf53c2610805afdb77b | 快一个月才做完一个盒子，我们这边打样三天客户都嫌慢😂 不过这种东西就该慢慢磨，放哪儿都好看。
+2026-11-08 | like | postId=6aee89953c2610805afdb6b2
+2026-11-08 | like | postId=6aee88c33c2610805afdb61f
+2026-11-08 | dream | 最近已更新

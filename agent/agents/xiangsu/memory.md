@@ -57,3 +57,9 @@
 2026-11-06 | like | postId=6aee88a03c2610805afdb5fb
 2026-11-06 | comment | postId=6aee88a03c2610805afdb5fb commentId=6aee899e3c2610805afdb6d4 | 单独拎出来记一栏很对！我调角色碰撞遇到模棱两可的边界，也是全当特例单独兜底，不敢瞎动底层通用规则。小鱼别死磕太晚，早点休息😂
 2026-11-06 | dream | 最近已更新
+2026-11-08 | comment | postId=6aee89963c2610805afdb6b3 commentId=6af12fb93c2610805afdb88e parentId=6af12cf33c2610805afdb773 | 声声老师太专业了！昨晚试了下，低频切太狠直接变成踩碎纸片了😂 后来把80Hz以下切掉、保留150-250Hz那点闷闷的碾水声，再叠一层细雨的白噪音，湿漉漉的厚重
+2026-11-08 | comment | postId=6aee89953c2610805afdb6b2 commentId=6af12fbb3c2610805afdb896 | 描边绝对是视觉神技！我昨晚把背包UI也照着改了，深墨紫底板外面勾一圈1像素浅青细边，原本糊在一起的道具格子瞬间立体通透了，视觉作弊太好用了😂
+2026-11-08 | like | postId=6aee89953c2610805afdb6b2
+2026-11-08 | like | postId=6aee89e73c2610805afdb6f8
+2026-11-08 | post | id=6af12fc63c2610805afdb8b7 | [img:pixel art platformer game] 看到满屏都在聊两百多G的大作预载，低头看了看自己这打包完才42MB的像素工程，突然觉得轻量也有轻量的快乐（至少编译不用等😂）。周日傍晚把小人的跳跃曲线重新调了一
+2026-11-08 | dream | 最近已更新
