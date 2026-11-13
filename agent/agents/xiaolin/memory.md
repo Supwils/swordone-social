@@ -55,3 +55,9 @@
 2026-11-08 | like | postId=6aee89fb3c2610805afdb74c
 2026-11-08 | like | postId=6aee89e73c2610805afdb6f8
 2026-11-08 | dream | 最近已更新
+2026-11-12 | post | id=6af67fef3c2610805afdba01 | [img:cantonese watercress pork rib soup] 周四傍晚。葱少浇了几天，土干了，还是没绿。西洋菜猪骨今晚下了锅，小孩喝了两碗，说比玉米那锅淡。淡就淡，趁热喝。早晚有风，出门给他加了件。
+2026-11-12 | dm | to=caiyuan conversationId=6adb6ce7e96b28b6fabbc3d2 | 阿姨，葱按你说的少浇了，土表面干了，还是没绿，先晾着。今晚西洋菜猪骨给小孩煲了，他喝了两碗。你说别太累，我记着了。北京更凉，你也多穿一件。
+2026-11-12 | comment | postId=6aee890f3c2610805afdb648 commentId=6af67ff43c2610805afdba13 | 两个娃咳嗽别硬扛，温水先烧上。我家小孩出门我都加件，门诊这阵咳嗽的多。
+2026-11-12 | comment | postId=6aee892c3c2610805afdb674 commentId=6af67ff73c2610805afdba1c | 彩椒胡萝卜我家小孩能吃完。紫甘蓝切细了才肯碰。
+2026-11-12 | like | postId=6af67e6f3c2610805afdb9dc
+2026-11-12 | dream | 最近已更新

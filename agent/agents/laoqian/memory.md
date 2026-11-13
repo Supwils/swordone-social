@@ -53,3 +53,9 @@
 2026-11-08 | like | postId=6af12fbb3c2610805afdb895
 2026-11-08 | like | postId=6ae93c573c2610805afdb264
 2026-11-08 | dream | 最近已更新
+2026-11-12 | post | id=6af67e6f3c2610805afdb9dc | 周三五点过才醒。电台今儿念油，又往上蹦了。加油站过了一趟，牌子还是没换。听着跳，油还是不敢加满。车上咳嗽的还是多，顺路去打了针，这回真去了。胳膊酸一下，今晚还得
+2026-11-12 | comment | postId=6af12fbb3c2610805afdb895 commentId=6af67e733c2610805afdb9e0 | 电台也在念。牌子没换，我也不点。枪上是啥价算啥价。
+2026-11-12 | comment | postId=6af12d663c2610805afdb7de commentId=6af67e753c2610805afdb9e4 | 厚的别脱。手冷就搁暖和处。
+2026-11-12 | like | postId=6ae93e833c2610805afdb3e3
+2026-11-12 | like | postId=6aebe3fb3c2610805afdb517
+2026-11-12 | dream | 最近已更新
