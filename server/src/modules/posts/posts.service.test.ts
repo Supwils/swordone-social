@@ -563,18 +563,13 @@ describe('posts.service', () => {
 
   // ── getShowcasePosts ──────────────────────────────────────────────────────
 
-  it('returns public showcase posts and excludes private/echo/stale ones', async () => {
+  it('returns public showcase posts and excludes private and echo ones', async () => {
     const a = await seedUser();
     const b = await seedUser();
     const pub1 = await seedPost(a.id, { text: 'public one', visibility: 'public' });
     const pub2 = await seedPost(b.id, { text: 'public two', visibility: 'public' });
     await seedPost(a.id, { text: 'private secret', visibility: 'private' });
     await seedPost(a.id, { text: 'an echo', echoOf: pub1.id });
-    await seedPost(a.id, {
-      text: 'too old',
-      visibility: 'public',
-      createdAt: new Date(Date.now() - 90 * 24 * 3_600_000),
-    });
 
     const out = await getShowcasePosts(null, { lang: 'en', content: true });
     const ids = out.map((p) => p.id);
@@ -583,7 +578,22 @@ describe('posts.service', () => {
     expect(ids).toContain(pub2.id);
     expect(out.every((p) => p.visibility === 'public')).toBe(true);
     expect(out.some((p) => p.text === 'private secret')).toBe(false);
-    expect(out.some((p) => p.text === 'too old')).toBe(false);
+  });
+
+  it('mixes in older posts that earned a reaction, never ones nobody touched', async () => {
+    const a = await seedUser();
+    const b = await seedUser();
+    const old = new Date(Date.now() - 90 * 24 * 3_600_000);
+    await seedPost(a.id, { text: 'recent post' });
+    const earned = await seedPost(b.id, { text: 'old but liked', createdAt: old, likeCount: 3 });
+    await seedPost(b.id, { text: 'old and ignored', createdAt: old });
+
+    const out = await getShowcasePosts(null, { lang: 'en', content: true });
+    const texts = out.map((p) => p.text);
+
+    expect(out.some((p) => p.id === earned.id)).toBe(true);
+    expect(texts).toContain('recent post');
+    expect(texts).not.toContain('old and ignored');
   });
 
   it('caps showcase posts at two per author', async () => {

@@ -4,6 +4,7 @@ import type { Router } from 'express';
 const mocks = vi.hoisted(() => ({
   following: vi.fn(),
   global: vi.fn(),
+  globalGuestMix: vi.fn(),
   byTag: vi.fn(),
   byAuthor: vi.fn(),
   byBoard: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock('../../middlewares/auth', () => ({
 vi.mock('./feed.service', () => ({
   following: mocks.following,
   global: mocks.global,
+  globalGuestMix: mocks.globalGuestMix,
   byTag: mocks.byTag,
   byAuthor: mocks.byAuthor,
   byBoard: mocks.byBoard,
@@ -160,14 +162,37 @@ describe('feed routes', () => {
     );
   });
 
-  it('returns global feed for anonymous viewers', async () => {
-    mocks.global.mockResolvedValue({ items: [], nextCursor: null, ctxById: new Map() });
+  it('gives an anonymous reader of the ranked tab the guest mix', async () => {
+    mocks.globalGuestMix.mockResolvedValue({ items: [], nextCursor: null, ctxById: new Map() });
 
     const { res, error } = await runRoute(feedRouter, '/global', 'get');
 
     expect(error).toBeUndefined();
     expect(res.statusCode).toBe(200);
-    expect(mocks.global).toHaveBeenCalledWith(null, null, 20, 'recommended', undefined);
+    expect(mocks.globalGuestMix).toHaveBeenCalledWith(null, 20);
+    expect(mocks.global).not.toHaveBeenCalled();
+  });
+
+  it('keeps the plain feed for anonymous latest and any since read', async () => {
+    mocks.global.mockResolvedValue({ items: [], nextCursor: null, ctxById: new Map() });
+    const since = new Date('2026-10-17T13:06:00Z');
+
+    await runRoute(feedRouter, '/global', 'get', { query: { sort: 'latest' } });
+    await runRoute(feedRouter, '/global', 'get', { query: { since } });
+
+    expect(mocks.global).toHaveBeenNthCalledWith(1, null, null, 20, 'latest', undefined);
+    expect(mocks.global).toHaveBeenNthCalledWith(2, null, null, 20, 'recommended', since);
+    expect(mocks.globalGuestMix).not.toHaveBeenCalled();
+  });
+
+  it('keeps the plain ranked feed for a signed-in reader', async () => {
+    mocks.global.mockResolvedValue({ items: [], nextCursor: null, ctxById: new Map() });
+    const user = { id: 'viewer-id' };
+
+    await runRoute(feedRouter, '/global', 'get', { user });
+
+    expect(mocks.global).toHaveBeenCalledWith(user, null, 20, 'recommended', undefined);
+    expect(mocks.globalGuestMix).not.toHaveBeenCalled();
   });
 
   it('passes tag slugs through to the tag feed', async () => {
@@ -285,13 +310,13 @@ describe('feed routes', () => {
   });
 
   it('still accepts the two languages the app ships locales for', async () => {
-    mocks.global.mockResolvedValue({ items: [], nextCursor: null, ctxById: new Map() });
+    mocks.globalGuestMix.mockResolvedValue({ items: [], nextCursor: null, ctxById: new Map() });
 
     for (const lang of ['en', 'zh']) {
-      mocks.global.mockClear();
+      mocks.globalGuestMix.mockClear();
       const { error } = await runRoute(feedRouter, '/global', 'get', { query: { lang } });
       expect(error).toBeUndefined();
-      expect(mocks.global).toHaveBeenCalledTimes(1);
+      expect(mocks.globalGuestMix).toHaveBeenCalledTimes(1);
     }
   });
 

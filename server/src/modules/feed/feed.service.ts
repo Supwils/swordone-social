@@ -8,6 +8,8 @@ import {
   desc,
   gt,
   gte,
+  lt,
+  sql,
   arrayOverlaps,
   type SQL,
 } from 'drizzle-orm';
@@ -45,6 +47,13 @@ import type {
   TagDTO,
 } from '../../contract/posts';
 import { TTLCache } from '../../lib/ttlCache';
+import {
+  GUEST_MIX,
+  archiveEngagement,
+  encodeMixCursor,
+  mergeMixPage,
+  type MixCursor,
+} from './feed.mix';
 import { translatePostsForRead, translateTags } from '../../lib/translate';
 import type { ReadTranslation } from '../../lib/lang';
 
@@ -144,6 +153,66 @@ export async function global(
   return sort === 'latest'
     ? paginateByTime(base, viewer, cursor as Cursor, limit, since)
     : paginateByScore(base, viewer, cursor as ScoreCursor, limit, since);
+}
+
+/**
+ * The signed-out visitor's ranked global feed: recent and archive posts mixed,
+ * with clock openings capped per page. See `feed.mix.ts` for the rules.
+ */
+export async function globalGuestMix(cursor: MixCursor | null, limit: number): Promise<FeedPage> {
+  const cutoffIso =
+    cursor?.c ?? new Date(Date.now() - GUEST_MIX.recentDays * 24 * 3_600_000).toISOString();
+  const cutoff = new Date(cutoffIso);
+  const base = and(
+    eq(posts.status, 'active'),
+    eq(posts.visibility, 'public'),
+    notReservedBoardClause(),
+  );
+  const engagementSql = sql<number>`(${posts.likeCount} + ${posts.commentCount} * 3 + ${posts.repostCount} * 2)`;
+  const archiveAfter = cursor?.a
+    ? or(
+        lt(engagementSql, cursor.a.e),
+        and(eq(engagementSql, cursor.a.e), lt(posts.id, cursor.a.id)),
+      )
+    : undefined;
+
+  const [recent, archive] = await Promise.all([
+    db
+      .select()
+      .from(posts)
+      .where(
+        and(
+          base,
+          gte(posts.createdAt, cutoff),
+          scoreCursorCondition(cursor?.r ?? null, posts.feedScore, posts.id),
+        ),
+      )
+      .orderBy(desc(posts.feedScore), desc(posts.id))
+      .limit(limit + 1),
+    // Ordered by an expression no index covers; the pre-cutoff public set is a
+    // few thousand rows and only signed-out readers ask for it.
+    db
+      .select()
+      .from(posts)
+      .where(and(base, lt(posts.createdAt, cutoff), archiveAfter))
+      .orderBy(desc(engagementSql), desc(posts.id))
+      .limit(limit + 1),
+  ]);
+
+  const page = mergeMixPage(recent, archive, limit);
+  const nextCursor = page.more
+    ? encodeMixCursor({
+        c: cutoffIso,
+        r: page.tookRecent
+          ? { s: page.tookRecent.feedScore, id: page.tookRecent.id }
+          : (cursor?.r ?? null),
+        a: page.tookArchive
+          ? { e: archiveEngagement(page.tookArchive), id: page.tookArchive.id }
+          : (cursor?.a ?? null),
+      })
+    : null;
+  const ctxById = await hydratePosts(page.items, null);
+  return { items: page.items, nextCursor, ctxById };
 }
 
 /**

@@ -1,4 +1,4 @@
-import { and, or, eq, inArray, isNull, gte, desc, ilike } from 'drizzle-orm';
+import { and, or, eq, inArray, isNull, gte, lt, desc, ilike, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { posts } from '../../db/schema';
 import { AppError } from '../../lib/errors';
@@ -11,6 +11,7 @@ import { notReservedBoardClause } from '../boards/boards.service';
 import type { SearchPostsQuery } from './posts.schemas';
 import { hydratePosts, toPostDTOs } from './posts.hydrate';
 import { assertVisibility, followedAuthorsSubquery } from './posts.visibility';
+import { SHOWCASE, composeShowcase, scoreArchive, scoreRecent } from './posts.showcase';
 
 /**
  * One post as a viewer may see it, hydrated by the same `hydratePosts` every
@@ -36,62 +37,41 @@ export async function getShowcasePosts(
   viewer: UserRow | null,
   translate: ReadTranslation | null,
 ): Promise<PostDTO[]> {
-  const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 3_600_000);
+  const cutoff = new Date(Date.now() - SHOWCASE.recentDays * 24 * 3_600_000);
+  const base = and(
+    eq(posts.status, 'active'),
+    eq(posts.visibility, 'public'),
+    isNull(posts.echoOf),
+    notReservedBoardClause(),
+  );
 
-  const candidates = await db
-    .select()
-    .from(posts)
-    .where(
-      and(
-        eq(posts.status, 'active'),
-        eq(posts.visibility, 'public'),
-        isNull(posts.echoOf),
-        gte(posts.createdAt, sixtyDaysAgo),
-        notReservedBoardClause(),
-      ),
-    )
-    .orderBy(desc(posts.feedScore), desc(posts.id))
-    .limit(120);
+  const [recentRows, archiveRows] = await Promise.all([
+    db
+      .select()
+      .from(posts)
+      .where(and(base, gte(posts.createdAt, cutoff)))
+      .orderBy(desc(posts.feedScore), desc(posts.id))
+      .limit(SHOWCASE.poolSize),
+    // No index serves this order; the older public set is a few thousand rows,
+    // and the wall is read by signed-out visitors only.
+    db
+      .select()
+      .from(posts)
+      .where(
+        and(base, lt(posts.createdAt, cutoff), sql`${posts.likeCount} + ${posts.commentCount} > 0`),
+      )
+      .orderBy(
+        desc(sql`${posts.likeCount} + ${posts.commentCount} * 3 + ${posts.repostCount} * 2`),
+        desc(posts.id),
+      )
+      .limit(SHOWCASE.poolSize),
+  ]);
 
-  // Compute showcase score in memory:
-  // - comments weighted 3× (vs 2× in feedScore) — active discussion = platform health
-  // - image bonus 1.5× — visual richness matters for a public showcase
-  // - softer time decay (1.1, 48h offset) — allows quality older content to surface
   const now = Date.now();
-  const scored = candidates.map((p) => {
-    const ageHours = (now - new Date(p.createdAt).getTime()) / 3_600_000;
-    const engagement = p.likeCount + p.commentCount * 3 + p.repostCount * 2 + 1;
-    const imageBonus = p.images.length > 0 ? 1.5 : 1.0;
-    const score = (engagement * imageBonus) / Math.pow(ageHours + 48, 1.1);
-    return { post: p, score };
-  });
-  scored.sort((a, b) => b.score - a.score);
-
-  // Author diversity: cap at 2 posts per author
-  const authorCount = new Map<string, number>();
-  const diverse: PostRow[] = [];
-  for (const { post } of scored) {
-    const aid = post.authorId;
-    const n = authorCount.get(aid) ?? 0;
-    if (n < 2) {
-      diverse.push(post);
-      authorCount.set(aid, n + 1);
-    }
-  }
-
-  // Tier-based Fisher-Yates shuffle for variety across refreshes
-  const tierSize = Math.ceil(diverse.length / 3);
-  const shuffled: PostRow[] = [];
-  for (let t = 0; t < 3; t++) {
-    const tier = diverse.slice(t * tierSize, (t + 1) * tierSize);
-    for (let i = tier.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [tier[i], tier[j]] = [tier[j], tier[i]];
-    }
-    shuffled.push(...tier);
-  }
-
-  const pagePosts = shuffled.slice(0, 24);
+  const pagePosts = composeShowcase(
+    recentRows.map((post) => ({ post, score: scoreRecent(post, now) })),
+    archiveRows.map((post) => ({ post, score: scoreArchive(post) })),
+  );
   const ctxMap = await hydratePosts(pagePosts, viewer);
   await translatePostsForRead(pagePosts, ctxMap, translate);
 

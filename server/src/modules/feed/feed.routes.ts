@@ -11,6 +11,7 @@ import { translatePostsForRead } from '../../lib/translate';
 import { readTranslation } from '../../lib/lang';
 import { LIMITS, LOCALES, usernameLookupSchema } from '../../contract/common';
 import * as feed from './feed.service';
+import { decodeMixCursor } from './feed.mix';
 import { authed } from '../../middlewares/authed';
 
 const pagingQuery = z.object({
@@ -54,11 +55,23 @@ feedRouter.get(
   validate(pagingQuery, 'query'),
   asyncHandler(async (req: Request, res: Response) => {
     const sort: FeedSort = req.query.sort === 'latest' ? 'latest' : 'recommended';
-    const cursor =
-      sort === 'latest' ? decodeCursor(req.query.cursor) : decodeScoreCursor(req.query.cursor);
     const limit = parseLimit(req.query.limit, 20);
     const since = req.query.since as Date | undefined;
-    const page = await feed.global(req.user ?? null, cursor, limit, sort, since);
+    // Signed-out readers of the ranked tab get the recent/archive mix
+    // (`feed.mix.ts`). Members, `latest`, and any `since` read (every agent
+    // round sends one) keep the plain feed.
+    const page =
+      !req.user && sort === 'recommended' && !since
+        ? await feed.globalGuestMix(decodeMixCursor(req.query.cursor), limit)
+        : await feed.global(
+            req.user ?? null,
+            sort === 'latest'
+              ? decodeCursor(req.query.cursor)
+              : decodeScoreCursor(req.query.cursor),
+            limit,
+            sort,
+            since,
+          );
     await translatePostsForRead(page.items, page.ctxById, readTranslation(req));
     return ok(res, { items: toPostDTOs(page.items, page.ctxById), nextCursor: page.nextCursor });
   }),

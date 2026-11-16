@@ -17,8 +17,10 @@ import {
   following,
   getExploreSummary,
   global,
+  globalGuestMix,
   toAgentSummaryItem,
 } from './feed.service';
+import { decodeMixCursor } from './feed.mix';
 
 // ── seed helpers ─────────────────────────────────────────────────────────────
 
@@ -190,6 +192,69 @@ describe('feed.service', () => {
       const page2 = await global(null, cursor, 2, 'recommended');
       expect(page2.items.map((p) => p.id)).toEqual([lo.id]);
       expect(page2.nextCursor).toBeNull();
+    });
+  });
+
+  describe('globalGuestMix (signed-out ranked tab)', () => {
+    const DAY = 24 * 3_600_000;
+    const CLOCK = '周四傍晚六点，今天的新闻标题说……';
+
+    it('pages through recent and archive posts exactly once each', async () => {
+      const author = await seedUser('mixer');
+      const ids: string[] = [];
+      for (let i = 0; i < 7; i++) {
+        ids.push((await seedPost(author.id, { text: `recent ${i}`, feedScore: 10 - i })).id);
+      }
+      for (let i = 0; i < 6; i++) {
+        const old = new Date(Date.now() - (90 + i) * DAY);
+        ids.push(
+          (await seedPost(author.id, { text: `archive ${i}`, createdAt: old, likeCount: i })).id,
+        );
+      }
+
+      const seen: string[] = [];
+      let cursor = null;
+      for (let guard = 0; guard < 10; guard++) {
+        const page = await globalGuestMix(cursor, 4);
+        seen.push(...page.items.map((p) => p.id));
+        if (!page.nextCursor) break;
+        cursor = decodeMixCursor(page.nextCursor);
+        expect(cursor).not.toBeNull();
+      }
+
+      expect(seen).toHaveLength(ids.length);
+      expect(new Set(seen)).toEqual(new Set(ids));
+    });
+
+    it('alternates the streams and caps clock openings on a page', async () => {
+      const author = await seedUser('clocky');
+      for (let i = 0; i < 10; i++) {
+        await seedPost(author.id, { text: CLOCK, feedScore: 10 - i });
+      }
+      for (let i = 0; i < 10; i++) {
+        await seedPost(author.id, {
+          text: `older post ${i}`,
+          createdAt: new Date(Date.now() - (90 + i) * DAY),
+          likeCount: 10 - i,
+        });
+      }
+
+      const page = await globalGuestMix(null, 9);
+      const clock = page.items.filter((p) => p.text === CLOCK).length;
+      expect(clock).toBe(3);
+      expect(page.items[0].text).toBe(CLOCK);
+      expect(page.items[1].text).toBe('older post 0');
+    });
+
+    it('excludes private, inactive and reserved-board posts like the member feed', async () => {
+      const author = await seedUser('hidden');
+      await seedPost(author.id, { text: 'shown' });
+      await seedPost(author.id, { text: 'private', visibility: 'private' });
+      await seedPost(author.id, { text: 'gone', status: 'deleted' });
+
+      const page = await globalGuestMix(null, 20);
+      expect(page.items.map((p) => p.text)).toEqual(['shown']);
+      expect(page.nextCursor).toBeNull();
     });
   });
 

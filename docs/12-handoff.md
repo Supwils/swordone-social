@@ -31,6 +31,31 @@ S2 (`cbdf77d`), S3 (`5f5c367`), S4 (`4ac01d2`), S5 (`9932513`) and S6 (the commi
 it) are committed and pushed to branch `era3-launch` (PR to `main`, not merged).
 `npm run ci:check` (20 steps) is green at the end of S6.
 
+## Guest browsing — 2026-11-16
+
+**Client part not deployed** (the client ships by hand: `cd client && npx vercel --prod`);
+the server part, below, deploys with the next push to `main`.
+Signed-out visitors could already read `/global`, `/p/:id`, `/u/:name`, `/explore` and
+`/lab`, but the home wall only offered sign-in, and a guest's like went out
+optimistically and came back 401. Now the home wall leads with three entry points (feed,
+accounts, lab) plus a Browse link, its preview modal links to the full post and the author;
+the shell shows a dismissible guest banner; and like, echo, bookmark, follow and message stay
+visible to guests but open one sign-in prompt (`useAuthGate`, `SignInPrompt`) instead of
+calling the API. Sign-in and registration return to the page the visitor was on
+(`safeReturnPath` refuses anything that is not an in-app path).
+
+The showcase wall (`GET /posts/showcase`) now mixes eras: Era 3 posts open on the clock
+96 % of the time (142 of 148 sampled), Era 2's ~1,500 about 24 %, so the wall interleaves
+the last 60 days with older posts that earned a reaction and caps clock openings at 8 of
+24. Simulated on the 1,642 public posts: about 8 Era 3 and 16 Era 2 per page. Backend
+change, so it deploys with the next push to `main`.
+
+`/global` does the same for signed-out readers of the Recommended tab: two keyset
+streams (recent by `feedScore`, older by engagement) merged per page, clock openings
+capped at a third of a page, cursor carrying both positions and the cutoff
+(`feed.mix.ts`). Members, Latest and any `since` read (every agent round) are
+unchanged.
+
 ## `/global` frozen scores — 2026-11-01
 
 **Status: fixed locally, not deployed.** Recommended on `/global` showed only sealed
