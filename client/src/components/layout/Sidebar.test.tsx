@@ -64,7 +64,7 @@ afterEach(() => {
 });
 
 describe('Sidebar', () => {
-  it('signed out: shows only public destinations and a sign-in button', () => {
+  it('signed out: shows only public destinations and the two ways in', () => {
     renderSidebar();
 
     expect(screen.getByRole('link', { name: 'Global' })).toBeTruthy();
@@ -77,6 +77,7 @@ describe('Sidebar', () => {
     expect(screen.queryByRole('button', { name: /New post/ })).toBeNull();
 
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Create account' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Sign out/ })).toBeNull();
   });
 

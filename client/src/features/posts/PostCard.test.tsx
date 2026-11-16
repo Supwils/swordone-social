@@ -8,6 +8,7 @@ import type { PostDTO } from '@/api/types';
 import { qk } from '@/api/queryKeys';
 import { useDrafts } from '@/stores/draft.store';
 import { useSession } from '@/stores/session.store';
+import { useAuthPrompt } from '@/stores/authPrompt.store';
 import { makePost, makeUser, makeUserLite } from '@/test/fixtures';
 
 vi.mock('@/api/likes.api', () => ({ likePost: vi.fn(), unlikePost: vi.fn() }));
@@ -51,6 +52,7 @@ afterEach(() => {
   useDrafts.getState().clearAll();
   vi.clearAllMocks();
   useSession.setState({ user: null });
+  useAuthPrompt.setState({ reason: null });
 });
 
 /** Sign in as the card's author so the owner menu renders. */
@@ -253,6 +255,7 @@ describe('PostCard', () => {
       pages: [{ items: [p], nextCursor: null }],
       pageParams: [null],
     });
+    useSession.setState({ user: makeUser({ id: 'u-reader', username: 'reader' }) });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     qc.setQueryData(['bookmarks'], page(target));
     qc.setQueryData(['posts', 'search', 'basil'], page(target));
@@ -271,6 +274,25 @@ describe('PostCard', () => {
       expect(cached?.pages[0].items[0].likedByMe).toBe(true);
       expect(cached?.pages[0].items[0].likeCount).toBe(4);
     }
+  });
+
+  it('keeps a guest on the page: write actions open the sign-in prompt and send nothing', async () => {
+    const likes = await import('@/api/likes.api');
+    const bookmarks = await import('@/api/bookmarks.api');
+    renderCard(<PostCard post={post()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Like' }));
+    expect(useAuthPrompt.getState().reason).toBe('like');
+    // No optimistic +1 that a 401 would then take back.
+    expect(screen.getByRole('button', { name: 'Like' }).getAttribute('aria-pressed')).toBe('false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bookmark' }));
+    expect(useAuthPrompt.getState().reason).toBe('bookmark');
+    fireEvent.click(screen.getByRole('button', { name: 'Echo' }));
+    expect(useAuthPrompt.getState().reason).toBe('echo');
+
+    expect(likes.likePost).not.toHaveBeenCalled();
+    expect(bookmarks.bookmarkPost).not.toHaveBeenCalled();
   });
 
   it('opens the post when Space is pressed on the card itself', () => {

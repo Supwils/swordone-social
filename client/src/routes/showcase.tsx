@@ -1,7 +1,16 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Heart, ChatCircle, X, Globe } from '@phosphor-icons/react';
+import {
+  Heart,
+  ChatCircle,
+  X,
+  Globe,
+  UsersThree,
+  Atom,
+  ArrowRight,
+  type Icon,
+} from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import { useUI } from '@/stores/ui.store';
 import * as postsApi from '@/api/posts.api';
@@ -46,7 +55,7 @@ function PostPreviewModal({ post, onClose }: { post: PostDTO | null; onClose: ()
             <X size={18} />
           </button>
 
-          <div className={s.modalPostHeader}>
+          <Link to={`/u/${post.author.username}`} className={s.modalPostHeader}>
             <Avatar
               src={post.author.avatarUrl}
               name={post.author.displayName || post.author.username}
@@ -67,7 +76,7 @@ function PostPreviewModal({ post, onClose }: { post: PostDTO | null; onClose: ()
               <span className={s.modalHandle}>@{post.author.username}</span>
             </div>
             <time className={s.modalTime}>{formatRelative(post.createdAt)}</time>
-          </div>
+          </Link>
 
           <div className={s.modalBody}>
             <MarkdownBody source={post.text} />
@@ -90,6 +99,10 @@ function PostPreviewModal({ post, onClose }: { post: PostDTO | null; onClose: ()
               <ChatCircle size={13} />
               {t('showcase.commentsCount', { count: post.commentCount })}
             </span>
+            <Link to={`/p/${post.id}`} className={s.modalOpenPost}>
+              {t('showcase.openPost')}
+              <ArrowRight size={13} aria-hidden />
+            </Link>
           </div>
 
           {(commentsQuery.data?.items ?? []).length > 0 && (
@@ -120,6 +133,41 @@ function PostPreviewModal({ post, onClose }: { post: PostDTO | null; onClose: ()
         </div>
       )}
     </Dialog>
+  );
+}
+
+const ENTRIES: ReadonlyArray<{ key: 'feed' | 'people' | 'lab'; to: string; icon: Icon }> = [
+  { key: 'feed', to: '/global', icon: Globe },
+  { key: 'people', to: '/explore', icon: UsersThree },
+  { key: 'lab', to: '/lab', icon: Atom },
+];
+
+/**
+ * The way in for a visitor without an account. Every page these lead to is an
+ * open route, so the wall is a preview, not a gate.
+ */
+function Intro() {
+  const { t } = useTranslation();
+  return (
+    <section className={s.intro} aria-labelledby="showcase-intro-title">
+      <p className={s.introEyebrow}>{t('showcase.intro.eyebrow')}</p>
+      <h1 id="showcase-intro-title" className={s.introTitle}>
+        {t('showcase.intro.title')}
+      </h1>
+      <nav className={s.entries} aria-label={t('showcase.intro.navLabel')}>
+        {ENTRIES.map(({ key, to, icon: EntryIcon }) => (
+          <Link key={key} to={to} className={s.entry}>
+            <EntryIcon size={20} weight="regular" className={s.entryIcon} aria-hidden />
+            <span className={s.entryText}>
+              <span className={s.entryTitle}>{t(`showcase.intro.${key}.title`)}</span>
+              <span className={s.entryDesc}>{t(`showcase.intro.${key}.desc`)}</span>
+            </span>
+            <ArrowRight size={16} className={s.entryArrow} aria-hidden />
+          </Link>
+        ))}
+      </nav>
+      <p className={s.wallLabel}>{t('showcase.intro.wallLabel')}</p>
+    </section>
   );
 }
 
@@ -165,6 +213,9 @@ export default function ShowcaseRoute() {
         </div>
         <nav className={s.topNav}>
           <LangToggle />
+          <Link to="/global" className={s.navBrowse}>
+            {t('showcase.browse')}
+          </Link>
           <Link to="/login" className={s.navLogin}>
             {t('showcase.login')}
           </Link>
@@ -175,6 +226,7 @@ export default function ShowcaseRoute() {
       </header>
 
       <main className={s.scatter}>
+        <Intro />
         {isLoading && (
           <div className={s.loading}>
             <Spinner />
@@ -187,9 +239,14 @@ export default function ShowcaseRoute() {
 
       <footer className={s.bottomBar}>
         <span className={s.bottomTagline}>{t('showcase.bottomTagline')}</span>
-        <Link to="/register" className={s.bottomCta}>
-          {t('showcase.bottomCta')}
-        </Link>
+        <div className={s.bottomActions}>
+          <Link to="/global" className={s.bottomBrowse}>
+            {t('showcase.bottomBrowse')}
+          </Link>
+          <Link to="/register" className={s.bottomCta}>
+            {t('showcase.bottomCta')}
+          </Link>
+        </div>
       </footer>
 
       <PostPreviewModal post={selectedPost} onClose={() => setSelectedPost(null)} />

@@ -24,6 +24,7 @@ import {
 import { useSession } from '@/stores/session.store';
 import { useDrafts } from '@/stores/draft.store';
 import { useUI } from '@/stores/ui.store';
+import { useAuthGate } from '@/lib/useAuthGate';
 import { formatRelative, formatAbsolute } from '@/lib/formatDate';
 import { MarkdownBody } from './MarkdownBody';
 import { InlineComments } from './InlineComments';
@@ -78,6 +79,7 @@ export const PostCard = memo(function PostCard({
   const qc = useQueryClient();
   const me = useSession((st) => st.user);
   const isMine = Boolean(me && me.id === post.author.id);
+  const gate = useAuthGate();
 
   const [deleting, setDeleting] = useState(false);
   const [echoOpen, setEchoOpen] = useState(false);
@@ -365,15 +367,14 @@ export const PostCard = memo(function PostCard({
 
       <PostCardActions
         post={post}
-        showEcho={Boolean(me) && !post.echoOf}
-        showBookmark={Boolean(me)}
+        showEcho={!post.echoOf}
         commentsOpen={commentsOpen}
         likePending={like.isPending}
         bookmarkPending={bookmark.isPending}
-        onLike={() => like.mutate()}
+        onLike={() => gate('like', () => like.mutate())}
         onToggleComments={() => setCommentsOpen((v) => !v)}
-        onEcho={() => setEchoOpen(true)}
-        onBookmark={() => bookmark.mutate()}
+        onEcho={() => gate('echo', () => setEchoOpen(true))}
+        onBookmark={() => gate('bookmark', () => bookmark.mutate())}
       />
     </>
   );

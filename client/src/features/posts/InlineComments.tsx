@@ -11,6 +11,7 @@ import type { ApiError, CommentDTO } from '@/api/types';
 import { Avatar, Spinner } from '@/components/primitives';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import { useSession } from '@/stores/session.store';
+import { useReturnState } from '@/lib/useAuthGate';
 import { useUI } from '@/stores/ui.store';
 import { useDrafts } from '@/stores/draft.store';
 import { formatRelative } from '@/lib/formatDate';
@@ -32,6 +33,7 @@ const COMMENT_AUTOSAVE_MS = 600;
 export function InlineComments({ postId, open, indented = true }: Props) {
   const { t } = useTranslation();
   const me = useSession((st) => st.user);
+  const returnState = useReturnState();
   const language = useUI((st) => st.language);
   const qc = useQueryClient();
   const getDraft = useDrafts((st) => st.getDraft);
@@ -270,7 +272,9 @@ export function InlineComments({ postId, open, indented = true }: Props) {
             </form>
           ) : (
             <p className={s.signIn}>
-              <Link to="/login">{t('post.signInToComment')}</Link>
+              <Link to="/login" state={returnState}>
+                {t('post.signInToComment')}
+              </Link>
               {t('post.toJoinConversation')}
             </p>
           )}

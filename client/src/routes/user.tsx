@@ -11,6 +11,7 @@ import * as messagesApi from '@/api/messages.api';
 import { qk } from '@/api/queryKeys';
 import { BookmarksFeed } from '@/features/bookmarks/BookmarksFeed';
 import { useSession } from '@/stores/session.store';
+import { useAuthGate } from '@/lib/useAuthGate';
 import { PostCard } from '@/features/posts/PostCard';
 import { flattenPostPages } from '@/features/posts/postCache';
 import { USERNAME_RE } from '@/contract/limits';
@@ -97,6 +98,7 @@ export default function UserRoute() {
   const language = useUI((st) => st.language);
   const [searchParams, setSearchParams] = useSearchParams();
   const me = useSession((st) => st.user);
+  const gate = useAuthGate();
   const qc = useQueryClient();
   const nav = useNavigate();
   const [followModal, setFollowModal] = useState<'followers' | 'following' | null>(null);
@@ -243,12 +245,13 @@ export default function UserRoute() {
               <strong>{u.followingCount}</strong> {t('profile.following')}
             </button>
           </div>
-          {!isSelf && me && (
+          {/* Shown to guests too: the buttons open the sign-in prompt. */}
+          {!isSelf && (
             <div className={s.actions}>
               {isFollowingUser ? (
                 <Button
                   variant="subtle"
-                  onClick={() => unfollow.mutate()}
+                  onClick={() => gate('follow', () => unfollow.mutate())}
                   disabled={unfollow.isPending || followStatus.isLoading}
                 >
                   {t('profile.unfollow')}
@@ -256,13 +259,17 @@ export default function UserRoute() {
               ) : (
                 <Button
                   variant="primary"
-                  onClick={() => follow.mutate()}
+                  onClick={() => gate('follow', () => follow.mutate())}
                   disabled={follow.isPending || followStatus.isLoading}
                 >
                   {t('profile.follow')}
                 </Button>
               )}
-              <Button variant="ghost" onClick={() => message.mutate()} disabled={message.isPending}>
+              <Button
+                variant="ghost"
+                onClick={() => gate('message', () => message.mutate())}
+                disabled={message.isPending}
+              >
                 {t('profile.message')}
               </Button>
             </div>

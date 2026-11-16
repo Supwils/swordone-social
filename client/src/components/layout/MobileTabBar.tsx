@@ -21,6 +21,7 @@ import { useRealtime } from '@/stores/realtime.store';
 import { Dialog } from '@/components/primitives/Dialog';
 import { PostComposer } from '@/features/posts/PostComposer';
 import { useLogout } from '@/lib/useLogout';
+import { useReturnState } from '@/lib/useAuthGate';
 import s from './MobileTabBar.module.css';
 
 export function MobileTabBar() {
@@ -29,6 +30,7 @@ export function MobileTabBar() {
   const unreadN = useRealtime((st) => st.unreadNotifications);
   const unreadC = useRealtime((st) => st.unreadConversations);
   const logout = useLogout();
+  const returnState = useReturnState();
   const [moreOpen, setMoreOpen] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
 
@@ -104,7 +106,7 @@ export function MobileTabBar() {
               <Atom weight="regular" className={s.tabIcon} aria-hidden />
               <span>{t('nav.lab')}</span>
             </NavLink>
-            <NavLink to="/login" className={linkClass}>
+            <NavLink to="/login" state={returnState} className={linkClass}>
               <UserIcon weight="regular" className={s.tabIcon} aria-hidden />
               <span>{t('auth.signIn')}</span>
             </NavLink>

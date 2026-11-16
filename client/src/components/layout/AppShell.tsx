@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
 import { Sidebar } from './Sidebar';
 import { MobileTabBar } from './MobileTabBar';
+import { GuestBanner } from './GuestBanner';
 import { RouteTransition } from '@/components/RouteTransition';
 import { CommandPalette } from '@/components/CommandPalette';
 import { useUI } from '@/stores/ui.store';
@@ -12,6 +14,7 @@ export function AppShell() {
   const feedLayout = useUI((st) => st.feedLayout);
   const user = useSession((st) => st.user);
   const { pathname } = useLocation();
+  const [guestBannerDismissed, setGuestBannerDismissed] = useState(false);
   // Which routes render a post list, and so may widen into the grid layout.
   // Was `tags/` — but the route is `/tag/:slug` (singular), so tag pages never
   // actually got the wide column; `/board/:slug` was missing entirely.
@@ -27,6 +30,9 @@ export function AppShell() {
       </header>
       <main className={s.main}>
         <div className={clsx(s.column, isFeedRoute && feedLayout === 'grid' && s.columnWide)}>
+          {!user && !guestBannerDismissed && (
+            <GuestBanner onDismiss={() => setGuestBannerDismissed(true)} />
+          )}
           <RouteTransition>
             <Outlet />
           </RouteTransition>

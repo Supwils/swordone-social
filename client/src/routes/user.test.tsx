@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@/i18n';
 import { useSession } from '@/stores/session.store';
+import { useAuthPrompt } from '@/stores/authPrompt.store';
 import { makeConversation, makePost, makeUser } from '@/test/fixtures';
 
 const mocks = vi.hoisted(() => ({
@@ -82,10 +83,11 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  useAuthPrompt.setState({ reason: null });
 });
 
 describe('UserRoute', () => {
-  it('renders the profile and its posts; anonymous viewers get no actions', async () => {
+  it('renders the profile and its posts', async () => {
     mocks.getByUsername.mockResolvedValue(BOB);
     mocks.byUser.mockResolvedValue({
       items: [makePost({ id: 'p-1', text: 'a post by bob' })],
@@ -102,9 +104,20 @@ describe('UserRoute', () => {
     expect(screen.getByText('5')).toBeTruthy();
     expect(screen.getByText('3')).toBeTruthy();
     expect(screen.getByText('7')).toBeTruthy();
-    // signed out: no follow/message actions
-    expect(screen.queryByRole('button', { name: 'Follow' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
+  });
+
+  it('shows a guest the actions and opens the sign-in prompt instead of calling the API', async () => {
+    mocks.getByUsername.mockResolvedValue(BOB);
+    renderAt();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Follow' }));
+    expect(useAuthPrompt.getState().reason).toBe('follow');
+    fireEvent.click(screen.getByRole('button', { name: 'Message' }));
+    expect(useAuthPrompt.getState().reason).toBe('message');
+    expect(mocks.follow).not.toHaveBeenCalled();
+    expect(mocks.findOrCreate).not.toHaveBeenCalled();
+    // A guest has no follow status to ask for.
+    expect(mocks.checkFollowing).not.toHaveBeenCalled();
   });
 
   it('shows the not-found state for an unknown username', async () => {

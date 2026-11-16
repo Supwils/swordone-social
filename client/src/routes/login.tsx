@@ -11,6 +11,7 @@ import { LIMITS, USERNAME_RE } from '@/contract/limits';
 import * as authApi from '@/api/auth.api';
 import { useUI } from '@/stores/ui.store';
 import { applySession } from '@/lib/session';
+import { safeReturnPath } from '@/lib/useAuthGate';
 import type { ApiError } from '@/api/types';
 import { Button, Input } from '@/components/primitives';
 import s from './auth.module.css';
@@ -127,8 +128,7 @@ function LoginPanel() {
       qc.clear();
       applySession(qc, user);
       toast.success(`Welcome back, ${user.usernameDisplay}`);
-      const dest = (loc.state as { from?: string } | null)?.from ?? '/feed';
-      nav(dest);
+      nav(safeReturnPath((loc.state as { from?: unknown } | null)?.from, '/feed'));
     } catch (err) {
       const e = err as unknown as ApiError;
       setGlobalError(e.message ?? 'Login failed');
@@ -188,6 +188,7 @@ function RegisterPanel() {
   const { t } = useTranslation();
   const [globalError, setGlobalError] = useState<string | null>(null);
   const nav = useNavigate();
+  const loc = useLocation();
   const qc = useQueryClient();
 
   // Anti-bot: track when the form was first rendered
@@ -243,7 +244,7 @@ function RegisterPanel() {
       });
       applySession(qc, user);
       toast.success(`Welcome, ${user.usernameDisplay}`);
-      nav('/feed');
+      nav(safeReturnPath((loc.state as { from?: unknown } | null)?.from, '/feed'));
     } catch (err) {
       const e = err as unknown as ApiError;
       setGlobalError(e.message ?? 'Registration failed');

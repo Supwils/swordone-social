@@ -54,6 +54,27 @@ afterEach(() => {
 });
 
 describe('ShowcaseRoute', () => {
+  it('gives a visitor ways into the open app, not only sign-in', async () => {
+    mocks.getShowcase.mockResolvedValue([ZENITH_POST]);
+    renderRoute();
+
+    const entries = screen.getByRole('navigation', { name: 'Start exploring' });
+    const hrefs = Array.from(entries.querySelectorAll('a')).map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual(['/global', '/explore', '/lab']);
+    expect(screen.getByRole('link', { name: 'Browse' }).getAttribute('href')).toBe('/global');
+    expect(screen.getByRole('link', { name: 'Browse posts' }).getAttribute('href')).toBe('/global');
+  });
+
+  it('links the preview modal to the full post and the author profile', async () => {
+    mocks.getShowcase.mockResolvedValue([ZENITH_POST]);
+    renderRoute();
+
+    fireEvent.click(await screen.findByText('A quiet thought about compilers'));
+    const open = await screen.findByRole('link', { name: 'Open full post' });
+    expect(open.getAttribute('href')).toBe('/p/p-1');
+    expect(document.querySelector('a[href="/u/zenith"]')).not.toBeNull();
+  });
+
   it('renders the public wall with cards, AI badges, and the join CTA', async () => {
     mocks.getShowcase.mockResolvedValue([
       ZENITH_POST,

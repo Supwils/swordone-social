@@ -89,6 +89,24 @@
   border-color: var(--color-border-strong);
 }
 
+.navBrowse {
+  font-size: var(--text-small);
+  color: var(--color-text);
+  text-decoration: none;
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-md);
+  transition: background var(--dur-fast) var(--ease);
+}
+.navBrowse:hover {
+  background: var(--color-surface-muted);
+}
+
+@media (max-width: 600px) {
+  .navBrowse {
+    display: none;
+  }
+}
+
 .navLogin {
   font-size: var(--text-small);
   color: var(--color-text-muted);
@@ -242,6 +260,8 @@
 
 .modalPostHeader {
   display: flex;
+  text-decoration: none;
+  color: inherit;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-5) var(--space-5) var(--space-3);
@@ -408,4 +428,202 @@
 }
 .ctaPrimary:hover {
   opacity: 0.85;
+}
+
+/* ── Intro: the way in ─────────────────────────────────────────── */
+
+.intro {
+  grid-column: 1 / -1;
+  max-width: 880px;
+  padding: var(--space-6) 0 var(--space-2);
+}
+
+.introEyebrow {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.introTitle {
+  margin: 0 0 var(--space-5);
+  max-width: 34ch;
+  font-family: var(--font-serif);
+  font-size: var(--text-h1);
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--color-text);
+}
+
+.entries {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.entry {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  color: inherit;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+.entry:hover {
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+}
+.entry:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.entryIcon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--color-accent);
+}
+
+.entryText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.entryTitle {
+  font-weight: 500;
+  font-size: var(--text-body);
+  color: var(--color-text);
+}
+
+.entryDesc {
+  font-size: var(--text-small);
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.entryArrow {
+  flex-shrink: 0;
+  margin-top: 4px;
+  color: var(--color-text-subtle);
+  transition:
+    transform var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.entry:hover .entryArrow {
+  color: var(--color-accent);
+  transform: translateX(2px);
+}
+
+.wallLabel {
+  margin: var(--space-6) 0 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: var(--text-small);
+  color: var(--color-text-subtle);
+}
+
+@media (max-width: 760px) {
+  .intro {
+    padding-top: var(--space-4);
+  }
+  .introTitle {
+    font-size: var(--text-h2);
+  }
+  .entries {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entry,
+  .entryArrow {
+    transition: none;
+  }
+  .entry:hover,
+  .entry:hover .entryArrow {
+    transform: none;
+  }
+}
+
+/* ── Modal: open the full post ─────────────────────────────────── */
+
+.modalOpenPost {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-small);
+  color: var(--color-accent);
+  text-decoration: none;
+}
+.modalOpenPost:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ── Bottom bar actions ────────────────────────────────────────── */
+
+.bottomActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.bottomBrowse {
+  font-size: var(--text-small);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  padding: 7px var(--space-3);
+  border-radius: var(--radius-md);
+  transition: color var(--dur-fast) var(--ease);
+}
+.bottomBrowse:hover {
+  color: var(--color-text);
+}
+
+@media (max-width: 480px) {
+  .bottomTagline {
+    display: none;
+  }
+  .bottomBar {
+    justify-content: flex-end;
+  }
+}
+
+/* Narrow screens: keep every nav label on one line. */
+.langToggle,
+.navLogin,
+.navRegister,
+.bottomBrowse,
+.bottomCta {
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  .topBar {
+    padding: var(--space-3) var(--space-4);
+  }
+  .topNav {
+    gap: var(--space-1);
+  }
+  .bottomBar {
+    padding: var(--space-3) var(--space-4);
+  }
+  .bottomCta {
+    padding: 7px var(--space-3);
+  }
+  .intro {
+    padding-top: var(--space-5);
+  }
 }

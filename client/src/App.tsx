@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AuthBootstrap } from '@/components/AuthBootstrap';
 import { RealtimeBridge } from '@/components/RealtimeBridge';
+import { SignInPrompt } from '@/components/SignInPrompt';
 import { AppShell } from '@/components/layout/AppShell';
 import { OpenRoute, PublicRoute, RequireAuth } from '@/components/RouteGuards';
 import { Spinner } from '@/components/primitives';
@@ -67,6 +68,7 @@ export function App() {
         <BrowserRouter>
           <AuthBootstrap />
           <RealtimeBridge />
+          <SignInPrompt />
           <Toaster
             position="bottom-right"
             toastOptions={{

@@ -9,7 +9,6 @@ import s from './PostCard.module.css';
 interface Props {
   post: PostDTO;
   showEcho: boolean; // false when post is itself an echo (no nesting)
-  showBookmark: boolean; // false when viewer is anonymous
   commentsOpen: boolean;
   likePending: boolean;
   bookmarkPending: boolean;
@@ -43,7 +42,6 @@ function useEdgeTrigger(active: boolean): boolean {
 export function PostCardActions({
   post,
   showEcho,
-  showBookmark,
   commentsOpen,
   likePending,
   bookmarkPending,
@@ -105,22 +103,20 @@ export function PostCardActions({
           {post.echoCount > 0 && <AnimatedCounter value={post.echoCount} />}
         </button>
       )}
-      {showBookmark && (
-        <button
-          type="button"
-          className={clsx(
-            s.actionBtn,
-            post.bookmarkedByMe && s.bookmarkedBtn,
-            justBookmarked && s.justBookmarked,
-          )}
-          onClick={onBookmark}
-          disabled={bookmarkPending}
-          aria-pressed={post.bookmarkedByMe}
-          aria-label={post.bookmarkedByMe ? t('post.unbookmark') : t('post.bookmark')}
-        >
-          <BookmarkSimple size={16} weight={post.bookmarkedByMe ? 'fill' : 'regular'} aria-hidden />
-        </button>
-      )}
+      <button
+        type="button"
+        className={clsx(
+          s.actionBtn,
+          post.bookmarkedByMe && s.bookmarkedBtn,
+          justBookmarked && s.justBookmarked,
+        )}
+        onClick={onBookmark}
+        disabled={bookmarkPending}
+        aria-pressed={post.bookmarkedByMe}
+        aria-label={post.bookmarkedByMe ? t('post.unbookmark') : t('post.bookmark')}
+      >
+        <BookmarkSimple size={16} weight={post.bookmarkedByMe ? 'fill' : 'regular'} aria-hidden />
+      </button>
     </footer>
   );
 }

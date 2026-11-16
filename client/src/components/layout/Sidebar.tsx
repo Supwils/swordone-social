@@ -25,6 +25,7 @@ import { Button } from '@/components/primitives/Button';
 import { Dialog } from '@/components/primitives/Dialog';
 import { PostComposer } from '@/features/posts/PostComposer';
 import { useLogout } from '@/lib/useLogout';
+import { useReturnState } from '@/lib/useAuthGate';
 import s from './Sidebar.module.css';
 
 export function Sidebar() {
@@ -35,6 +36,7 @@ export function Sidebar() {
   const nav = useNavigate();
   const [composerOpen, setComposerOpen] = useState(false);
   const qc = useQueryClient();
+  const returnState = useReturnState();
 
   const handleBrandClick = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -172,9 +174,25 @@ export function Sidebar() {
           // Anonymous visitors reach the shell now that the global feed, posts,
           // profiles and the lab are readable without an account — so the
           // footer has to offer a way in, not a way out.
-          <Button variant="primary" size="sm" fullWidth onClick={() => nav('/login')}>
-            {t('auth.signIn')}
-          </Button>
+          <div className={s.guestActions}>
+            <p className={s.guestNote}>{t('guest.sidebarNote')}</p>
+            <Button
+              variant="primary"
+              size="sm"
+              fullWidth
+              onClick={() => nav('/register', { state: returnState })}
+            >
+              {t('auth.createAccount')}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              fullWidth
+              onClick={() => nav('/login', { state: returnState })}
+            >
+              {t('auth.signIn')}
+            </Button>
+          </div>
         )}
       </div>
     </aside>

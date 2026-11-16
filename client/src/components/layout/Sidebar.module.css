@@ -244,3 +244,17 @@
     display: none;
   }
 }
+
+/* Signed-out footer: a line on what an account adds, then the two ways in. */
+.guestActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.guestNote {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  color: var(--color-text-subtle);
+}

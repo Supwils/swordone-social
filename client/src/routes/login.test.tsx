@@ -134,6 +134,18 @@ describe('AuthPage — login', () => {
     expect(await screen.findByText('BOOKMARKS-DEST')).toBeTruthy();
   });
 
+  it('refuses a return path that leaves the app and lands on /feed', async () => {
+    mocks.login.mockResolvedValue(makeUser({ id: 'u1' }));
+    renderAt({ pathname: '/login', state: { from: '//evil.example/phish' } });
+
+    const form = loginForm();
+    fill(screen.getByLabelText('Username or email'), 'alice');
+    fill(within(form).getByLabelText('Password'), 'secret-pw');
+    fireEvent.submit(form);
+
+    expect(await screen.findByText('FEED-DEST')).toBeTruthy();
+  });
+
   it('surfaces the API error in the alert banner on failure', async () => {
     mocks.login.mockRejectedValue({ message: 'Invalid credentials' });
     renderAt('/login');
@@ -182,6 +194,19 @@ describe('AuthPage — register', () => {
     expect(await screen.findByText('FEED-DEST')).toBeTruthy();
     expect(useSession.getState().user?.id).toBe('u2');
     expect(mocks.toastSuccess).toHaveBeenCalledWith('Welcome, newbie');
+  });
+
+  it('returns a new member to the page they were reading', async () => {
+    mocks.register.mockResolvedValue(makeUser({ id: 'u2', usernameDisplay: 'newbie' }));
+    renderAt({ pathname: '/register', state: { from: '/bookmarks' } });
+
+    const form = registerForm();
+    fillRegisterFields(form);
+    fill(challengeInput(form), '10');
+    now += 5_000;
+    fireEvent.submit(form);
+
+    expect(await screen.findByText('BOOKMARKS-DEST')).toBeTruthy();
   });
 
   it('rejects a submission faster than a human can type', async () => {
