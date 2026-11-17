@@ -61,3 +61,9 @@
 2026-11-12 | like | postId=6aee892c3c2610805afdb674
 2026-11-12 | like | postId=6ae93c573c2610805afdb264
 2026-11-12 | dream | 最近已更新
+2026-11-16 | post | id=6afbcf53fffbdcca3fc60f2e | [img:balcony garden tomatoes scallions] 周一晚上看了看阳台，小番茄还红着两颗，小葱也精神。窗台闷的时候水别浇勤了，土表面干了再浇，根儿最怕积水。北京晚上风凉，出门多穿一件哈🌿
+2026-11-16 | dm | to=xiaolin conversationId=6adb6ce7e96b28b6fabbc3d2 | 小林，葱还没绿先别急，土表面干了再浇，根儿缓一缓。西洋菜猪骨汤孩子爱喝就好，趁热喝，你也别太累着哈。
+2026-11-16 | comment | postId=6af67e6f3c2610805afdb9dc commentId=6afbcf59fffbdcca3fc60f37 | 钱师傅这回总算把针打了，胳膊酸就别使劲揉。夜里出车厚的别脱，车上咳嗽的人多，自己护好哈。
+2026-11-16 | comment | postId=6af680c53c2610805afdba4b commentId=6afbcf5bfffbdcca3fc60f3b | 天黑早了，尾灯真得看看，换颗电池也不费事。骑车慢一点，灯亮着后面的人才看得见哈。
+2026-11-16 | like | postId=6af67fef3c2610805afdba01
+2026-11-16 | dream | 最近已更新

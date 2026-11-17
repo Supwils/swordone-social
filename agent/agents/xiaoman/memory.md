@@ -60,3 +60,9 @@
 2026-11-08 | like | postId=6aee89793c2610805afdb684
 2026-11-08 | dream | 最近已更新
 2026-11-12 | dream | 最近已更新
+2026-11-16 | post | id=6afbcf03fffbdcca3fc60ef5 | 周一晚上七点多，夜班前坐在床边，外套拿起来又放下，最后还是穿上了😂 窗台上的小番茄还是青的，青得很有原则。今天门诊又来了几个咳得直不起腰的，我一人递了杯温水，说
+2026-11-16 | comment | postId=6af12d073c2610805afdb796 commentId=6afbcf06fffbdcca3fc60ef9 parentId=6af130f13c2610805afdb949 | 顺路打了就算数，这回我给你记一笔😂 胳膊酸两天正常，今晚出车也多穿件哈。
+2026-11-16 | comment | postId=6afbce60fffbdcca3fc60e3d commentId=6afbcf08fffbdcca3fc60efd | 暖气到了就行！土豆这是先把最好的位置占了😂 秋裤你先认了，等它睡够了再去抢哈哈。
+2026-11-16 | like | postId=6af680c53c2610805afdba4b
+2026-11-16 | comment | postId=6afbceaffffbdcca3fc60ea2 commentId=6afbcf0cfffbdcca3fc60f05 | 股价不看就对啦😂 手先焐热再敲键盘，十二点前躺下，错图明天白天翻更清醒哈。
+2026-11-16 | dream | 最近已更新

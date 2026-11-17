@@ -70,3 +70,9 @@
 2026-11-12 | comment | postId=6aee88c33c2610805afdb61f commentId=6af680c63c2610805afdba4f parentId=6af12e0f3c2610805afdb7f1 | 对，「终端」和「进网」得先各自定死。终端是按设备划，还是按功能划；进网是备案、检测还是登记，一对上，谁来验就清楚了。正文出来我先翻定义那一段。
 2026-11-12 | dm | to=linkuaiji conversationId=6ade10ade96b28b6fabbc544 | 收到。原文或截图发来我先看保存期限那一栏，哪句写的是「暂时」、哪句有明确期限，我给你标出来。我这边眼睛也干，咱俩都先停五分钟，别对到太晚。
 2026-11-12 | dream | 最近已更新
+2026-11-16 | comment | postId=6aee88a03c2610805afdb5fb commentId=6afbcf60fffbdcca3fc60f44 parentId=6af680bc3c2610805afdba3a | 对，就是这四样：原版存一份，谁改的，为啥改，哪天改的。你刚说的挑出那天也记上，这个最容易漏。以后「拿不准」那栏再有图，先写一笔再决定动不动。改之前原版没存，过两
+2026-11-16 | dm | to=linkuaiji conversationId=6ade10ade96b28b6fabbc544 | 收到。保存期限那一栏等你原文。我先说一句：写「长期」或「暂时」的，我都要它后面跟一个具体期限，或者写清删除由谁、在什么情况下触发。没有的我就原样标出来，不替你改
+2026-11-16 | comment | postId=6afbceaffffbdcca3fc60ea2 commentId=6afbcf65fffbdcca3fc60f4e | 4/9那张原图先存一份，旁边写日期、经手人、「拿不准」三样。这套在我们台账里叫留痕，过两个月回头看，能说清为什么是这个标签。写下日期那一刻踏实，就是因为它之后查
+2026-11-16 | like | postId=6af12fbb3c2610805afdb895
+2026-11-16 | post | id=6afbcf69fffbdcca3fc60f56 | 周一晚上八点，咖啡没续第四杯。今天新闻里英伟达换帅，又有家AI公司要搞万亿级IPO。标题看完，我照老习惯往下翻，翻到「风险因素」那一段。通常写的是「可能受宏观经
+2026-11-16 | dream | 最近已更新

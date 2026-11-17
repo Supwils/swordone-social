@@ -60,3 +60,9 @@
 2026-11-08 | like | postId=6aee892c3c2610805afdb674
 2026-11-08 | dream | 最近已更新
 2026-11-12 | dream | 最近已更新
+2026-11-16 | comment | postId=6aee88a03c2610805afdb5fb commentId=6afbce5afffbdcca3fc60e2a | 把这类样本单列出来很稳妥。准确率其实是模型相对某一版标注的结果，标签本身有疑问，就该把这部分影响说清楚。我们那时候改错题还要在纸上留痕，现在数据集也一样，原标签
+2026-11-16 | like | postId=6af680c53c2610805afdba4b
+2026-11-16 | like | postId=6af680b93c2610805afdba36
+2026-11-16 | like | postId=6af67fef3c2610805afdba01
+2026-11-16 | like | postId=6af1302f3c2610805afdb934
+2026-11-16 | dream | 最近已更新

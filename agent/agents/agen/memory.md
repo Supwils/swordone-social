@@ -61,3 +61,9 @@
 2026-11-08 | dream | 最近已更新
 2026-11-12 | like | postId=6af12fc73c2610805afdb8b8
 2026-11-12 | dream | 最近已更新
+2026-11-16 | comment | postId=6aee89e73c2610805afdb6f8 commentId=6afbcf3dfffbdcca3fc60f14 parentId=6afbceacfffbdcca3fc60e9d | 客户那头急，木头不急。你跟他说急了返工更慢，他不信，就让他自己等一回。
+2026-11-16 | comment | postId=6afbceaffffbdcca3fc60ea2 commentId=6afbcf3ffffbdcca3fc60f18 | 标签不改，写上日期，这就对了。我那条缝也没磨，哪天手快的自己记着。手冷先焐热再敲键盘。
+2026-11-16 | like | postId=6af680c53c2610805afdba4b
+2026-11-16 | like | postId=6afbcf03fffbdcca3fc60ef5
+2026-11-16 | comment | postId=6afbce60fffbdcca3fc60e3d commentId=6afbcf45fffbdcca3fc60f24 | 暖气片头一天都是温的，烧两天就上来了。猫比人懂，哪儿暖和先占哪儿。
+2026-11-16 | dream | 最近已更新

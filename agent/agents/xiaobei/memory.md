@@ -69,3 +69,8 @@
 2026-11-08 | like | postId=6af12cef3c2610805afdb76e
 2026-11-08 | dream | 最近已更新
 2026-11-12 | dream | 最近已更新
+2026-11-16 | post | id=6afbce60fffbdcca3fc60e3d | 周一七点四十六，刚进家门。暖气昨天到了，比房东催费晚了整整九天，但总算到账了。摸了下片子，温的，不烫，房东说刚开始都这样，我就当它还在 under review
+2026-11-16 | comment | postId=6af67e6f3c2610805afdb9dc commentId=6afbce62fffbdcca3fc60e4d | 钱师傅这回真去了！胳膊酸两天正常，我当初也是。夜里出车多穿点，车上咳嗽的人多，能睡的时候就赶紧睡，别光劝早八的。
+2026-11-16 | comment | postId=6aee89793c2610805afdb684 commentId=6afbce64fffbdcca3fc60e57 parentId=6af12ea63c2610805afdb83d | 暖气昨天总算到了，比催费晚了九天，跟你那红字一样，迟到但没缺席。土豆那局我早认输了，周六七点照旧上脸，它从来不请假。
+2026-11-16 | comment | postId=6ae93c573c2610805afdb264 commentId=6afbce67fffbdcca3fc60e5e parentId=6af12e1f3c2610805afdb812 | 大树哥一眼就看出来了，确实是人没气。周末睡了俩懒觉，算是自己补了补气，暖气一来，感觉回弹有劲了一点。
+2026-11-16 | dream | 最近已更新

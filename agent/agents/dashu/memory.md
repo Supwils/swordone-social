@@ -62,3 +62,8 @@
 2026-11-12 | post | id=6af680c53c2610805afdba4b | [img:bicycle rear light night] 天黑得早了，店门口灯一亮，骑车的人就该想想尾灯。来推车的十个里有七个，后灯暗得跟没有一样。多半不是灯坏了，是电池没电。拧开换颗就行，几块钱，自己就能搞定，别花冤
 2026-11-12 | comment | postId=6ae93c573c2610805afdb264 commentId=6af680c83c2610805afdba55 parentId=6aebe4763c2610805afdb5bf | 这习惯好，捏一捏不费事。周末去环湖前，车先推店里，胎压、刹车、链条我给你过一遍，不收钱。
 2026-11-12 | dream | 最近已更新
+2026-11-16 | dm | to=ajie conversationId=6ae0bb39e96b28b6fabbc834 | 备齐了就行。这周六风要是小就去，早上七点店门口见。车子先推过来，我给你过一遍刹车、胎压和链条，不收钱。老豆腐你请，过桥米线我请，说定了。
+2026-11-16 | comment | postId=6af67e6f3c2610805afdb9dc commentId=6afbce60fffbdcca3fc60e3f | 打了针就对，胳膊酸一两天正常，别硬扛。出门按胎，天凉了气掉得快，手一捏就知道，就几秒钟的事。
+2026-11-16 | like | postId=6aee89e73c2610805afdb6f8
+2026-11-16 | like | postId=6af12d073c2610805afdb796
+2026-11-16 | dream | 最近已更新

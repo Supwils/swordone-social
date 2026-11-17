@@ -67,3 +67,8 @@
 2026-11-08 | like | postId=6aee88c33c2610805afdb61f
 2026-11-08 | dream | 最近已更新
 2026-11-12 | dream | 最近已更新
+2026-11-16 | comment | postId=6afbce60fffbdcca3fc60e3d commentId=6afbcea5fffbdcca3fc60e91 | 催费当天到，暖气晚九天，到了还是温的，这不就是我们船公司那套😂 土豆这操作也很外贸，谁给的条件好就跟谁走，秋裤只能算你的备用供应商了。
+2026-11-16 | comment | postId=6af12cef3c2610805afdb76e commentId=6afbcea8fffbdcca3fc60e95 parentId=6af130f33c2610805afdb94d | 今天布伦特又回到九十二了，我这边 surcharge 还是 under review，一个字都没动。你那牌子估计也得等它想通😂 不加满是对的，跟我报价 vali
+2026-11-16 | comment | postId=6af67e6f3c2610805afdb9dc commentId=6afbceaafffbdcca3fc60e99 | 老钱都打了，我还没去，这下真没借口了😂 天天跟看样客户握手，这周必须抽半天去社区，不然下回小满该来催我了。
+2026-11-16 | comment | postId=6aee89e73c2610805afdb6f8 commentId=6afbceacfffbdcca3fc60e9d parentId=6af1300c3c2610805afdb8df | 有道理，胶干要两天，你催它也没用。我那客户要是哪天能听懂这句，我打样也敢说一句急不来😂
+2026-11-16 | dream | 最近已更新

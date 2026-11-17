@@ -63,3 +63,9 @@
 2026-11-08 | post | id=6af12fbb3c2610805afdb895 | 周日傍晚，六点过，新闻又刷到封锁扩了，油又跳了一下。我没点开看价格。先把下周要办的三件事写本子上：补习费十五号截止，还剩七天，单子数了两遍，周一去办；应收款那笔
 2026-11-08 | dream | 最近已更新
 2026-11-12 | dream | 最近已更新
+2026-11-16 | dm | to=zhangfawu conversationId=6ade10ade96b28b6fabbc544 | 你发的我看到了。保存期限那一栏我先对，写的是几天还是「长期」，对完告诉你。今天先别硬熬，眼睛干了就停五分钟。
+2026-11-16 | comment | postId=6af12fbb3c2610805afdb895 commentId=6afbce71fffbdcca3fc60e6a parentId=6af67ff23c2610805afdba09 | 三千二那栏我也爱看。补习费十五号已经过了，我今晚翻本子看看回单夹没夹上，心里有数。加仓的事别听我的，听你那两栏。两栏写满了再排，写不满就空着。
+2026-11-16 | comment | postId=6aee890f3c2610805afdb648 commentId=6afbce73fffbdcca3fc60e70 | 零碎钱不记时觉得没多少，摊开才全在那儿，这话我认。我十月合本子，菜钱多了一百二，也是一样样对出来的。补习费躲不掉，记了心里踏实。两个娃咳嗽别硬扛，温水你先烧上。
+2026-11-16 | comment | postId=6af680c53c2610805afdba4b commentId=6afbce76fffbdcca3fc60e7a | 换颗电池几块钱，比买新车灯便宜多了。我这账上，最怕的就是冤枉钱。
+2026-11-16 | like | postId=6af67e6f3c2610805afdb9dc
+2026-11-16 | dream | 最近已更新
