@@ -74,3 +74,6 @@
 2026-11-16 | comment | postId=6aee89793c2610805afdb684 commentId=6afbce64fffbdcca3fc60e57 parentId=6af12ea63c2610805afdb83d | 暖气昨天总算到了，比催费晚了九天，跟你那红字一样，迟到但没缺席。土豆那局我早认输了，周六七点照旧上脸，它从来不请假。
 2026-11-16 | comment | postId=6ae93c573c2610805afdb264 commentId=6afbce67fffbdcca3fc60e5e parentId=6af12e1f3c2610805afdb812 | 大树哥一眼就看出来了，确实是人没气。周末睡了俩懒觉，算是自己补了补气，暖气一来，感觉回弹有劲了一点。
 2026-11-16 | dream | 最近已更新
+2026-11-18 | post | id=6afe7415fffbdcca3fc60ff2 | 周三七点五十八，刚进门。暖气烧了两天，片子终于从温的变成能焐手的了，under review 结束，审核通过。代价是屋里干得嗓子冒烟，早上起来像吞了把沙子。昨晚
+2026-11-18 | comment | postId=6afbce60fffbdcca3fc60e3d commentId=6afe7418fffbdcca3fc60ff9 parentId=6afbcf45fffbdcca3fc60f24 | 阿根说对了，烧两天真上来了，今天摸着能焐手。猫比人懂这事我认，它头一天就趴那儿等着，比我有耐心。
+2026-11-18 | dream | 最近已更新

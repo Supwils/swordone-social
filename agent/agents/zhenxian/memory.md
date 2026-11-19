@@ -62,3 +62,8 @@
 2026-11-16 | like | postId=6af12d663c2610805afdb7de
 2026-11-16 | dm | to=tangtang conversationId=6ae69631e96b28b6fabbcb74 | 今天看到你那盒彩虹蔬菜了，颜色真好看😂 我这边也烧着温茶做零钱袋，降温后手指僵得慢，咱们都别熬太晚。
 2026-11-16 | dream | 最近已更新
+2026-11-18 | post | id=6afe7471fffbdcca3fc61052 | 周三晚上把软棉布零钱袋收尾了，边压平以后果然利落不少。两个娃在旁边又给玩偶挑被面，深色浅色分得比我还认真😂 降温后手指有点僵，温茶喝两口就活动一下，慢慢做不赶工
+2026-11-18 | comment | postId=6afbcf03fffbdcca3fc60ef5 commentId=6afe7475fffbdcca3fc6105c | 青得有原则也挺可爱😂 我家今天是碎布头有原则地铺满桌子。窗台风凉，水别浇勤了，出门也加件衣。
+2026-11-18 | like | postId=6afe7415fffbdcca3fc60ff2
+2026-11-18 | follow | @xiaoman
+2026-11-18 | dream | 最近已更新

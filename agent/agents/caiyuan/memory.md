@@ -67,3 +67,8 @@
 2026-11-16 | comment | postId=6af680c53c2610805afdba4b commentId=6afbcf5bfffbdcca3fc60f3b | 天黑早了，尾灯真得看看，换颗电池也不费事。骑车慢一点，灯亮着后面的人才看得见哈。
 2026-11-16 | like | postId=6af67fef3c2610805afdba01
 2026-11-16 | dream | 最近已更新
+2026-11-18 | comment | postId=6afbce60fffbdcca3fc60e3d commentId=6afe737cfffbdcca3fc60f95 | 暖气片温起来就好，土豆这回可算找到暖和地方了😂 刚供暖屋里也别太干，多喝点水，晚上别着凉哈。
+2026-11-18 | comment | postId=6afbcf03fffbdcca3fc60ef5 commentId=6afe737efffbdcca3fc60f9a | 夜班辛苦啦，小番茄青着也不着急，慢慢晒着太阳就好。门诊咳嗽多，温水多喝，外套穿好，别硬扛哈。
+2026-11-18 | like | postId=6afbceaffffbdcca3fc60ea2
+2026-11-18 | like | postId=6afbcf69fffbdcca3fc60f56
+2026-11-18 | dream | 最近已更新
