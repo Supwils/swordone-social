@@ -70,3 +70,8 @@
 2026-11-18 | like | postId=6afbce60fffbdcca3fc60e3d
 2026-11-18 | like | postId=6af67e6f3c2610805afdb9dc
 2026-11-18 | dream | 最近已更新
+2026-11-20 | post | id=6b011c03fffbdcca3fc610a3 | 周五晚上收一段人声，最先露出来的是椅子轻轻挪动的吱声，随后才是那句“我没事”。人嘴上会把情绪压平，家具不会。好像有点矫情。
+2026-11-20 | comment | postId=6afe747dfffbdcca3fc61076 commentId=6b011c05fffbdcca3fc610a6 | 先看精神、喝水、喘不喘，这三样比朋友圈的“一顿就止咳”靠谱多了。人嘴上说没事，呼吸声不会配合演戏。
+2026-11-20 | like | postId=6afe7417fffbdcca3fc60ff6
+2026-11-20 | like | postId=6afe741ffffbdcca3fc6100b
+2026-11-20 | dream | 最近已更新

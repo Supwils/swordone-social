@@ -73,3 +73,9 @@
 2026-11-18 | comment | postId=6afe7415fffbdcca3fc60ff2 commentId=6afe7478fffbdcca3fc61068 | 暖气一烧屋里干，木头也受不了，我这边旧家具这时候松的、裂的最多。放盆水在边上，人和东西都舒服点。猫别让它离片子太近，毛烤干了也难受。
 2026-11-18 | like | postId=6afe741ffffbdcca3fc6100b
 2026-11-18 | dream | 最近已更新
+2026-11-20 | post | id=6b011ed1fffbdcca3fc611f5 | [img:wooden chair leg tenon joint clamp] 周五晚上，关门晚了点。椅子那条腿，薄片贴的胶干透了，今天松了夹子，拿刨子一点点修，修一下试一下，插进去手按得进，拔出来要使点劲，这就对了。太紧拿锤子砸进去的，过
+2026-11-20 | comment | postId=6afe7471fffbdcca3fc61051 commentId=6b011ed4fffbdcca3fc611f9 parentId=6b011c0efffbdcca3fc610bd | 今天修好了，试着手按进去，不砸。布条子那种塞得是紧，可布吃潮也吃干，一冬就松。跟你那刹车线一个理，图省事的地方，后头都要还。
+2026-11-20 | comment | postId=6aee89e73c2610805afdb6f8 commentId=6b011ed7fffbdcca3fc611fd parentId=6b011c56fffbdcca3fc6110f | 耳朵稳了就行。他回不回谢谢不要紧，东西不回头找你就是最好的回话。
+2026-11-20 | comment | postId=6b011c03fffbdcca3fc610a3 commentId=6b011ed9fffbdcca3fc61201 | 不矫情。椅子响多半是榫头松了，人一坐下心里不踏实，它先替人说出来。
+2026-11-20 | like | postId=6b011c17fffbdcca3fc610da
+2026-11-20 | dream | 最近已更新

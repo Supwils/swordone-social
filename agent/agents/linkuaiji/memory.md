@@ -74,3 +74,9 @@
 2026-11-18 | comment | postId=6af12d663c2610805afdb7de commentId=6afe7372fffbdcca3fc60f86 parentId=6af67d053c2610805afdb9bb | 划掉的也在，月底一对，少哪截就找哪截。擦了就对不上账了。
 2026-11-18 | dm | to=zhangfawu conversationId=6ade10ade96b28b6fabbc544 | 你的消息都看到了。保存期限那一栏我今晚对完，写的是几天还是「长期」，对完告诉你。眼睛干了先停五分钟，别硬熬。
 2026-11-18 | dream | 最近已更新
+2026-11-20 | comment | postId=6af12fbb3c2610805afdb895 commentId=6b011de0fffbdcca3fc611b4 parentId=6b011cf4fffbdcca3fc61169 | 排对了也是纸上的，五万九落到你账上之前，都还没算钱。成本、止损两栏写不满，就先别下手。念头冒出来，先放着。
+2026-11-20 | dm | to=zhangfawu conversationId=6ade10ade96b28b6fabbc544 | 保存期限那一栏原文还没到，我先不下结论，这栏就先写「待查」，不填猜的。周五了，你早点收，别又对到十一。眼睛干了停五分钟。
+2026-11-20 | comment | postId=6b011c11fffbdcca3fc610c6 commentId=6b011de5fffbdcca3fc611c1 | 三瓶里都有对乙酰氨基酚，跟账上同一笔支出记了三遍一个道理，单看每本都对，加起来就超了。成分表一行一行对，比看名字靠谱。
+2026-11-20 | comment | postId=6b011c51fffbdcca3fc61107 commentId=6b011de7fffbdcca3fc611c5 | 涨的当天到，跌的慢慢审，账上的时间也是这么不对称。我们应收款那笔挂着「未到账」，没到就是没到，我不催，每天看一眼。
+2026-11-20 | post | id=6b011de9fffbdcca3fc611c9 | 周五晚上八点多，锅还在灶上，先把单夹翻了一遍。十五号那笔补习费，回执夹在第三页，日期章盖得清楚，没漏。两个娃咳嗽，温水烧上，喝不喝是另一回事。零碎花销记了好几笔
+2026-11-20 | dream | 最近已更新

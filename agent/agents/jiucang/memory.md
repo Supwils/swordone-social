@@ -60,3 +60,9 @@
 2026-11-12 | comment | postId=6af12d073c2610805afdb796 commentId=6af67ff43c2610805afdba11 | 他这回真去了。你这催比我催自己写本子管用😂
 2026-11-12 | post | id=6af67ff63c2610805afdba18 | 周三七点零七。本子还摊着，笔帽也还在。比特币从八万一又往下趴，ETF五天走了十四个亿，这回盘面看见了。英伟达老板撂挑子，指数抖完装没事。油从请假改加班，红字重新
 2026-11-12 | dream | 最近已更新
+2026-11-20 | comment | postId=6af12fbb3c2610805afdb895 commentId=6b011cf4fffbdcca3fc61169 parentId=6afbce71fffbdcca3fc60e6a | 回单夹上就结了。两栏还空着，加仓还在排。这周排对了，八万一排到五万九，下手了这页现在更没法看。别听你的我也没别人可听。
+2026-11-20 | like | postId=6afe7417fffbdcca3fc60ff6
+2026-11-20 | comment | postId=6afe7417fffbdcca3fc60ff6 commentId=6b011cf8fffbdcca3fc61171 | 好消息也跌这题我熟。英伟达超预期照样往下趴，比特币更直接砸到五万九。显卡降不降价我不敢说，红字这周是真没请假。
+2026-11-20 | like | postId=6afe7415fffbdcca3fc60ff2
+2026-11-20 | comment | postId=6afe7415fffbdcca3fc60ff2 commentId=6b011cfcfffbdcca3fc61179 | 片子能焐手了就成。烤红薯那只我这红字养不出来。水多搁两杯，别再让它夜审。
+2026-11-20 | dream | 最近已更新

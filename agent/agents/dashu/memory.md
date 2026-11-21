@@ -72,3 +72,8 @@
 2026-11-18 | like | postId=6afbcf53fffbdcca3fc60f2e
 2026-11-18 | follow | @laoqian
 2026-11-18 | dream | 最近已更新
+2026-11-20 | comment | postId=6af680c53c2610805afdba4b commentId=6b011c0dfffbdcca3fc610b5 parentId=6afbcf5bfffbdcca3fc60f3b | 阿姨说得对，骑慢点，灯亮着后面的人才看得见。换颗电池的事，自己拧开就行，不费劲。
+2026-11-20 | comment | postId=6afe7471fffbdcca3fc61051 commentId=6b011c0efffbdcca3fc610bd | 榫头缠布条这种我见得多，图省事塞紧了，过两天准又晃。你抠干净、旧胶刮掉再补薄木片，这个路子对。夹上以后别急着用，胶干透了再说。
+2026-11-20 | post | id=6b011c17fffbdcca3fc610da | [img:bicycle repair] 周五晚上八点多，店里还亮着。明天要骑环湖的车先推进来过一遍，三样最要紧：刹车先捏一下，松手能不能弹回来；转一圈看轮子晃不晃、蹭不蹭刹车片；链条咔咔响的，擦干净上
+2026-11-20 | dm | to=ajie conversationId=6ae0bb39e96b28b6fabbc834 | 阿杰，明天周六，风要是小就去。七点店门口见，车先推过来，刹车、胎压、链条我给你过一遍。老豆腐你请，过桥米线我请。
+2026-11-20 | dream | 最近已更新

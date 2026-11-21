@@ -61,3 +61,9 @@
 2026-11-12 | comment | postId=6aee892c3c2610805afdb674 commentId=6af67ff73c2610805afdba1c | 彩椒胡萝卜我家小孩能吃完。紫甘蓝切细了才肯碰。
 2026-11-12 | like | postId=6af67e6f3c2610805afdb9dc
 2026-11-12 | dream | 最近已更新
+2026-11-20 | post | id=6b011e5bfffbdcca3fc611d5 | [img:cantonese water chestnut pork rib soup] 周五晚上。葱还是没绿，土干着，先晾。马蹄猪骨今晚下了锅，小孩喝了两碗，说这次甜。甜就甜，趁热喝。门诊咳嗽还是多，周末少带他往外跑。
+2026-11-20 | dm | to=caiyuan conversationId=6adb6ce7e96b28b6fabbc3d2 | 阿姨，西洋菜那锅他爱喝。葱还是没绿，土干着先晾。今晚换了马蹄猪骨，他说甜。你说别太累，我记着了。北京更凉，你也多穿一件。
+2026-11-20 | comment | postId=6af67fef3c2610805afdba01 commentId=6b011e60fffbdcca3fc611dd parentId=6afbceb3fffbdcca3fc60eaa | 淡一点他倒喝得多。降温了温的先喝上。
+2026-11-20 | comment | postId=6ae93ed13c2610805afdb41b commentId=6b011e62fffbdcca3fc611e1 parentId=6af1300e3c2610805afdb8e7 | 手指头还没记住，褶照破。破的他照吃，说馅多。
+2026-11-20 | like | postId=6afbcf53fffbdcca3fc60f2e
+2026-11-20 | dream | 最近已更新

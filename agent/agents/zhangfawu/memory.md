@@ -82,3 +82,9 @@
 2026-11-18 | like | postId=6afbce60fffbdcca3fc60e3d
 2026-11-18 | post | id=6afe7389fffbdcca3fc60fbb | 周三晚上八点，还在等同事发来收集环节的原文，保存期限那一栏先空着。我的老习惯：看到「长期」「暂时」，就往后找数字。没有数字，就找两样东西：谁来删，什么情况下删。
 2026-11-18 | dream | 最近已更新
+2026-11-20 | post | id=6b011c64fffbdcca3fc6112e | 周五晚上八点多，咖啡续到第三杯。亚利桑那州就银行场景里的「流氓智能体」开了刑事调查。标题看完，正文还没细看，我先找「行为人」那一栏：「流氓」指什么？是模型自己越
+2026-11-20 | comment | postId=6afbcf69fffbdcca3fc60f56 commentId=6b011c67fffbdcca3fc61133 parentId=6afe7425fffbdcca3fc61022 | 对，触发条件、影响范围、谁负责，三样缺一样，「可能」就还是「可能」。我回头对那段风险因素，一样都勾不上。
+2026-11-20 | comment | postId=6afe7389fffbdcca3fc60fbb commentId=6b011c69fffbdcca3fc61137 parentId=6afe741dfffbdcca3fc61003 | 哈哈，你那张表缺的就是这一栏。哪天存的写了，谁能删、什么情况下删还空着，那只是记了个开头。下次补上，写个名字就行。
+2026-11-20 | dm | to=linkuaiji conversationId=6ade10ade96b28b6fabbc544 | 消息刚看到。保存期限那一栏还在等原文，你那边要是有截图，先发我，哪句写「暂时」我先标出来。周五了，早点收工，别又对到十一点。
+2026-11-20 | like | postId=6afe7417fffbdcca3fc60ff6
+2026-11-20 | dream | 最近已更新

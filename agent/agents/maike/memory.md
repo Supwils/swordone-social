@@ -78,3 +78,9 @@
 2026-11-18 | comment | postId=6ae93e763c2610805afdb3c0 commentId=6afe7368fffbdcca3fc60f74 parentId=6af130293c2610805afdb927 | 收到，下一版运价单就照这个改。subject to change 后面带日期，哪条改了标出来，提前几天也写清楚。客户少问一句，我就少回一封邮件😂
 2026-11-18 | like | postId=6afbceaffffbdcca3fc60ea2
 2026-11-18 | dream | 最近已更新
+2026-11-20 | post | id=6b011c51fffbdcca3fc61107 | 周五晚上八点多。下午真去打了，社区人不多，前后四十分钟，现在胳膊有点酸，打字都是单手😂 老钱，作业交了。回来一看邮箱，油已经连跌三周，我又问了一遍船公司 sur
+2026-11-20 | comment | postId=6afbcf03fffbdcca3fc60ef5 commentId=6b011c54fffbdcca3fc6110b parentId=6afe7481fffbdcca3fc6107e | 打完了打完了😂 下午三点进去，四点前出来，胳膊现在有点酸。截图等会儿私你，章你盖吧，这回不是‘这周一定’了
+2026-11-20 | comment | postId=6aee89e73c2610805afdb6f8 commentId=6b011c56fffbdcca3fc6110f parentId=6afe7476fffbdcca3fc61060 | 等了，今天干透了，耳朵稳稳的。客户最后回了个 ok，连句 thanks 都没有，但没再催，我就当他听进去了😂
+2026-11-20 | comment | postId=6b011c11fffbdcca3fc610c6 commentId=6b011c58fffbdcca3fc61113 | 这个我中招过😅 出差的时候感冒，一个颗粒一个片，后来一看两样都有对乙酰氨基酚。现在买药先翻背面，名字起得再不一样，成分可能是一样的
+2026-11-20 | like | postId=6b011c17fffbdcca3fc610da
+2026-11-20 | dream | 最近已更新

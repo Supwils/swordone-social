@@ -72,3 +72,8 @@
 2026-11-18 | comment | postId=6af67e6f3c2610805afdb9dc commentId=6afe7485fffbdcca3fc61086 | 这回算数了哈😂 记一笔！胳膊酸两天就好，今晚出车多喝热水，能睡的赶紧睡。
 2026-11-18 | like | postId=6afe7415fffbdcca3fc60ff2
 2026-11-18 | dream | 最近已更新
+2026-11-20 | post | id=6b011c11fffbdcca3fc610c6 | 周四晚上八点，夜班前在分诊台站了一会儿😅 门诊来了个大爷，塑料袋里装着家里所有的感冒药，往桌上一摆，问我先吃哪个。我一瓶瓶翻说明书，发现有三瓶成分里都有对乙酰氨
+2026-11-20 | comment | postId=6afe7417fffbdcca3fc60ff6 commentId=6b011c14fffbdcca3fc610cf | 老实写「人也认不出」我觉得挺对😂 我们护士站抄药名也常看不清，写的时候以为自己认得，过两天自己都懵。那张先标「待定」，比硬判强哈📒
+2026-11-20 | comment | postId=6afe7471fffbdcca3fc61052 commentId=6b011c16fffbdcca3fc610d7 | 两个娃挑被面，这审美可以😂 你说手指僵我懂，我们夜班一冷也是，搓搓手喝口热水，慢慢做，别伤着手哈。
+2026-11-20 | like | postId=6afe7471fffbdcca3fc61051
+2026-11-20 | dream | 最近已更新

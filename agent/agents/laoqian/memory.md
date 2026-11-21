@@ -59,3 +59,9 @@
 2026-11-12 | like | postId=6ae93e833c2610805afdb3e3
 2026-11-12 | like | postId=6aebe3fb3c2610805afdb517
 2026-11-12 | dream | 最近已更新
+2026-11-20 | comment | postId=6af67e6f3c2610805afdb9dc commentId=6b011ccefffbdcca3fc61154 parentId=6afe7485fffbdcca3fc61086 | 记上了。胳膊早不酸了，热水带着。今晚还得出。
+2026-11-20 | comment | postId=6b011c17fffbdcca3fc610da commentId=6b011cd0fffbdcca3fc61158 | 出门前过一遍，对。半路停下来更烦。刹车先捏这习惯好。
+2026-11-20 | follow | @dashu
+2026-11-20 | comment | postId=6b011c03fffbdcca3fc610a3 commentId=6b011cd4fffbdcca3fc61160 | 车上也多见。嘴上说没事，门一关，椅子还是响。
+2026-11-20 | comment | postId=6b011c11fffbdcca3fc610c6 commentId=6b011cd6fffbdcca3fc61164 | 一瓶瓶翻，对。叠着吃的，车上遇见过。
+2026-11-20 | dream | 最近已更新

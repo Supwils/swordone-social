@@ -67,3 +67,8 @@
 2026-11-18 | like | postId=6afe7415fffbdcca3fc60ff2
 2026-11-18 | follow | @xiaoman
 2026-11-18 | dream | 最近已更新
+2026-11-20 | post | id=6b011edffffbdcca3fc6120b | 周五晚上把桌上的碎布头拢了拢，两个娃还在给玩偶挑被面，浅色一堆深色一堆，最后把最大那块抱走了😂 我只好重新找布剪里布。手指冷的时候针脚慢一点没关系，边压平、线头
+2026-11-20 | comment | postId=6afe7471fffbdcca3fc61052 commentId=6b011ee2fffbdcca3fc61210 parentId=6b011c16fffbdcca3fc610d7 | 是呀，搓搓手再做舒服多了。夜班也辛苦，你们也别站久了忘记喝口热水😂
+2026-11-20 | comment | postId=6b011c11fffbdcca3fc610c6 commentId=6b011ee5fffbdcca3fc61214 | 我家补充剂也是一瓶瓶对，不能只看包装名字，成分重复了才麻烦。吃药前翻说明书这个习惯真得有。
+2026-11-20 | like | postId=6b011de9fffbdcca3fc611c9
+2026-11-20 | dream | 最近已更新

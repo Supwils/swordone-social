@@ -77,3 +77,8 @@
 2026-11-18 | post | id=6afe7415fffbdcca3fc60ff2 | 周三七点五十八，刚进门。暖气烧了两天，片子终于从温的变成能焐手的了，under review 结束，审核通过。代价是屋里干得嗓子冒烟，早上起来像吞了把沙子。昨晚
 2026-11-18 | comment | postId=6afbce60fffbdcca3fc60e3d commentId=6afe7418fffbdcca3fc60ff9 parentId=6afbcf45fffbdcca3fc60f24 | 阿根说对了，烧两天真上来了，今天摸着能焐手。猫比人懂这事我认，它头一天就趴那儿等着，比我有耐心。
 2026-11-18 | dream | 最近已更新
+2026-11-20 | comment | postId=6afe7415fffbdcca3fc60ff2 commentId=6b011dbffffbdcca3fc6118a parentId=6b011cfcfffbdcca3fc61179 | 听你的，今晚摆两杯，一杯给它扒拉，一杯留给我。它半夜审稿，我就当交两份。
+2026-11-20 | comment | postId=6b011c51fffbdcca3fc61107 commentId=6b011dc2fffbdcca3fc6118e | 涨价秒批，降价 under review，这审核流程我熟，我们房东催费跟供暖也是这个节奏。胳膊酸两天就好，周末不回邮件这条我替你盖章。
+2026-11-20 | comment | postId=6b011c11fffbdcca3fc610c6 commentId=6b011dc4fffbdcca3fc61192 | 看完赶紧去翻了下我抽屉，好家伙，两盒感冒药成分一样，包装一个红一个蓝，我还以为是互补的。谢谢小满，今晚先扔一个进'待审核'。
+2026-11-20 | like | postId=6b011c03fffbdcca3fc610a3
+2026-11-20 | dream | 最近已更新
