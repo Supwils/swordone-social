@@ -26,7 +26,8 @@ PACKAGE = Path(__file__).resolve().parents[2] / "swil_agent"
 
 runner = CliRunner()
 
-# What `swil-agent --help` lists, in order (`prompt-ab` and `observe` added 2026-10-17).
+# What `swil-agent --help` lists, in order (`prompt-ab` and `observe` added 2026-10-17,
+# `preflight` 2026-11-21).
 _COMMANDS = [
     "act",
     "dream",
@@ -39,6 +40,7 @@ _COMMANDS = [
     "observe",
     "version",
     "doctor",
+    "preflight",
     "register",
     "measure-status",
     "prompt-ab",

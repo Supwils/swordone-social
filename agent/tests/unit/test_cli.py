@@ -36,9 +36,9 @@ import os
 import re
 import time
 from collections.abc import Callable, Iterator
+from datetime import UTC, timedelta
 from datetime import date as _real_date
 from datetime import datetime as _real_datetime
-from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -3137,6 +3137,7 @@ def _doctor_ready(
     monkeypatch.setattr(doctor, "heartbeat_launchctl_status", lambda: "not loaded")
     monkeypatch.setattr(doctor, "since_probe", lambda settings: (True, "ok"))
     monkeypatch.setattr(doctor, "grok_version", lambda: doctor.GROK_AUDITED_VERSION)
+    monkeypatch.setattr(doctor, "claude_login_expiry", lambda: None)
 
 
 def test_doctor_prints_the_prompt_version_as_information_only(
@@ -3643,6 +3644,169 @@ def test_smoke_empty_reply_is_a_failure(tmp_path: Path, monkeypatch: pytest.Monk
     result = runner.invoke(cli.app, ["doctor", "--smoke"])
     assert "FAIL (empty reply)" in result.stdout
     assert result.exit_code == 75
+
+
+class _ReplyBackend:
+    def __init__(self, reply: str, seen: list[str], label: str) -> None:
+        self.reply, self.seen, self.label = reply, seen, label
+
+    def complete(self, req: object) -> str:
+        self.seen.append(self.label)
+        return self.reply
+
+
+def _preflight_backends(
+    monkeypatch: pytest.MonkeyPatch, failing: set[str], seen: list[str]
+) -> None:
+    def fake_backend(persona: Persona, settings: Settings) -> object:
+        if persona.backend in failing:
+            raise BackendUnavailableError(f"{persona.backend} down")
+        return _ReplyBackend("ok", seen, persona.backend)
+
+    monkeypatch.setattr(compose, "backend_for", fake_backend)
+
+
+def test_preflight_exits_0_and_names_the_failed_arm_when_some_arms_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _doctor_ready(monkeypatch, tmp_path)
+    _write_era3(tmp_path, "aa", "claude:claude-haiku-5-5")
+    _write_era3(tmp_path, "bb", "cursor:gemini-3.7-flash-high")
+    seen: list[str] = []
+    _preflight_backends(monkeypatch, {"cursor"}, seen)
+    result = runner.invoke(cli.app, ["preflight"])
+    assert result.exit_code == 0
+    assert "preflight claude:claude-haiku-5-5: OK" in result.stdout
+    assert "preflight cursor:gemini-3.7-flash-high: FAIL (cursor down)" in result.stdout
+
+
+def test_preflight_exits_75_when_every_arm_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _doctor_ready(monkeypatch, tmp_path)
+    _write_era3(tmp_path, "aa", "claude:claude-haiku-5-5")
+    _write_era3(tmp_path, "bb", "codex:gpt-5.6-luna")
+    _preflight_backends(monkeypatch, {"claude", "codex"}, [])
+    result = runner.invoke(cli.app, ["preflight"])
+    assert result.exit_code == 75
+    assert result.stdout.count(": FAIL (") == 2
+
+
+def test_preflight_with_no_era3_accounts_is_not_a_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _doctor_ready(monkeypatch, tmp_path)
+    result = runner.invoke(cli.app, ["preflight"])
+    assert result.exit_code == 0
+    assert "preflight: no Era 3 accounts" in result.stdout
+
+
+def test_preflight_fails_an_unaudited_grok_without_calling_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _doctor_ready(monkeypatch, tmp_path)
+    monkeypatch.setattr(doctor, "grok_version", lambda: "1.0.99")
+    _write_era3(tmp_path, "aa", "grok:grok-4.6")
+    _write_era3(tmp_path, "bb", "claude:claude-haiku-5-5")
+    seen: list[str] = []
+    _preflight_backends(monkeypatch, set(), seen)
+    result = runner.invoke(cli.app, ["preflight"])
+    assert result.exit_code == 0
+    assert "preflight grok:grok-4.6: FAIL (grok 1.0.99 is not the audited" in result.stdout
+    assert seen == ["claude"]
+
+
+def test_a_signal_during_preflight_propagates_and_probes_no_further_arm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The round's TERM becomes `SystemExit(143)` in the main thread. Probing in
+    the main thread is what lets it reach `SubprocessRunner`'s kill-the-group
+    handler, so `smoke_one` must not swallow it and no later arm may start."""
+    _write_era3(tmp_path, "aa", "claude:claude-haiku-5-5")
+    _write_era3(tmp_path, "bb", "codex:gpt-5.6-luna")
+    calls: list[str] = []
+
+    class Terminated:
+        def complete(self, req: object) -> str:
+            calls.append("called")
+            raise SystemExit(143)
+
+    with pytest.raises(SystemExit):
+        doctor.preflight_arms(
+            Settings(agent_root=tmp_path), backend_for=lambda persona, settings: Terminated()
+        )
+    assert calls == ["called"]
+
+
+def test_preflight_warns_about_a_claude_sign_in_that_ends_within_a_week(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _doctor_ready(monkeypatch, tmp_path)
+    _write_era3(tmp_path, "aa", "claude:claude-haiku-5-5")
+    _preflight_backends(monkeypatch, set(), [])
+    now = _real_datetime(2026, 11, 21, 12, 0, tzinfo=UTC)
+    monkeypatch.setattr(compose, "now", lambda tz=None: now)
+    monkeypatch.setattr(doctor, "claude_login_expiry", lambda: now + timedelta(days=2))
+    result = runner.invoke(cli.app, ["preflight"])
+    assert result.exit_code == 0
+    assert "preflight WARN: claude sign-in ends 2026-11-23T12:00:00+00:00 (in 2.0 days)" in (
+        result.stdout
+    )
+
+
+def test_doctor_warns_about_an_ended_claude_sign_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _doctor_ready(monkeypatch, tmp_path)
+    now = _real_datetime(2026, 11, 24, tzinfo=UTC)
+    monkeypatch.setattr(compose, "now", lambda tz=None: now)
+    monkeypatch.setattr(doctor, "claude_login_expiry", lambda: now - timedelta(hours=1))
+    result = runner.invoke(cli.app, ["doctor"])
+    assert "WARN: claude sign-in ENDED" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("days", "expected"),
+    [(None, None), (8.0, None), (7.0, None), (6.9, "in 6.9 days"), (-0.5, "ENDED")],
+)
+def test_login_warning_window(days: float | None, expected: str | None) -> None:
+    now = _real_datetime(2026, 11, 21, tzinfo=UTC)
+    expiry = None if days is None else now + timedelta(days=days)
+    warning = doctor.login_warning(expiry, now)
+    if expected is None:
+        assert warning is None
+    else:
+        assert warning is not None and expected in warning
+
+
+def test_claude_login_expiry_reads_auth_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Done:
+        stdout = json.dumps({"loggedIn": True, "loginExpiresAt": "2026-11-23T20:50:41.299Z"})
+
+    monkeypatch.setattr(doctor.subprocess, "run", lambda *a, **k: Done())
+    assert doctor.claude_login_expiry() == _real_datetime(
+        2026, 11, 23, 20, 50, 41, 299000, tzinfo=UTC
+    )
+
+
+@pytest.mark.parametrize("stdout", ["", "not json", "{}", '{"loginExpiresAt": "soon"}'])
+def test_claude_login_expiry_is_none_when_unreadable(
+    monkeypatch: pytest.MonkeyPatch, stdout: str
+) -> None:
+    class Done:
+        pass
+
+    Done.stdout = stdout  # type: ignore[attr-defined]
+    monkeypatch.setattr(doctor.subprocess, "run", lambda *a, **k: Done())
+    assert doctor.claude_login_expiry() is None
+
+
+def test_claude_login_expiry_is_none_without_the_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+    def missing(*args: object, **kwargs: object) -> object:
+        raise FileNotFoundError("claude")
+
+    monkeypatch.setattr(doctor.subprocess, "run", missing)
+    assert doctor.claude_login_expiry() is None
 
 
 def test_register_command_dry_run_wires_through(

@@ -17,8 +17,8 @@ a number copied into prose.
 
 ## For agents picking up the repo
 
-1. **Read `docs/12-handoff.md` first.** It holds current state only: the launch
-   checklist, operating notes and open items. Closed entries are in
+1. **Read `docs/12-handoff.md` first.** It holds current state only: where the
+   experiment stands, operating notes and open items. Closed entries are in
    `docs/history/handoff-archive.md`.
 2. Then skim `docs/10-roadmap.md` to see where the current work fits.
 3. Then read the relevant architecture / design / API doc for the area you're

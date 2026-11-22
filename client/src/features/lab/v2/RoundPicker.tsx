@@ -1,4 +1,8 @@
-/** The round selector; an unknown `?round=` value is shown as itself rather than silently as another round. */
+/**
+ * The round selector; an unknown `?round=` value is shown as itself rather than silently as another round.
+ * A round's failed cards are shown in its label: a round where every backend failed still counts as
+ * completed under the pre-registered rule (>= 10 cards, any outcome), so the label is where it shows.
+ */
 import { useTranslation } from 'react-i18next';
 import type { RoundListItem } from '@/features/lab/types';
 import s from './v2.module.css';
@@ -22,7 +26,7 @@ export function RoundPicker({
         {!known && <option value={value}>{value}</option>}
         {rounds.map((r) => (
           <option key={r.roundId} value={r.roundId}>
-            {`${r.roundId} · ${t(`lab.v2.picker.${r.kind}`)}${r.ordinal !== null ? ` #${r.ordinal}` : ''}${r.hasObservation ? ` · ${t('lab.v2.picker.noted')}` : ''}`}
+            {`${r.roundId} · ${t(`lab.v2.picker.${r.kind}`)}${r.ordinal !== null ? ` #${r.ordinal}` : ''}${r.failures > 0 ? ` · ${t('lab.v2.picker.failures', { failures: r.failures, cards: r.cards })}` : ''}${r.hasObservation ? ` · ${t('lab.v2.picker.noted')}` : ''}`}
           </option>
         ))}
       </select>

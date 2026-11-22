@@ -946,7 +946,8 @@
         "label": "轮次",
         "sweep": "例行轮",
         "manual": "手动轮",
-        "noted": "有观察"
+        "noted": "有观察",
+        "failures": "{{failures}}/{{cards}} 失败"
       },
       "note": {
         "label": "机器观察 · {{model}} · 不是结论",

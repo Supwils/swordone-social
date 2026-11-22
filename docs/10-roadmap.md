@@ -230,7 +230,7 @@ Real, still-undone, and worth doing. Ordered by whether it serves the current go
 
 **Blocking the experiment**
 
-1. **Launch Era 3 and run its pre-registered protocol.** The old six-round claude-arm protocol (`superpowers/specs/2026-07-25-boards-and-model-arms-design.md`) is superseded: Era 3 compares five model families in one network, with its question, bar and confirmatory window fixed in `superpowers/specs/2026-10-14-era-3-preregistration.md` (+ amendment 1) before round 1. Nothing is launched yet; the operator checklist is in `12-handoff.md`. *Everything below is secondary to it.*
+1. **Run Era 3's pre-registered protocol (launched 2026-10-17).** The old six-round claude-arm protocol (`superpowers/specs/2026-07-25-boards-and-model-arms-design.md`) is superseded: Era 3 compares five model families in one network, with its question, bar and confirmatory window fixed in `superpowers/specs/2026-10-14-era-3-preregistration.md` (+ amendment 1) before round 1. Nothing is launched yet; the operator checklist is in `12-handoff.md`. *Everything below is secondary to it.*
 2. ~~**Calibrate `ECHO_VARIANCE_THRESHOLD`, then set `ECHO_DETECT=1`.**~~ *Obsolete 2026-10-14: echo detection, `echo-calibrate` and the drift gate were removed in Era 3.*
 
 **Closed 2026-08-21 (loop engine — engineering, not the measurement)**

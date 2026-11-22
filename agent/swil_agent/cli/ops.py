@@ -1,4 +1,4 @@
-"""The operator commands: `version`, `doctor`, `register`, `measure-status`.
+"""The operator commands: `version`, `doctor`, `preflight`, `register`, `measure-status`.
 
 The probes and the aggregation they print live below the CLI, in
 `swil_agent/doctor.py` and `swil_agent/analysis/measure_status.py`, and are
@@ -110,6 +110,10 @@ def doctor(
     ):
         ready = False
 
+    warning = doctor_checks.login_warning(doctor_checks.claude_login_expiry(), compose.now(UTC))
+    if warning is not None:
+        typer.echo(f"WARN: {warning}")
+
     typer.echo(f"{doctor_checks.HEARTBEAT_LABEL}: {doctor_checks.heartbeat_launchctl_status()}")
 
     if ready:
@@ -117,6 +121,29 @@ def doctor(
         raise typer.Exit(EXIT_OK)
     typer.echo("doctor: not ready")
     raise typer.Exit(EXIT_NO_ACTION)
+
+
+def preflight() -> None:
+    """Probe every roster arm with one tiny prompt, one after another, before a round.
+
+    Prints `preflight <arm>: OK` or `preflight <arm>: FAIL (<reason>)` per
+    distinct backend:model, plus a WARN line when the claude sign-in ends
+    within a week. Exit 0 when at least one arm answered (or there is no Era 3
+    roster), 75 when every arm failed: `opportunistic-round.sh` then skips the
+    round without writing its stamp, so the next firing tries again.
+    """
+    settings = compose.load_settings()
+    results = doctor_checks.preflight_arms(settings, backend_for=compose.backend_for)
+    if not results:
+        typer.echo("preflight: no Era 3 accounts")
+    for label, reason in results.items():
+        typer.echo(f"preflight {label}: " + ("OK" if reason is None else f"FAIL ({reason})"))
+    warning = doctor_checks.login_warning(doctor_checks.claude_login_expiry(), compose.now(UTC))
+    if warning is not None:
+        typer.echo(f"preflight WARN: {warning}")
+    if results and all(reason is not None for reason in results.values()):
+        raise typer.Exit(EXIT_NO_ACTION)
+    raise typer.Exit(EXIT_OK)
 
 
 def register(

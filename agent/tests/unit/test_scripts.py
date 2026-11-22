@@ -865,13 +865,15 @@ def test_a_failed_observer_note_never_fails_the_round(tmp_path: Path) -> None:
 
 
 def test_a_hung_observer_is_stopped_after_its_timeout(tmp_path: Path) -> None:
+    # The fake observer must write its pids before the deadline. At 1 s a busy
+    # machine killed it first, and the pid files never appeared.
     result, _ = _run_observe_section(
         tmp_path,
         observe="1",
         uv_rc=0,
         uv_body=f'echo "$$" > "{tmp_path}/obs.pgid"\nsleep 60 &\n'
         f'echo "$!" > "{tmp_path}/obs.child"\nwait\n',
-        extra="OBSERVE_TIMEOUT=1\nACCOUNT_KILL_GRACE=1\n",
+        extra="OBSERVE_TIMEOUT=5\nACCOUNT_KILL_GRACE=1\n",
     )
     assert result.returncode == 0, result.stderr
     pgid = int((tmp_path / "obs.pgid").read_text(encoding="utf-8"))
@@ -1016,3 +1018,108 @@ def test_dry_run_never_invokes_the_observer(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert not calls.exists() or "observe" not in calls.read_text(encoding="utf-8")
+
+
+# ── opportunistic-round.sh: the backend preflight ─────────────────────────
+
+
+def _preflight_round(
+    tmp_path: Path,
+    *,
+    uv_rc: int,
+    uv_out: str,
+    mode: str = "--dry-run",
+    extra_env: dict[str, str] | None = None,
+) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+    """The real script against a stub `uv` whose `swil-agent preflight` prints
+    `uv_out` and exits `uv_rc`; every other `uv` call exits 0 silently."""
+    root, env = _round_tree(tmp_path, ["one"])
+    calls = tmp_path / "uv.calls"
+    uv = tmp_path / "bin" / "uv"
+    uv.write_text(
+        f'#!/bin/sh\necho "$*" >> "{calls}"\n'
+        f'case "$*" in *preflight*) printf \'%s\\n\' "{uv_out}"; exit {uv_rc} ;; esac\nexit 0\n',
+        encoding="utf-8",
+    )
+    if extra_env:
+        env |= extra_env
+    result = subprocess.run(
+        ["/bin/bash", str(root / "scripts" / "opportunistic-round.sh"), mode],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=env,
+    )
+    return result, root, calls
+
+
+def test_every_arm_failing_preflight_skips_the_round_without_its_stamp(tmp_path: Path) -> None:
+    try:
+        result, root, _ = _preflight_round(
+            tmp_path,
+            uv_rc=75,
+            uv_out="preflight claude:claude-opus-5-5: FAIL (backend unavailable)",
+            mode="--force",
+        )
+        assert result.returncode == 0, result.stderr
+        log = _round_log(root)
+        assert "preflight claude:claude-opus-5-5: FAIL (backend unavailable)" in log
+        assert "skip — every LLM arm failed preflight" in log
+        assert "round start" not in log
+        assert not (root / ".agent-state" / "last_round_at").exists()
+        assert not (tmp_path / "out" / "one.started").exists()
+    finally:
+        _reap(tmp_path, ["one"])
+
+
+def test_a_partly_failed_preflight_is_logged_and_the_round_still_runs_everyone(
+    tmp_path: Path,
+) -> None:
+    result, root, _ = _preflight_round(
+        tmp_path, uv_rc=0, uv_out="preflight cursor:gemini-3.7-flash-high: FAIL (empty reply)"
+    )
+    assert result.returncode == 0, result.stderr
+    log = _round_log(root)
+    assert "preflight cursor:gemini-3.7-flash-high: FAIL (empty reply)" in log
+    assert "dry-run — every gate passed; would run 1 accounts" in log
+
+
+def test_a_preflight_that_cannot_run_never_blocks_the_round(tmp_path: Path) -> None:
+    result, root, _ = _preflight_round(tmp_path, uv_rc=2, uv_out="usage error")
+    assert result.returncode == 0, result.stderr
+    log = _round_log(root)
+    assert "WARN preflight could not run (rc=2) — running the round anyway" in log
+    assert "dry-run — every gate passed" in log
+
+
+def test_preflight_0_skips_the_preflight(tmp_path: Path) -> None:
+    result, root, calls = _preflight_round(
+        tmp_path, uv_rc=75, uv_out="unused", extra_env={"PREFLIGHT": "0"}
+    )
+    assert result.returncode == 0, result.stderr
+    assert "dry-run — every gate passed" in _round_log(root)
+    assert not calls.exists() or "preflight" not in calls.read_text(encoding="utf-8")
+
+
+def test_a_callers_preflight_0_outranks_the_env_file(tmp_path: Path) -> None:
+    root, env = _round_tree(tmp_path, ["one"])
+    env_file = root / ".env"
+    env_file.write_text(env_file.read_text(encoding="utf-8") + "PREFLIGHT=1\n", encoding="utf-8")
+    calls = tmp_path / "uv.calls"
+    uv = tmp_path / "bin" / "uv"
+    uv.write_text(f'#!/bin/sh\necho "$*" >> "{calls}"\nexit 75\n', encoding="utf-8")
+    result = subprocess.run(
+        ["/bin/bash", str(root / "scripts" / "opportunistic-round.sh"), "--dry-run"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=env | {"PREFLIGHT": "0"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "dry-run — every gate passed" in _round_log(root)
+    assert not calls.exists() or "preflight" not in calls.read_text(encoding="utf-8")
+
+
+def test_the_preflight_runs_before_the_stamp_is_written() -> None:
+    text = (SCRIPTS / "opportunistic-round.sh").read_text(encoding="utf-8")
+    assert text.index("swil-agent preflight") < text.index('echo "$now_epoch" > "$STAMP"')

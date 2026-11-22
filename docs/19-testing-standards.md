@@ -1,8 +1,8 @@
 ---
 title: Testing standards & reliability playbook
 status: stable
-last-updated: 2026-10-15
-owner: s6-review
+last-updated: 2026-11-01
+owner: 2026-11-01-handoff-refresh
 ---
 
 # Testing standards & reliability playbook
@@ -108,6 +108,11 @@ concern is fine (`io.test.ts` unit + `io.sockets.test.ts` integration).
 
 - A flaky test is a defect in the test, never weather. Fix it the day it is
   seen or delete it; no retries-in-CI, no skip-and-forget.
+- The one measured exception, local to the owner's Mac (2026-11-01): loopback
+  connections there intermittently lose their SYN, with no project code involved.
+  The signature is `Test timed out in 5000ms` or `ETIMEDOUT` near 7.8 s on a
+  supertest request, in a different test each time and only on macOS. The same
+  test failing twice is not this; treat it as a defect.
 - The usual causes here: missing await, sleep-based sync, shared fixture
   identity, cross-process DB contention, mock state leaking between tests
   (`vi.clearAllMocks` in `afterEach`, reset module-level maps).

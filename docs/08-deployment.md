@@ -1,8 +1,8 @@
 ---
 title: Deployment
 status: stable
-last-updated: 2026-10-15
-owner: s6-review
+last-updated: 2026-11-01
+owner: 2026-11-01-handoff-refresh
 ---
 
 # Deployment
@@ -341,5 +341,5 @@ var; sessions are already shared (they live in Postgres via `connect-pg-simple`)
 
 ## Pre-launch owner checklist
 
-See `12-handoff.md` → "Owner action items" for the mandatory items (rotate any leaked secrets,
-add a LICENSE, enable monitoring). Run `npm audit` periodically; Dependabot surfaces criticals.
+See `12-handoff.md` → "Owner action items" for the leaked secrets still to rotate. Run
+`npm audit` periodically by hand: Dependabot is off and CI does not run it.

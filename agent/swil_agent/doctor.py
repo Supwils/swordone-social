@@ -13,10 +13,12 @@ fake up at call time.
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Final
 
@@ -166,20 +168,101 @@ def smoke_arms(
         return True
     ok = True
     for label, persona in arms.items():
-        try:
-            reply = backend_for(persona, settings).complete(
-                CompletionRequest(system="", user=_SMOKE_PROMPT, model=persona.model)
-            )
-        except Exception as exc:  # any backend failure is a FAIL line
-            emit(f"smoke {label}: FAIL ({exc})")
-            ok = False
-            continue
-        if reply.strip():
+        reason = smoke_one(persona, settings, backend_for)
+        if reason is None:
             emit(f"smoke {label}: OK")
         else:
-            emit(f"smoke {label}: FAIL (empty reply)")
+            emit(f"smoke {label}: FAIL ({reason})")
             ok = False
     return ok
+
+
+def smoke_one(
+    persona: Persona,
+    settings: Settings,
+    backend_for: Callable[[Persona, Settings], Backend],
+) -> str | None:
+    """One tiny prompt through `persona`'s arm: `None` when it answered, the
+    failure's reason otherwise."""
+    try:
+        reply = backend_for(persona, settings).complete(
+            CompletionRequest(system="", user=_SMOKE_PROMPT, model=persona.model)
+        )
+    except Exception as exc:  # any backend failure is a failed arm
+        return str(exc) or type(exc).__name__
+    return None if reply.strip() else "empty reply"
+
+
+def preflight_arms(
+    settings: Settings,
+    *,
+    backend_for: Callable[[Persona, Settings], Backend],
+) -> dict[str, str | None]:
+    """Every distinct Era 3 arm, probed one after another: label -> `None` (it
+    answered) or the reason it did not.
+
+    Sequential on purpose, in the main thread. A signal reaches only the main
+    thread: probed from worker threads, a round's TERM (or Ctrl-C) became
+    `SystemExit` in a thread blocked on `future.result()` while each CLI kept
+    running to its own timeout (up to 600 s on grok), and
+    `SubprocessRunner`'s kill-the-group-on-exception never fired, orphaning
+    the CLIs. Here it fires. The cost is the sum of the calls instead of the
+    slowest one, each still capped by its backend's timeout.
+
+    A grok arm on a version other than the audited one fails WITHOUT a call --
+    its tool denylist is only known to be complete for that version, and grok
+    has upgraded itself despite `auto_update = false` (2026-11-03).
+    """
+    results: dict[str, str | None] = {}
+    for label, persona in era3_arms(settings.agent_root).items():
+        if persona.backend == "grok":
+            audited, message = grok_audit(grok_version())
+            if not audited:
+                results[label] = f"grok {message}"
+                continue
+        results[label] = smoke_one(persona, settings, backend_for)
+    return results
+
+
+def claude_login_expiry() -> datetime | None:
+    """When the claude CLI's sign-in ends (`claude auth status` ->
+    `loginExpiresAt`), or `None` when it cannot be read.
+
+    A claude.ai sign-in has a hard end that renewing does not move; past it
+    both claude arms and the observer note fail. Best-effort, like the
+    heartbeat probe: an unreadable status is not a failure."""
+    try:
+        completed = subprocess.run(
+            ["claude", "auth", "status"], capture_output=True, text=True, timeout=15, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    try:
+        raw = json.loads(completed.stdout)["loginExpiresAt"]
+        expiry = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (ValueError, KeyError, TypeError):
+        return None
+    return expiry if expiry.tzinfo is not None else None
+
+
+# Rounds run 48 h apart, so a week's notice is at least three rounds' warning.
+LOGIN_WARN_DAYS: Final = 7
+
+
+def login_warning(expiry: datetime | None, now: datetime) -> str | None:
+    """The WARN line for a claude sign-in that ends within `LOGIN_WARN_DAYS`
+    (or already has), else `None`."""
+    if expiry is None:
+        return None
+    days = (expiry - now).total_seconds() / 86400
+    if days >= LOGIN_WARN_DAYS:
+        return None
+    if days <= 0:
+        return f"claude sign-in ENDED {expiry.isoformat()} -- run `claude auth login`"
+    return (
+        f"claude sign-in ends {expiry.isoformat()} (in {days:.1f} days) -- "
+        "run `claude auth login` before then"
+    )
 
 
 _GROK_VERSION: Final = re.compile(r"\bgrok\s+(\d+(?:\.\d+)+)")

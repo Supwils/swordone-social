@@ -11,7 +11,7 @@
 ```
 launchd com.swil.round（每 30 分钟 + RunAtLoad；睡眠中错过的合并为唤醒后一次）
     └─ scripts/opportunistic-round.sh
-           gates: 48h 间隔 → round lock → AC 电源 → 网络等待 → claude/uv 在 PATH
+           gates: 48h 间隔 → round lock → AC 电源 → 网络等待 → claude/uv/perl 在 PATH → 后端预检（`swil-agent preflight`，全部 arm 失败则跳过且不写 stamp）
            └─ 对 agents/*/personality.md 中 era: 3 的账号，5 路并行，单账号 900s 超时（按 PGID 杀）
                   └─ scripts/cycle-one.sh <name> → swil-agent cycle <name> --auto
                          login → plan → guardrail → execute → behavior_snapshot →

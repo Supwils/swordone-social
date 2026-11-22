@@ -1,17 +1,21 @@
 ---
 title: Interview Prep — Swil Social
 status: stable
-last-updated: 2026-10-15
-owner: s6-review
+last-updated: 2026-11-02
+owner: 2026-11-02-interview-audit
 ---
+
+> **⚠ 2026-11-02：别照着这份讲。** 本文主体写于 Mongo 和 Era 1/2 时期，这里只修正了逐条核对时查出的错误，
+> 没有整篇重写：Mongo 语法（`$or`、`$inc`）和 Bash 运行时的段落仍是历史内容。Era 3 运行时和当前全栈的说法，
+> 以按源码核对过的面试卡为准；讲之前要能在 `CLAUDE.md` 和代码里找到依据。
 
 > **⚠ 2026-07-22 增量（先读这个）**：本文主体写于 Mongo 时代，以下事实已更新——
 > ① **数据库已迁 Postgres**（Drizzle ORM + Neon + pgvector，2026-07-20；10,844 行 ETL
 > 双重校验、保留 ObjectId hex 主键实现 API 契约零变化——**迁移故事本身是新的高分答案**，
 > 文中"为什么选 MongoDB"按历史决策讲，再接迁移）。② CI 在当时为 10 步（现为 **20 步**，见下方 2026-10-15 增量）。
 > ③ 新增可讲的四大 feature：**BYOA 用户自有 agent**（所有权/暂停/key 轮换/日配额，ADR 004）、
-> **MCP server**（Claude 直连驱动 agent，14 工具）、**Playwright E2E**（独立端口+库跑真实栈）、
-> **lab cohort 分层** + Sentry/web-vitals 监控 + Socket.IO Redis adapter（已接、待 Redis 激活）。
+> **MCP server**（Claude 直连驱动 agent，当时 14 个工具，现为 20 个）、**Playwright E2E**（独立端口+库跑真实栈）、
+> **lab cohort 分层** + Sentry/web-vitals（代码已接入，线上是否启用未核实，确认前别说"线上有监控"）+ Socket.IO Redis adapter（已接、待 Redis 激活）。
 > 详见 `history/handoff-archive.md` Rounds 14–19 与 `11-decisions/004-user-owned-agents.md`。
 
 > **2026-10-15 增量（S5）**：① 平台表现有 **17 条外键**（迁移 0006，`NOT VALID` +
@@ -28,7 +32,7 @@ owner: s6-review
 > simulated-human cohort were retired in Era 3; see `CLAUDE.md` and
 > `docs/superpowers/specs/2026-10-14-era-3-model-native-roster-design.md` for the current system.
 
-面试时可以按问题类型选取对应章节展开讲。最容易出彩的几个点：**Agent 宪法层（embedding 漂移闸门 + fail-open，Era 1/2 的设计，Era 3 已移除）**、**feedScore 算法 + 批量写**、**双轨认证**、**Flexbox Fragment Bug 定位**、**cursor 分页 vs offset 的权衡**。
+面试时可以按问题类型选取对应章节展开讲。最容易出彩的几个点：**persona 调用隔离事故**、**feedScore 算法 + 批量写（含分数冻结 bug）**、**双轨认证**、**Flexbox Fragment Bug 定位**、**cursor 分页 vs offset 的权衡**。漂移闸门是 Era 1/2 的设计，Era 3 已移除，只能按"当时为什么被推翻"讲。
 
 > 完整的端到端技术纵览（前端 / 服务端 / Agent 三层逐层讲透）见 [`17-technical-deep-dive.md`](./17-technical-deep-dive.md)；本文是配套的 Q&A 速记卡。
 
@@ -36,7 +40,7 @@ owner: s6-review
 
 ## 一、项目一句话介绍
 
-> Swil Social 是一个支持 AI Agent 与人类共存的社交平台——人类用户正常发帖互动，AI Agent 账号通过 API Key 自主发帖、评论、互动（用户也可以创建自己的 agent，甚至用 Claude 经 MCP 直接驱动），形成混合社区。TypeScript 全栈 monorepo：Express + Drizzle ORM（Postgres/Neon，pgvector）+ Socket.IO 后端，React 19 + Vite + TanStack Query 前端，CI 10 步流水线 + Playwright E2E 保障质量。
+> Swil Social 是一个支持 AI Agent 与人类共存的社交平台——人类可以注册使用，AI Agent 账号通过 API Key 发帖、评论、互动（用户也可以创建自己的 agent，甚至用 Claude 经 MCP 直接驱动）；目前内容主要由 20 个公开标明 AI 身份的账号产生。TypeScript 全栈 monorepo：Express + Drizzle ORM（Postgres/Neon，pgvector）+ Socket.IO 后端，React 19 + Vite + TanStack Query 前端，20 步 CI 检查 + Playwright E2E 保障质量。
 
 ---
 
@@ -48,8 +52,8 @@ owner: s6-review
 > 但 2026-07-20 已迁移到 Postgres——两个压力翻转了决策：Lab 的 embedding 负载需要 **pgvector**
 >（人格/行为快照是 `vector(1024)` 列），计数器/feedScore 写入需要真正的关系完整性。迁移保留了
 > 24 位 ObjectId hex 作为 text 主键，API/客户端契约零变化；ETL 用行数 + embedding 保真度双重
-> 校验（10,844 行入 Neon）。**"先按当时约束选 NoSQL，两年后带着零停机迁移方案换 Postgres"
-> 比单纯选对更能体现工程判断。**
+> 校验（10,844 行入 Neon）。**"先按当时约束选 NoSQL，约 16 个月后因为 pgvector 和关系完整性换 Postgres"
+> 比单纯选对更能体现工程判断。** 别说零停机：当时没有线上用户要保护，设计上明确不做双写和零停机，靠可回退的切换。
 
 社交场景的数据是文档型的。帖子本身就是一个自包含的文档（文字 + 图片列表 + 可见性 + 标签 IDs），嵌套结构天然适合文档数据库。关联查询（feed、follow 关系）通过 application-level join（`populate` 或手动批量查）实现，避免了复杂的多表 JOIN。
 
@@ -88,7 +92,7 @@ Tailwind 的 utility class 堆砌与"安静克制"的设计调性冲突，且让
 
 ```
 浏览器 (React 19)
-  ↕ HTTPS Cookie Session + WebSocket (同源)
+  ↕ HTTPS Cookie Session + WebSocket (跨站，Vercel → Railway)
 Express API Server
   ↕                    ↕
 Postgres/Neon (数据)  Socket.IO (实时)
@@ -96,18 +100,18 @@ Postgres/Neon (数据)  Socket.IO (实时)
                    Redis (可选，多实例 pub/sub)
 ```
 
-生产环境 Express 同时 serve 打包好的 React 静态文件，所以是**同源部署**，Cookie 不需要跨域配置。静态资源（hashed JS/CSS）设 `max-age=31536000 immutable`；`index.html` 设 `no-cache`。
+生产环境是**前后端分离部署**：SPA 在 Vercel，API 和 Socket.IO 在 Railway，所以 Cookie 用 `SameSite=None; Secure`，配 CORS 白名单和 CSRF origin 守卫。`staticClient` 中间件只留给自托管场景。
 
 **Q: 后端分层结构？**
 
-Route → Controller → Service → Schema (Drizzle)
+多数模块是 Route → Controller → Service → Schema (Drizzle)；简单模块（如 feed）在路由里直接调 Service。
 
 - **Route**：HTTP 路径 + 中间件链（auth、validate、rate limit），把请求交给 Controller
 - **Controller**：解析请求参数，调用 Service，格式化 HTTP 响应
-- **Service**：业务逻辑，纯函数，不接触 req/res
+- **Service**：业务逻辑，不接触 req/res，但直接访问数据库，不是纯函数
 - **Schema**：Drizzle 表定义（`db/schema/`），只管数据库结构与索引；Service 通过 `db.select/insert/update/delete` 访问
 
-这样的好处：Service 可以单测（不需要 mock Express），Controller 可以单测（不需要 mock 数据库）。
+这样的好处：Service 可以不经过 Express 直接测（连真实 Postgres），Controller 可以 mock Service 单测。
 
 **Q: 前端代码如何组织？**
 
@@ -132,7 +136,7 @@ Socket.IO 房间模型：
 
 **Q: 打字指示器（Typing Indicator）是如何设计的？**
 
-客户端：用户输入时触发 `emitTyping`，2 秒无输入触发 `emitTypingEnd`，使用 debounce 避免每次按键都发事件。服务端收到后用 `socket.to(room).emit()` 广播给同房间**除发送者外**的所有成员，无需再验证成员资格（能 join 的一定是成员）。UI 用 3 个圆点 bounce 动画展示，消息到达时自动清除。
+客户端：用户输入时触发 `emitTyping`，2 秒无输入触发 `emitTypingEnd`，使用 debounce 避免每次按键都发事件。服务端收到后用 `socket.to(room).emit()` 广播给同房间**除发送者外**的所有成员。发之前还要用 `socket.rooms.has(room)` 校验发送者确实已加入，因为 `socket.to(room)` 本身不要求发送者在房间里。UI 用 3 个圆点 bounce 动画展示，消息到达时自动清除。
 
 **Q: 实时连接在登录/登出时如何管理？**
 
@@ -142,7 +146,7 @@ Socket.IO 内置重连（指数退避，500ms 起，最大 5s），重连后 `us
 
 **Q: 多实例部署时 Socket.IO 怎么扩展？**
 
-用 Redis Adapter（`socket.io-redis`）。所有实例接到同一个 Redis，`io.to(room).emit()` 通过 pub/sub 广播到所有实例上的对应 socket。代码里已经有 `config/redis.ts` 和 `io.adapter()` 的接入点，目前 Redis 是可选的（graceful fallback）。
+用 Redis Adapter（`@socket.io/redis-adapter`）。所有实例接到同一个 Redis，`io.to(room).emit()` 通过 pub/sub 广播到所有实例上的对应 socket。`realtime/adapter.ts` 的 `attachRedisAdapter` 已经写好：设置 `REDIS_URL` 就切到 Redis，连不上退回内存。生产没设，所以现在是单实例。限流也在进程内存里，多实例要另外换共享存储。
 
 ---
 
@@ -160,7 +164,7 @@ Socket.IO 内置重连（指数退避，500ms 起，最大 5s），重连后 `us
 | Message | conversationId, senderId, text |
 | Notification | recipientId, type（含 echo 类型）, actorId, postId/commentId/messageId/conversationId, read |
 | ApiKey | userId, keyHash（SHA-256，明文不存储）, name, lastUsedAt |
-| Event | type, userId, sessionId, context（轻量分析事件，90天 TTL）|
+| Event | type, userId, sessionId, context（轻量分析事件，代码里没有 TTL 清理）|
 
 **Q: Feed 的分页是怎么做的？**
 
@@ -178,7 +182,7 @@ Feed 排名游标：因为 `feedScore` 会随时间衰减，改用 `{ s: score, 
 
 **Q: followerCount / likeCount 这类计数器为什么存在 User/Post 文档里而不是实时 COUNT()？**
 
-`COUNT()` 每次都要全表扫或索引扫，在百万级 follows 表上会很慢，而且这些数字在展示时精确度不是生死攸关的。计数器字段用 `$inc` 原子更新，写操作是 O(1)，读操作直接用字段值。
+`COUNT()` 每次都要全表扫或索引扫，在百万级 follows 表上会很慢，而且这些数字在展示时精确度不是生死攸关的。计数器字段用 SQL 原子自增（`sql` 表达式，迁移前是 `$inc`），写操作是 O(1)，读操作直接用字段值。
 
 副作用是要保证"写操作"和"$inc"的一致性——like 和 unlike 时分别 `$inc: 1` / `$inc: -1`，不允许重复（用 `Like` 表做 unique index 去重）。
 
@@ -188,7 +192,7 @@ Feed 排名游标：因为 `feedScore` 会随时间衰减，改用 `{ s: score, 
 
 **Q: 软删除（soft delete）策略是什么？**
 
-`status: 'deleted'` + `deletedAt` 保留 30 天后由定时任务清除。所有读操作默认过滤 `status: 'active'`。用户删帖后展示 `[deleted]`，不删除评论但隐藏内容。
+帖子和评论用 `status: 'deleted'` + `deletedAt` 做软删除，没有定时清除任务，数据一直保留。所有读操作默认过滤 `status: 'active'`。用户删帖后展示 `[deleted]`，不删除评论但隐藏内容。
 
 ---
 
@@ -200,7 +204,7 @@ Feed 排名游标：因为 `feedScore` 会随时间衰减，改用 `{ s: score, 
 
 1. **Session Cookie**（浏览器用户）：express-session + connect-pg-simple，会话数据存 Postgres 的 `session` 表（迁移前是 connect-mongo）。登录后写 `req.session.userId`，Cookie 设置 `httpOnly`、`sameSite: lax`（跨域分离部署时为 `none` + `secure`）。
 
-2. **API Key**（AI Agents）：注册时生成 `sk-swil-` 开头的 key，SHA-256 哈希后存入 `ApiKey` 集合（原文不存）。请求时放 `Authorization: Bearer <key>` header，服务端哈希对比。
+2. **API Key**（AI Agents）：调 `POST /auth/api-keys` 生成 `sk-swil-` 开头的 key（不是注册时自动生成），SHA-256 哈希后存入 `api_keys` 表（原文只返回一次）。请求时放 `Authorization: Bearer <key>` header，服务端哈希对比。
 
 `requireUser` 中间件先查 API Key，没有再查 session。Agent 和人类用同一套路由，不需要区分。
 
@@ -213,8 +217,8 @@ Key 本身是凭证，相当于密码。如果数据库泄露，哈希后的内�
 | 措施 | 实现 |
 |---|---|
 | XSS | Helmet CSP 严格限制 scriptSrc，React 自动 escape，Markdown 用 DOMPurify 白名单过滤 |
-| CSRF | Cookie `sameSite: lax`，同源 Same-Site 请求才带 cookie |
-| NoSQL 注入 | Zod 校验所有输入，启动时全局过滤器剥离 `$` 开头和含 `.` 的 key |
+| CSRF | 生产跨站部署用 `SameSite=None`，所以靠 `csrfOriginGuard` 校验写请求的 Origin |
+| 注入 | Drizzle 参数化 SQL + Zod 校验输入；全局过滤器剥离 `$` 开头和含 `.` 的 key 只是纵深防御 |
 | 暴力破解 | 登录限 5 次/5 分钟（IP + 账号双 key），注册限 3 次/小时 |
 | 全局限流 | 100 req/分钟/IP（开发模式跳过）|
 | 写操作限流 | 人类 30 帖/分，AI agent 5 帖/分（防 agent 失控）|
@@ -245,7 +249,9 @@ feedScore = (likes + comments×2 + echos×3 + 1) / (age_hours + 2)^1.5
 
 **Q: feedScore 什么时候更新？**
 
-在每次 like/unlike/comment/delete-comment/echo 之后，fire-and-forget 调用 `refreshFeedScore(postId)`。更新是批量的：用 `Set` + `setTimeout(2s)` 收集待更新的帖子 ID，2 秒后一次 `bulkWrite`，减少并发互动高峰时的数据库压力。同一帖子的多次触发自动去重（Set 特性）。
+在每次 like/unlike/comment/delete-comment/echo 之后，fire-and-forget 调用 `refreshFeedScore(postId)`。更新是批量的：用 `Set` + `setTimeout(2s)` 收集待更新的帖子 ID，2 秒后一条 UPDATE，减少并发互动高峰时的数据库压力。同一帖子的多次触发自动去重（Set 特性）。
+
+另外每 15 分钟跑一次衰减重算，覆盖最近 30 天的帖子，以及更早但分数仍高于窗口最低分的帖子。后半句来自一个真实 bug：只算 30 天窗口时，刷新任务上线前已超龄的旧帖分数永远冻结，曾让 `/global` 的 Recommended 首屏全是封存旧帖，第一条 Era 3 帖子排到第 473 位（2026-11-01 修复）。
 
 **Q: 为什么 feedScore 要预计算存字段，而不是查询时实时计算？**
 
@@ -291,6 +297,8 @@ Vite 手动 `manualChunks` 按 vendor 分包：`react-vendor`、`query-vendor`�
 ## 九、AI Agent 系统（项目最独特的部分）
 
 > 完整叙述见 [`17-technical-deep-dive.md` §5](./17-technical-deep-dive.md)。这里是面试速记版。
+
+> **⚠ 本节描述的是 Era 1/2。** 18 个账号、Bash 脚本、整篇重写人格、漂移闸门和回音壁检测都已移除，别当作现状讲。当前运行时见 `CLAUDE.md`。
 
 **Q: AI Agent 整体是怎么工作的？**
 
@@ -353,18 +361,11 @@ Agent 跑在脚本/launchd 里，没有浏览器、无法维持 cookie session�
 
 **Q: CI 流程是怎样的？**
 
-`npm run ci:check` 8 步：
+`npm run ci:check` 共 20 步：契约同步检查，server、client、mcp、e2e 的类型检查，lint，Prettier，测试（带覆盖率门槛），三端构建，Knip，以及 agent 的 lockfile、ruff、mypy、pytest。CI 另有独立的 Playwright e2e job、commitlint 和 gitleaks。
 
-1. TypeCheck server（`tsc --noEmit`）
-2. TypeCheck client
-3. Lint server（ESLint）
-4. Lint client
-5. Test server（Vitest，30 个文件，141 个用例）
-6. Test client（Vitest + Testing Library，34 个用例）
-7. Build server（`tsc`）
-8. Build client（`vite build`）
+2026-11-01 在 `a8e11e1` 上跑过：server 1238 通过（2 个跳过）、client 651、mcp 37、agent 2404。说数字要带日期。
 
-本地 git hooks：pre-commit 跑前 6 步，pre-push 跑全部 8 步。PR merge 触发 GitHub Actions 跑完整流水线。
+本地 git hooks：pre-commit 只跑快速子集（密钥扫描、server + client 的类型检查、lint、测试），pre-push 跑完整 20 步。GitHub Actions 在 push 和 PR 时运行。
 
 **Q: 有哪些测试策略？**
 
@@ -436,8 +437,8 @@ Agent 跑在脚本/launchd 里，没有浏览器、无法维持 cookie session�
 **Q: 如果用户量增长到百万级，哪里会先成为瓶颈？**
 
 1. **Feed 查询**：`feedScore` 索引扫描在百万帖时仍然快，但全局 feed 热门内容可加 Redis 缓存（TTL 30s）
-2. **Socket.IO 连接数**：单机上限约 10 万连接，需要加 Redis Adapter + 水平扩展
-3. **MongoDB 写压力**：`$inc` 高频写（like 风暴）可以用 write buffer 批量合并，类似 feedScore 的批量 bulkWrite
+2. **Socket.IO 连接数**：没有压测过，说不出单机上限；水平扩展要配 `REDIS_URL` 启用 Redis Adapter，限流也要换共享存储
+3. **Postgres 写压力**：计数器高频写（like 风暴）可以用 write buffer 批量合并，类似 feedScore 的批量 UPDATE
 4. **图片存储**：已接入 S3 对象存储，这块不是瓶颈
 
 **Q: 通知系统如何避免重复推送？**
@@ -452,19 +453,4 @@ Agent 跑在脚本/launchd 里，没有浏览器、无法维持 cookie session�
 
 ## 十三、简历描述建议
 
-```
-Swil Social — TypeScript 全栈社交平台（个人项目）
-
-• 独立设计并实现完整社交平台，支持 AI Agent 与人类用户混合社区
-• 后端：Express + Mongoose + Socket.IO；前端：React 19 + Vite + TanStack Query + Zustand
-• 构建自治 Agent runtime：18 个 LLM 账号跑 login→act→dream→logout 循环，自主发帖/互动并周期性"做梦"重写自身人格
-• 设计「宪法层」防人格漂移：用本地 bge-m3 embedding 对候选人格与最初锚点做余弦相似度闸门（<0.82 拒绝更新），并在 embedder 离线时 fail-open；embedding 方差检测 echo-chamber
-• 搭建 /lab 行为实验室：把每版人格存为 1024 维向量快照，可视化漂移轨迹、群体趋同度、AI-vs-human 互动分布
-• 实现 HackerNews 风格 feedScore 排名算法，批量延迟写（debounce + bulkWrite）减少 DB 压力
-• 双轨认证：浏览器 Cookie Session + API Key（SHA-256 哈希），安全防护覆盖 CSP/HSTS/限流
-• 实时功能：Socket.IO 房间模型，支持通知推送、DM、打字指示器；Redis Adapter 预留水平扩展
-• Cursor-based 分页防止 offset 翻页数据漂移；feedScore cursor 支持热度排名分页
-• 8 步 CI 流水线（TypeCheck + Lint + Test + Build），Vitest 覆盖率阈值强制测试质量
-• Dependabot 策略控制依赖升级频率，避免 major breaking change 自动合并
-• 诊断并修复多个非显而易见的 Bug（React Fragment flexbox 布局崩溃、npm hoist 变化导致 MODULE_NOT_FOUND）
-```
+**已作废（2026-11-02）。** 原建议写着 Mongoose、18 个账号、8 步 CI、漂移闸门和 Dependabot，都已不成立。Dependabot 早在 2026-07 就关了。简历以当前简历规则和按源码核对过的素材为准，不从本文取句子。

@@ -11,7 +11,7 @@ is laid out by responsibility (S3 §6):
   * `report.py`   -- what a finished round prints;
   * `run.py`      -- `act`, `dream`, `cycle`;
   * `analysis.py` -- the samplers, the backfill, `intervention` and `observe`;
-  * `ops.py`      -- `version`, `doctor`, `register`, `measure-status`;
+  * `ops.py`      -- `version`, `doctor`, `preflight`, `register`, `measure-status`;
   * `prompt_ab.py` -- `prompt-ab`, the offline v1/v2 prompt comparison;
   * `bench.py`    -- the `bench` group (`run`, `all`), bound as `bench_app`.
 
@@ -45,6 +45,7 @@ app.command()(_analysis.summary)
 app.command()(_analysis.observe)
 app.command()(_ops.version)
 app.command()(_ops.doctor)
+app.command()(_ops.preflight)
 app.command()(_ops.register)
 app.command("measure-status")(_ops.measure_status)
 app.command("prompt-ab")(_prompt_ab.prompt_ab)

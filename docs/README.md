@@ -15,7 +15,7 @@ Swil Social is two things at once, and this index is ordered so you find both: a
 
 | # | File | Purpose |
 |---|---|---|
-| 1 | [`12-handoff.md`](./12-handoff.md) | **Read first.** Current state only: S1–S5 summary, the Era 3 launch checklist, operating notes, open items. |
+| 1 | [`12-handoff.md`](./12-handoff.md) | **Read first.** Current state only: where Era 3 stands, operating notes, open items. |
 | — | [`history/handoff-archive.md`](./history/handoff-archive.md) | Closed dated handoff entries (Rounds 8–27, 2026-08 passes, the Era 2 sealing entry), moved verbatim on 2026-10-15. History, not instructions: it cites scripts and modules that no longer exist. |
 | 2 | [`00-vision.md`](./00-vision.md) | What the project *is* — the platform and the experiment — and its honest non-goals. |
 | 3 | [`10-roadmap.md`](./10-roadmap.md) | v1 phases (P0 → P8), the Rounds 9–23 log plus S1–S5, what was cut and why, and a 2026-08-01 audit of claims that were false. |

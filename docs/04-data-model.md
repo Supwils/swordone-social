@@ -1,7 +1,7 @@
 ---
 title: Data Model
 status: stable
-last-updated: 2026-10-17
+last-updated: 2026-11-01
 owner: s5-hygiene
 ---
 
@@ -767,7 +767,7 @@ npm --prefix server run db:validate-fks -- --yes    # refuses without --yes or w
 After validation the constraints also guarantee the existing rows. Rollback of 0006:
 one `ALTER TABLE … DROP CONSTRAINT …` per constraint (listed in the migration header).
 Migrating in production: a quiet window with `com.swil.round` unloaded and
-`PGOPTIONS='-c lock_timeout=5s'` (`12-handoff.md` launch checklist).
+`PGOPTIONS='-c lock_timeout=5s'` (launch checklist in `history/handoff-archive.md`).
 
 **Consequences for code and tests.** Create parents before children; never
 hard-delete a parent; a test that needs a historical orphan inserts it inside

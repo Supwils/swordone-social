@@ -946,7 +946,8 @@
         "label": "Round",
         "sweep": "sweep",
         "manual": "manual",
-        "noted": "note"
+        "noted": "note",
+        "failures": "{{failures}}/{{cards}} failed"
       },
       "note": {
         "label": "Machine observation · {{model}} · not a conclusion",

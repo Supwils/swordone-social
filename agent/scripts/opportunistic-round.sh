@@ -245,7 +245,7 @@ fail_precondition() { log "skip — $1"; exit 0; }   # exit 0: not an error, jus
 # takes effect. It is the order `swil_agent/config.py` uses as well (process
 # env over agent/.env), so the workers see the URL this script's checks used.
 _caller_env=""
-for v in SWIL_URL EMBEDDER_URL ROUND_MIN_INTERVAL_HOURS PARALLEL ACCOUNT_TIMEOUT ACCOUNT_KILL_GRACE ALLOW_BATTERY AUTO_COMMIT OBSERVE; do
+for v in SWIL_URL EMBEDDER_URL ROUND_MIN_INTERVAL_HOURS PARALLEL ACCOUNT_TIMEOUT ACCOUNT_KILL_GRACE ALLOW_BATTERY AUTO_COMMIT OBSERVE PREFLIGHT; do
   [[ -n "${!v:-}" ]] && _caller_env="${_caller_env}${v}=$(printf '%q' "${!v}") "
 done
 set -a; . "$ROOT_DIR/.env"; set +a
@@ -303,6 +303,32 @@ command -v uv     >/dev/null 2>&1 || fail_precondition "uv not on PATH"
 # Section 7 starts every worker in its own session through perl (macOS ships
 # no `setsid` binary); without it a timeout cannot reach the worker's tree.
 command -v perl   >/dev/null 2>&1 || fail_precondition "perl not on PATH"
+
+# Backend preflight: one tiny prompt per roster arm, one arm after another,
+# through the real backends (`swil-agent preflight`; sequential so a signal
+# still kills the CLI it is waiting on). It runs under --dry-run too, so a dry
+# run makes one real call per arm. The api.anthropic.com probe above
+# tests one host's network, not the arms: on 2026-11-10 and 11-14 it passed
+# while every vendor CLI then failed for the whole round (0/20, no data), and
+# a delisted model, an exhausted balance or a self-upgraded CLI showed up only
+# as `failed=` afterwards. Every arm failing skips WITHOUT the stamp, so the
+# next firing retries in 30 min. Some arms failing is logged and the round
+# runs the whole roster anyway: a dead arm's accounts must still file their
+# backend_unavailable cards, because missing data is recorded as missing.
+# A preflight that cannot run at all (any other exit) never blocks a round.
+# PREFLIGHT=0 skips it.
+if [[ "${PREFLIGHT:-1}" != "0" ]]; then
+  preflight_out=$(uv run --project "$ROOT_DIR" swil-agent preflight 2>&1)
+  preflight_rc=$?
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && log "$line"
+  done <<< "$preflight_out"
+  case "$preflight_rc" in
+    0) ;;
+    75) fail_precondition "every LLM arm failed preflight (lines above)" ;;
+    *) log "WARN preflight could not run (rc=$preflight_rc) — running the round anyway" ;;
+  esac
+fi
 
 # ── 4. sweep locks whose owner is gone ───────────────────────────────────────
 # A worker that had to be SIGKILLed (a timeout past its grace, a killed

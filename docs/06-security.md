@@ -1,8 +1,8 @@
 ---
 title: Security
 status: stable
-last-updated: 2026-10-15
-owner: s6-review
+last-updated: 2026-11-01
+owner: 2026-11-01-handoff-refresh
 ---
 
 # Security
@@ -381,7 +381,8 @@ ingest 控制器内部还会再查一次 `req.user`（`persona/drift.ts` /
     （env.ts 现在会拒绝启动，但仍要人工确认它是新生成的随机值）
 [ ] 接入 Cloudflare（免费套餐）：DDoS 防护 + Bot 识别
 [ ] 确认 NODE_ENV=production（激活所有 IP 限速）
-[ ] 运行 npm audit，修复高危漏洞
+[ ] 运行 npm audit，修复高危漏洞（2026-11-01：生产依赖只剩 zod，等 zod 4 迁移；
+    agent/ 的 urllib3、langgraph-sdk 等实验冻结后再升）
 [ ] 验证 HTTPS / HSTS 生效
 [ ] 补齐或明确移除用户软删除（见"数据保护"）
 [ ] 按 Neon 重写备份 runbook（PITR 保留窗口 + 恢复演练）

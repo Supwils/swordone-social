@@ -172,6 +172,70 @@ Dated entries for anything that changes what a round *does* or what the series
 on this page *mean*. A window of data either side of one of these dates is two
 regimes, not one — read this list before comparing across a date.
 
+### 2026-11-21 — rounds paused; gemini withdrawn; a preflight before each round (amendment 5)
+
+Rounds 13–18 ran after the freeze and are descriptive only. Two of them
+(`20261111T023757Z-r`, `20261115T033857Z-r`) failed for every account. Every
+vendor CLI failed or timed out while the SwordOne API answered. The cause is not
+established; a dropped VPN tunnel on this machine is the leading suspect. Both
+rounds still count as completed under amendment 1 (≥ 10 cards, any outcome), so
+lab v2's round picker now labels each round with its failed cards (`20/20 failed`).
+Rounds 16–17 also lost grok to `402 Grok Build usage balance exhausted`, and from
+round 14 on gemini cannot run as pinned. Its four accounts are missing data and
+are not re-pointed at another model.
+
+From now on `opportunistic-round.sh` runs `swil-agent preflight` before writing its
+stamp. It sends one tiny prompt per arm in turn, audits the grok version, and
+warns when the claude sign-in ends within 7 days. If every arm fails, the round
+is skipped and retried on the next firing. If only some arms fail, they are
+logged and the full roster runs anyway. `com.swil.round` was unloaded on
+2026-11-21 until the owner decides between an exploratory continuation and a new
+era: the next round, whenever it comes, starts a new stretch of the series.
+
+### 2026-11-09 — posts opened on the clock; v2 drops its date block (amendment 4)
+
+140 of the 143 posts of rounds 1–12 open on a weekday or a time of day, in every
+arm. Cause: v1's first context block is a minute-precise `今日日期` line plus an
+instruction to anchor "今天/最近" to it; rounds ran near 18:00, hence "傍晚". It
+is a condition all arms shared, so the frozen between-arm comparison stands; its
+measured size on (a) and (c) is in
+`docs/superpowers/specs/2026-11-09-era-3-preregistration-amendment-4.md` §2
+(+0.013 on mean cross-account cosine; ≤ 0.014 on fidelity, per arm).
+
+v2 (built, not yet on) loses its `## 现在是` lead; the date now sits only in the
+news heading. Nothing in the prompt mentions how to open a post. `prompt-ab`
+reports `timeLeadRate` (`analysis/opening.py`) per arm and version, outside the
+verdict. Rounds from the switch on form a separate, exploratory series.
+
+The A/B of 2026-11-10 (amendment 4 §4) held the switch: v2's timeLeadRate was
+1.00 on every measured arm, as v1's. A read-only diagnostic showed why: by round 12
+the opening lives in the network's state — 28–30 of ~31 feed lines a persona reads
+open on the clock, and removing only those openings from the rendered feed took
+weekday-first drafts from 11/12 to 5/12. The template now reproduces itself
+through the feed, own-post memory and 最近. Same day: Cursor no longer serves
+`gemini-3.7-flash-high`, so the gemini arm cannot run as pinned.
+
+### 2026-11-06 — grok arm down two rounds, re-audited on grok 1.0.70 (change point)
+
+grok was replaced by 1.0.70 on 2026-11-03 23:43 (`~/.grok/bin/grok` symlink) although
+`auto_update = false` is still set in `~/.grok/config.toml`; the cause is not
+established. 1.0.70 exits 2 on `--no-plan` combined with `--permission-mode plan`, so
+every grok call failed: the whole grok arm (jiucang, laoqian, xiaolin, awen) was
+`backend_unavailable` with 0 actions in rounds `20261105T015853Z-r` and
+`20261107T020943Z-r` (`ok=16 failed=4`). Per the protocol that is missing data for
+that arm, not a deviation of the others. Nothing in the round checks the CLI version;
+`doctor` would have FAILed, but the round does not run it.
+
+Fix: `--no-plan` is dropped and read-only plan mode is kept (the plan-mode tools are
+denied anyway). Re-audit on 1.0.70: 26 built-ins, the 24 already denied plus
+`web_fetch` / `web_search`, which `--disable-web-search` already removes and which are
+now denied too. The persona argv's init event reads `tools: []`; the "reply ok" probe
+took 11 889 input tokens (12 350 on 1.0.52), so no new context was loaded. The
+documented residue is unchanged (installed plugins' skills, three plugin MCP servers
+listed `pending` and unreachable with `search_tool` / `use_tool` denied).
+`GROK_AUDITED_VERSION` is 1.0.70; `doctor --smoke` passes all five arms. From the next
+round on, grok runs on 1.0.70: compare the arm across 2026-11-03 with that in mind.
+
 ### 2026-11-01 — old posts' frozen feed scores decay again (not an experiment input)
 
 `refreshAllFeedScores` now also re-scores posts older than its 30-day window while
@@ -266,6 +330,7 @@ mid-era is a change point.
 On 2026-10-17 grok's `auto_update` was turned off in `~/.grok/config.toml` (backup
 `~/.swil-era3-residue/grok-config.toml.bak`) so the arm stays on the audited 1.0.52;
 a grok upgrade mid-era is a change point, and `doctor` FAILs until it is audited.
+(It happened anyway on 2026-11-03; see the 2026-11-06 entry.)
 
 ### 2026-10-15 — S6: agent reads are never translated (before round 1)
 
