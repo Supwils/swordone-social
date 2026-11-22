@@ -23,7 +23,11 @@ from swil_agent.llm.runner import CompletionRequest, Runner
 # (`doctor` enforces it via `GROK_AUDITED_VERSION`).
 # The grok version `GROK_DISALLOWED_TOOLS` was read from. `swil-agent doctor`
 # FAILs on any other version: a built-in added since is NOT denied.
-GROK_AUDITED_VERSION: Final = "1.0.52"
+# Re-audited on 1.0.70 (2026-11-06): 26 built-ins, the 24 below plus
+# `web_fetch` / `web_search` (already removed by `--disable-web-search`, now
+# denied too so the list covers every built-in); the persona argv's init
+# event reads `tools: []`.
+GROK_AUDITED_VERSION: Final = "1.0.70"
 
 GROK_DISALLOWED_TOOLS: Final = (
     "run_terminal_command",
@@ -50,6 +54,8 @@ GROK_DISALLOWED_TOOLS: Final = (
     "image_to_video",
     "reference_to_video",
     "write",
+    "web_fetch",
+    "web_search",
 )
 
 # grok scans Claude Code's and Cursor's home config by default ("harness
@@ -87,9 +93,13 @@ class GrokCLIBackend:
     already shows the operator logged in. The binary is Grok Build TUI
     (`grok` 1.0.5). Verified against it on 2026-08-25:
 
-      * `grok -p PROMPT --tools "" --max-turns 8 --no-subagents --no-plan
+      * `grok -p PROMPT --tools "" --max-turns 8 --no-subagents
         --permission-mode plan -m grok-4.6 --system-prompt-override SYS`
-        prints the model text on stdout and exits 0.
+        prints the model text on stdout and exits 0. (`--no-plan` was on
+        this argv until grok 1.0.70, which exits 2 when it is combined with
+        `--permission-mode plan`; that cost the grok arm two rounds,
+        2026-11-04 and 11-06. Read-only plan mode is the one kept; the plan
+        mode tools are denied anyway.)
       * `--tools ""` is a real flag (unlike cursor-agent) -- but on grok
         1.0.52 it no longer empties the toolset; `--disallowed-tools` does
         (see `GROK_DISALLOWED_TOOLS`), so the "only channel to disk is the
@@ -100,7 +110,7 @@ class GrokCLIBackend:
 
       * `--permission-mode plan` (read-only). `bypassPermissions` / `auto` /
         `acceptEdits` / `dontAsk` / `--always-approve` are never passed.
-      * `--max-turns 8 --no-subagents --no-plan --disable-web-search`
+      * `--max-turns 8 --no-subagents --disable-web-search`
         (`1` is too tight: grok spends a turn probing the empty cwd and
         then exits `Max turns reached` with no text. Measured 2026-08-25
         on the first `_g` fork round.)
@@ -140,7 +150,6 @@ class GrokCLIBackend:
                     "--max-turns",
                     "8",
                     "--no-subagents",
-                    "--no-plan",
                     "--tools",
                     "",
                     "--disallowed-tools",

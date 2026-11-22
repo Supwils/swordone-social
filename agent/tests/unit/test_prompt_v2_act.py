@@ -95,7 +95,7 @@ def test_empty_blocks_are_omitted_with_their_headings() -> None:
         "私信只能发给",
     ):
         assert gone not in user
-    assert user.startswith(PREAMBLE + "\n## 现在是 2026-10-17\n\n## 这一轮\n")
+    assert user.startswith(PREAMBLE + "\n## 这一轮\n")
 
 
 def test_a_context_without_sources_still_renders() -> None:
@@ -280,6 +280,17 @@ def test_news_is_the_boards_topics_plus_general() -> None:
     assert "[finance] 金融总结" in prompt.request.user
     assert "[general] 通用总结" in prompt.request.user
     assert "AI 总结" not in prompt.request.user
+
+
+def test_no_date_block_leads_the_material() -> None:
+    """Amendment 2026-11-09: the date is a fact about the news, not a header on
+    the prompt. A leading "now" line was the opening of 98% of v1's posts."""
+    digest = "### [general] 通用\n→ 通用总结\n"
+    user = _user(ActSources(board_posts=[_item(1)], news=digest))
+    assert "现在是" not in user
+    assert user.startswith(PREAMBLE + "\n### 帖子\n")
+    assert "### 今天的新闻（2026-10-17）\n" in user
+    assert user.count("2026-10-17") == 1
 
 
 def test_the_char_counts_add_up_to_the_request() -> None:

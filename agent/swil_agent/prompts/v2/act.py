@@ -262,14 +262,17 @@ def render_act_v2(persona: Persona, ctx: ActContext, rhythm: RhythmDecision) -> 
     memory = [
         f"- {line}" for line in render_memory_lines(ctx.recent_memory.splitlines())[-MEMORY_LIMIT:]
     ]
+    # No date block of its own (amendment 2026-11-09): a "now" line leading the
+    # material put a clock on top of every prompt, and 98% of Era 3 posts in
+    # v1 opened with it. The date is carried only where it is a fact about the
+    # material -- the news heading -- and the dated memory lines.
     blocks = [
-        ("context", f"## 现在是 {ctx.today}"),
         ("feeds", _section("帖子", posts)),
         ("threads", _section("讨论", threads)),
         ("social", _section("通知", notes)),
         ("social", _section("私信", dms)),
         ("memory", _section("你最近做过的事", memory)),
-        ("news", _section("今天的新闻", render_news(sources.news, persona.board))),
+        ("news", _section(f"今天的新闻（{ctx.today}）", render_news(sources.news, persona.board))),
         ("tail", _tail(ctx, rhythm, sources.conversations)),
     ]
     segments: list[tuple[str, str]] = [("preamble", PREAMBLE)]

@@ -245,9 +245,17 @@ def test_grok_is_isolated_by_env_denied_its_built_ins_and_starts_in_its_cwd() ->
         "--disallowed-tools",
         ",".join(GROK_DISALLOWED_TOOLS),
     ]
-    # Measured on grok 1.0.52: the read, shell and write built-ins, and the
-    # MCP meta-tools that reach configured servers.
-    for tool in ("run_terminal_command", "read_file", "write", "search_tool", "use_tool"):
+    # Measured on grok 1.0.52 / 1.0.70: the read, shell and write built-ins,
+    # the MCP meta-tools that reach configured servers, and the web tools.
+    for tool in (
+        "run_terminal_command",
+        "read_file",
+        "write",
+        "search_tool",
+        "use_tool",
+        "web_fetch",
+        "web_search",
+    ):
         assert tool in GROK_DISALLOWED_TOOLS
 
 

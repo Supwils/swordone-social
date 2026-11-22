@@ -20,6 +20,7 @@ from typing import Any, Final, Literal
 from swil_agent.act.planner import plan_attempt
 from swil_agent.act.round import guardrail_step
 from swil_agent.act.similarity import Embedder, candidate_post_text, measure_act_similarity
+from swil_agent.analysis.opening import opens_with_time
 from swil_agent.dream.round import dream_reply
 from swil_agent.embedder.client import EmbedderUnavailable
 from swil_agent.embedder.vectors import clamped_cosine
@@ -79,6 +80,8 @@ class ActSample:
     latency_ms: int
     backend_unavailable: bool = False
     """The backend raised unavailable: an outage, not an invalid reply."""
+    time_lead: bool | None = None
+    """The draft post opens on a weekday or time of day; `None` without a draft."""
 
 
 @dataclass(frozen=True)
@@ -204,6 +207,7 @@ def sample_act(
         user_chars=len(prompt.request.user),
         latency_ms=latency_ms,
         backend_unavailable=unavailable,
+        time_lead=opens_with_time(draft) if draft else None,
     )
 
 
@@ -281,6 +285,7 @@ def summarize_act(samples: Sequence[ActSample]) -> dict[str, dict[str, dict[str,
         valid = [s for s in reached if s.json_valid]
         must = [s for s in valid if s.policy == "must_post"]
         no = [s for s in valid if s.policy == "no_post"]
+        drafted = [s for s in group if s.time_lead is not None]
         out.setdefault(arm, {})[version] = {
             "samples": len(group),
             "backendUnavailable": len(group) - len(reached),
@@ -290,6 +295,11 @@ def summarize_act(samples: Sequence[ActSample]) -> dict[str, dict[str, dict[str,
             "mustPostObeyed": _obeyed(sum(s.posted for s in must), len(must)),
             "noPostObeyed": _obeyed(sum(not s.posted for s in no), len(no)),
             "cardSim": _mean([s.card_sim for s in group if s.card_sim is not None]),
+            # Reported only, never in a verdict: the prompt does not ask for it.
+            "timeLeadRate": _rate(
+                sum(bool(s.time_lead) for s in drafted),
+                len(drafted),
+            ),
             "userChars": _mean([s.user_chars for s in group]),
             "latencyMs": _mean([s.latency_ms for s in group]),
         }
@@ -396,7 +406,15 @@ def _cell(key: str, value: float | str | None) -> str:
 
 def render_table(report: dict[str, Any]) -> str:
     keys = (
-        ("jsonValidRate", "dropRate", "mustPostObeyed", "noPostObeyed", "cardSim", "userChars")
+        (
+            "jsonValidRate",
+            "dropRate",
+            "mustPostObeyed",
+            "noPostObeyed",
+            "cardSim",
+            "timeLeadRate",
+            "userChars",
+        )
         if report["phase"] == "act"
         else ("jsonValidRate", "meanItems", "meanLength", "restateShare", "userChars")
     )

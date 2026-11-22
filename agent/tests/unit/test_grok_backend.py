@@ -92,7 +92,9 @@ def test_argv_shape() -> None:
     assert _arg_after(argv, "--output-format") == "plain"
     assert _arg_after(argv, "--max-turns") == "8"
     assert "--no-subagents" in argv
-    assert "--no-plan" in argv
+    # grok 1.0.70 exits 2 on `--no-plan` + `--permission-mode plan`.
+    assert "--no-plan" not in argv
+    assert _arg_after(argv, "--permission-mode") == "plan"
     assert "--disable-web-search" in argv
     assert _arg_after(argv, "-m") == "grok-4.6"
     assert _arg_after(argv, "--system-prompt-override") == "SYS"

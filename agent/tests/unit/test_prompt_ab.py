@@ -76,6 +76,7 @@ def test_a_v2_sample_resolves_handles_and_measures_the_draft() -> None:
     assert sample.json_valid is True
     assert (sample.proposed, sample.dropped, sample.posted) == (2, {}, True)
     assert sample.card_sim == 1.0
+    assert sample.time_lead is True  # "今天" is a time token
     assert sample.latency_ms == 250
     assert sample.arm == "claude:opus"
     assert backend.last is not None and sample.user_chars == len(backend.last.user)
@@ -93,6 +94,7 @@ def test_an_unknown_handle_is_counted_as_a_drop() -> None:
     )
     assert sample.dropped == {"unknown_handle": 1}
     assert sample.card_sim is None
+    assert sample.time_lead is None  # no draft, nothing to measure
     assert sample.arm == "claude"  # no pinned model: the backend alone
 
 
@@ -708,3 +710,12 @@ def test_a_persona_that_fails_to_load_leaves_its_arm_unpaired_and_is_named(
     assert "grok:grok-4.6" in report["unpairedArms"]
     assert "unreadable:broken" in report["unpairedArms"]
     assert report["allArmsPass"] is False
+
+
+def test_the_time_lead_rate_counts_drafted_posts_only() -> None:
+    clock = replace(_act("v2"), time_lead=True)
+    plain = replace(_act("v2"), time_lead=False)
+    silent = _act("v2", policy="no_post", posted=False)
+    metrics = ab.summarize_act([clock, plain, silent])["claude:opus"]["v2"]
+    assert metrics["timeLeadRate"] == 0.5
+    assert ab.summarize_act([silent])["claude:opus"]["v2"]["timeLeadRate"] is None
